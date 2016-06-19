@@ -20,7 +20,7 @@ You can use a previous setup model as a template:
 
 > model2<-main.menu(model1)
 
-The function will ask you to tipe a topology in newick format and the menu pops up with the following options.
+The function will ask you to tipe a topology in newick format and the menu will pop up with the following options.
 
 
 > A > Number of populations to simulate      2
