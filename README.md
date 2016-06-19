@@ -9,16 +9,16 @@ You can use PipeMaster to simulate summay statistics and coalescent trees. You c
 Instaling the package:
 dowload the .zip file from this page unzip it, open R and tipe the following code adding the path to where the package was downloaded.
 
-install.packages("path to PipeMaster", repos=NULL)
+> install.packages("path to PipeMaster", repos=NULL)
 
 Using the menu to build your model:
 You start by setting up your model throgh the menu, you run the main.menu() function and directs the output to an R oject that will store your model.
 
-model<-main.menu()
+> model<-main.menu()
 
-you can use a previous setup model as a template:
+You can use a previous setup model as a template:
 
-model2<-main.menu(model1)
+> model2<-main.menu(model1)
 
 The function will ask you to tipe a topology in newick format and the menu pops up.
 
@@ -27,9 +27,9 @@ You must go to the "H > Conditions" and the "I > Gene setup" before quitting.
 
 Simulating summary stats:
 
-to simulate summary statistics you run the following function.
+To simulate summary statistics you run the following function.
 
-sim.sumstat(model,path="",overall.SS=F,perpop.SS=T,nsim.blocks=1,use.alpha = T, append.sims=F, sim.block.size = 1000)
+> sim.sumstat(model,path="",overall.SS=F,perpop.SS=T,nsim.blocks=1,use.alpha = T, append.sims=F, sim.block.size = 1000)
 
 model = your model object
 path = path to write the output
@@ -42,6 +42,6 @@ append.sims = if TRUE simmulations will be appended in the last simulation outpu
 
 To simmulate coalescent trees:
 
-sim.coaltrees(model,path="",use.alpha=F,nsim.blocks=1, append.sims=F, sim.block.size = 1000)
+> sim.coaltrees(model,path="",use.alpha=F,nsim.blocks=1, append.sims=F, sim.block.size = 1000)
 
 
