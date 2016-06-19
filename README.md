@@ -27,25 +27,20 @@ The function will ask you to tipe a topology in newick format and the menu pops 
 
 > B > Tree                                   (1,2);
 
->     Number of nodes (junctions)            1
-
 > C > Migration                              FALSE
 
 > D > Pop size change through time           FALSE
 
 > E > Setup Ne priors
->     Population size parameters (total)     2
->     current Ne parameters                  2
->     ancestral Ne parameters                0
+
 > F > Setup Migration priors
->     current migration                      0
->     ancestral migration parameters         0
+
 > G > Setup time priors 
->     time of join parameters                1
->     time of Ne change parameters           0
->     time of Migration change parameters    0
+
 > H > Conditions
+
 > I > Gene setup
+
 > Q > Quit, my model is Ready!
 
 This will give you a simple isolation model. You can add complexity to the model by using the interactive menu.
