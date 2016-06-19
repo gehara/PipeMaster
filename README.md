@@ -23,7 +23,7 @@ You can use a previous setup model as a template:
 The function will ask you to tipe a topology in newick format and the menu pops up.
 
 
-> A > Number of populations to simulate      2
+> A > Number of populations to simulate      2 /t
 > B > Tree                                   (1,2);
 >     Number of nodes (junctions)            1
 > C > Migration                              FALSE
