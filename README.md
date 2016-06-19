@@ -7,5 +7,12 @@ Pipemaster can help you build coalescent models, add prior information on model 
 You can use PipeMaster to simulate summay statistics and coalescent trees. You can also calculate the same summary statistics on your empirical data. You can then perform an abc analysis using the "abc" R-package or use a machine learning algorithm to do model and/or parameter inference.
 
 Instaling the package:
+dowload the .zip file from this page unzip it, open R and tipe the following code adding the path to where the package was downloaded.
+
+install.packages("path to PipeMaster", repos=NULL)
+
+Using the menu to build your model:
+
+
 
 
