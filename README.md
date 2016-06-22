@@ -24,7 +24,7 @@ The function will ask you to tipe a topology in newick format and the menu will 
 
 > main.menu()  
 write bifurcating topology in newick format: (1,2);  
-
+```
 A > Number of populations to simulate      2  
 B > Tree                                   (1,2);  
     Number of nodes (junctions)            1  
@@ -43,10 +43,11 @@ G > Setup time priors
     time of Migration change parameters    0  
 H > Conditions  
 I > Gene setup  
-Q > Quit, my model is Ready!  
+Q > Quit, my model is ready!
+ ```
 
 This will give you a simple isolation model. You can add complexity to the model by using the interactive menu.
-You must go to the "H > Conditions" and the "I > Gene setup" before quitting.
+You must go to the "_H > Conditions_" and the "_I > Gene setup_" before quitting.
 
 ####Simulating summary stats
 
@@ -54,14 +55,14 @@ To simulate summary statistics you run the following function.
 
 > sim.sumstat(model,path="",overall.SS=F,perpop.SS=T,nsim.blocks=1,use.alpha = T, append.sims=F, sim.block.size = 1000)
 
-_model = your model object_.  
-_path = path to write the output_.  
-_overall.SS = if TRUE calculates the summary stats across all your populations. Defaut is FALSE_.  
-_perpop.SS = if TRUE calculates the summary stats per population. Defalt is TRUE_.  
-_use.alpha = if TRUE the most recent population size chage will be exponential. Sudden change if FALSE. Defaut is FALSE_.  
-_sim.block.size = simulations are perforemed in blocks. This argument the fine the size of the block. How many simmulations per block_.  
-_nsim.blocks = that setup how many blocks you what to simulate. The total number of simulations is: nsim.blocks x sim.block.size_.  
-_append.sims = if TRUE simmulations will be appended in the last simulation output. Defaut is FALSE_.  
+* model = your model object.  
+* path = path to write the output.  
+* overall.SS = if TRUE calculates the summary stats across all your populations. Defaut is FALSE.  
+* perpop.SS = if TRUE calculates the summary stats per population. Defalt is TRUE.  
+* use.alpha = if TRUE the most recent population size chage will be exponential. Sudden change if FALSE. Defaut is FALSE.  
+* sim.block.size = simulations are perforemed in blocks. This argument the fine the size of the block. How many simmulations per block.  
+* nsim.blocks = that setup how many blocks you what to simulate. The total number of simulations is: nsim.blocks x sim.block.size.  
+* append.sims = if TRUE simmulations will be appended in the last simulation output. Defaut is FALSE.  
 
 ####Simmulating coalescent trees
 
