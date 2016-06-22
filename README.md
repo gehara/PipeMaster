@@ -52,14 +52,14 @@ To simulate summary statistics you run the following function.
 
 > sim.sumstat(model,path="",overall.SS=F,perpop.SS=T,nsim.blocks=1,use.alpha = T, append.sims=F, sim.block.size = 1000)
 
-model = your model object
-path = path to write the output
-overall.SS = if TRUE calculates the summary stats across all your populations. Defaut is FALSE.
-perpop.SS = if TRUE calculates the summary stats per population. Defalt is TRUE.
-use.alpha = if TRUE the most recent population size chage will be exponential. Sudden change if FALSE. Defaut is FALSE.
-sim.block.size = simulations are perforemed in blocks. This argument the fine the size of the block. How many simmulations per block.
-nsim.blocks = that setup how many blocks you what to simulate. The total number of simulations is: nsim.blocks x sim.block.size.
-append.sims = if TRUE simmulations will be appended in the last simulation output. Defaut is FALSE.
+model = your model object;
+path = path to write the output;
+overall.SS = if TRUE calculates the summary stats across all your populations. Defaut is FALSE.;
+perpop.SS = if TRUE calculates the summary stats per population. Defalt is TRUE.;
+use.alpha = if TRUE the most recent population size chage will be exponential. Sudden change if FALSE. Defaut is FALSE.;
+sim.block.size = simulations are perforemed in blocks. This argument the fine the size of the block. How many simmulations per block.;
+nsim.blocks = that setup how many blocks you what to simulate. The total number of simulations is: nsim.blocks x sim.block.size.;
+append.sims = if TRUE simmulations will be appended in the last simulation output. Defaut is FALSE.;
 
 To simmulate coalescent trees:
 
