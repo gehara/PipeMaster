@@ -2,16 +2,16 @@
 
 Pipemaster can help you build coalescent models, add prior information on model parameters and simulate data sampling parameter values from those priors.
 
-**!!This is a beta version of the package. I have not tested very complex models with more than 4 populations.!!**
+**This is a beta version of the package. I have not tested very complex models with more than 4 populations!**
 
 You can use PipeMaster to simulate summay statistics and coalescent trees. You can also calculate the same summary statistics on your empirical data. You can then perform an abc analysis using the "abc" R-package or use a machine learning algorithm to do model and/or parameter inference.
 
-###Instaling the package
+####Installing the package
 dowload the .zip file from this page unzip it, open R and tipe the following code adding the path to where the package was downloaded.
 
 > install.packages("path to PipeMaster", repos=NULL)
 
-###Using the menu to build your model
+####Using the menu to build your model
 You start by setting up your model throgh the menu, you run the main.menu() function and directs the output to an R oject that will store your model.
 
 > model<-main.menu()
@@ -48,7 +48,7 @@ Q > Quit, my model is Ready!
 This will give you a simple isolation model. You can add complexity to the model by using the interactive menu.
 You must go to the "H > Conditions" and the "I > Gene setup" before quitting.
 
-###Simulating summary stats
+####Simulating summary stats
 
 To simulate summary statistics you run the following function.
 
@@ -63,7 +63,7 @@ _sim.block.size = simulations are perforemed in blocks. This argument the fine t
 _nsim.blocks = that setup how many blocks you what to simulate. The total number of simulations is: nsim.blocks x sim.block.size_.  
 _append.sims = if TRUE simmulations will be appended in the last simulation output. Defaut is FALSE_.  
 
-###Simmulate coalescent trees
+####Simmulating coalescent trees
 
 > sim.coaltrees(model,path="",use.alpha=F,nsim.blocks=1, append.sims=F, sim.block.size = 1000)
 
