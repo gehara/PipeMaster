@@ -16,11 +16,11 @@ Install all dependencies.
 > install.packages("e1071")  
 > install.packages("PopGenome")  
 
-dowload the .zip file from this page and unzip it. Open R and tipe the following code adding the path to where the package was downloaded.
+download the .zip file from this page and unzip it. Open R and type the following code adding the path to where the package was downloaded.
 > install.packages("**_path_**/PipeMaster_0.0.3.tar.gz", repos=NULL)
 
 ####Using the menu to build your model
-You start by setting up your model throgh the menu, you run the main.menu() function and directs the output to an R oject that will store your model.
+You start by setting up your model through the menu, you run the main.menu() function and directs the output to an R object that will store your model.
 
 > model<-main.menu()
 
@@ -28,7 +28,7 @@ _You can use a previously build model as a template_:
 
 > model2<-main.menu(model1)
 
-The function will ask you to tipe a topology in newick format and the menu will pop up with the following options.
+The function will ask you to write a topology in newick format and the menu will pop up with the following options.
 
 > main.menu()  
 write bifurcating topology in newick format: (1,2);  
@@ -66,13 +66,13 @@ To simulate summary statistics you run the following function.
 * model = your model object.  
 * path = path to write the output.  
 * overall.SS = if TRUE calculates the summary stats across all your populations. Defaut is FALSE.  
-* perpop.SS = if TRUE calculates the summary stats per population. Defalt is TRUE.  
-* use.alpha = if TRUE the most recent population size chage will be exponential. Sudden change if FALSE. Defaut is FALSE.  
-* sim.block.size = simulations are perforemed in blocks. This argument the fine the size of the block. How many simmulations per block.  
+* perpop.SS = if TRUE calculates the summary stats per population. Default is TRUE.  
+* use.alpha = if TRUE the most recent population size change will be exponential. Sudden change if FALSE. Default is FALSE.  
+* sim.block.size = simulations are performed in blocks. This argument defines the size of the block. How many simulations you what to run per block.
 * nsim.blocks = that setup how many blocks you what to simulate. The total number of simulations is: nsim.blocks x sim.block.size.  
-* append.sims = if TRUE simmulations will be appended in the last simulation output. Defaut is FALSE.  
+* append.sims = if TRUE simulations will be appended in the last simulation output. Default is FALSE.  
 
-####Simmulating coalescent trees
+####Simulating coalescent trees
 
 > sim.coaltrees(model,path="",use.alpha=F,nsim.blocks=1, append.sims=F, sim.block.size = 1000)
 
