@@ -17,7 +17,7 @@ Install all dependencies.
 > install.packages("PopGenome")  
 
 dowload the .zip file from this page and unzip it. Open R and tipe the following code adding the path to where the package was downloaded.
-> install.packages("**_path_**/PipeMaster_0.0.2.tar.gz", repos=NULL)
+> install.packages("**_path_**/PipeMaster_0.0.3.tar.gz", repos=NULL)
 
 ####Using the menu to build your model
 You start by setting up your model throgh the menu, you run the main.menu() function and directs the output to an R oject that will store your model.
