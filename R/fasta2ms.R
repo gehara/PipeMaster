@@ -7,6 +7,11 @@ fasta2ms<-function(path.to.fasta,fasta.files,write.file=T){
     fas<-as.character(fas)
     bin<-NULL
     pos<-NULL
+
+    if(ncol(fas)==0){
+      stop(paste(fasta.files[u],"has 0 base pairs! Check the alignment"))
+    }
+
     for(i in 1:ncol(fas)){
       a<-length(grep("a",fas[,i]))
       c<-length(grep("c",fas[,i]))
@@ -20,7 +25,8 @@ fasta2ms<-function(path.to.fasta,fasta.files,write.file=T){
         } else {bin<-cbind(bin,fas[,i])
         pos<-c(pos,i)
         }
-      }
+    }
+
     pos<-pos/ncol(fas)
     for(j in 1:ncol(bin)){
       a<-length(grep("a",bin[,j]))/nrow(bin)
