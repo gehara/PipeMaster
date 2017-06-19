@@ -15,7 +15,7 @@ sim.coexp<-function(nsims,
 
 
   if(append.sims==F){
-    simulations<-matrix(nrow=1,ncol=32)
+    simulations<-matrix(nrow=1,ncol=20)
     simulations[1,]<-c("zeta","ts","E(t)","DI",
                        "var.pi","mean.pi","skew.pi","kur.pi",
                        "var.ss","mean.ss","skew.ss","kur.ss",
