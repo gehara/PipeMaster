@@ -24,13 +24,13 @@ sim.coexp<-function(nsims,
 
     write.table(simulations,file="simulations.txt", quote=F,row.names=F, col.names=F, sep="\t")
 
-    populations.par<-matrix(nrow=1,ncol=nrow(NeA.prior)*4)
-    pop.names<-NULL
-    for(i in 1:nrow(NeA.prior)){
-    pop.names<-cbind(pop.names,t(c(paste("Ne",i,sep=""),paste("Exp.time",i,sep=""),paste("NeA",i,sep=""),paste("mi",i,sep=""))))
-    }
-    populations.par[1,]<-pop.names
-    write.table(populations.par,file="pop_parameters.txt", quote=F,row.names=F, col.names=F, sep="\t")
+    #populations.par<-matrix(nrow=1,ncol=nrow(NeA.prior)*4)
+    #pop.names<-NULL
+    #for(i in 1:nrow(NeA.prior)){
+    #pop.names<-cbind(pop.names,t(c(paste("Ne",i,sep=""),paste("Exp.time",i,sep=""),paste("NeA",i,sep=""),paste("mi",i,sep=""))))
+    #}
+    #populations.par[1,]<-pop.names
+    #write.table(populations.par,file="pop_parameters.txt", quote=F,row.names=F, col.names=F, sep="\t")
   }
 
 
@@ -45,10 +45,10 @@ sim.coexp<-function(nsims,
 
     simulations<-c(x$coexp.par,z)
 
-    populations.par<-unlist(x$pop.par)
+    #populations.par<-unlist(x$pop.par)
 
     write.table(t(simulations),file="simulations.txt", quote=F,row.names=F, col.names=F, append=T, sep="\t")
-    write.table(t(populations.par),file="pop_parameters.txt", quote=F,row.names=F, col.names=F, append=T,sep="\t")
+    #write.table(t(populations.par),file="pop_parameters.txt", quote=F,row.names=F, col.names=F, append=T,sep="\t")
     print(paste(i,"sims of",nsims,"| zeta = ",x$coexp.par[,1]))
    })
   print(TIME)
