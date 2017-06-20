@@ -10,6 +10,7 @@ test.demog<-function(nsims,
                      do.ABC=F,
                      do.PCA=F,
                      CV=F,
+                     mod=cbind(c(1,0.001,2),c(1,0.1,20)),
                      path=path){
   tabela<-NULL
 
@@ -19,7 +20,7 @@ test.demog<-function(nsims,
     parameters<-NULL
     models<-NULL
     index<-NULL
-    mod<-cbind(c(1,0.001,2),c(1,0.1,20))
+    mod<-mod
     rownames(mod)<-c("CS","Exp","BOTT")
 
     for(j in 1:nrow(mod)){
