@@ -49,7 +49,7 @@ sim.coexp.pulses<-function(nsims,
 
     write.table(t(simulations),file="simulations.txt", quote=F,row.names=F, col.names=F, append=T, sep="\t")
     #write.table(t(populations.par),file="pop_parameters.txt", quote=F,row.names=F, col.names=F, append=T,sep="\t")
-    print(paste(i,"sims of",nsims,"| zeta = ",x$coexp.par[,1]))
+    print(paste(i,"sims of",nsims,"| pulses = ",x$coexp.par[,1]))
    })
   print(TIME)
 }
