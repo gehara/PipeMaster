@@ -1,5 +1,6 @@
 sim.coexp.pulses<-function(nsims,
                     max.pulses,
+                    coexp.prior,
                     buffer,
                     Ne.prior,
                     NeA.prior,
@@ -35,7 +36,7 @@ sim.coexp.pulses<-function(nsims,
 
   TIME<-system.time(for (i in 1:nsims){
 
-    x<-coexp.sample.pars.pulses(nruns=1,max.pulses=max.pulses,buffer=buffer,Ne.prior=Ne.prior,
+    x<-coexp.sample.pars.pulses(nruns=1,coexp.prior=coexp.prior,max.pulses=max.pulses,buffer=buffer,Ne.prior=Ne.prior,
                          NeA.prior=NeA.prior,time.prior=time.prior,gene.prior=gene.prior)
 
     y<-coexp.MS(MS.par=x$MS.par, gene.prior = gene.prior,alpha=alpha)

@@ -5,6 +5,7 @@ coexp.sample.pars.pulses<-function(nruns,
                             max.pulses,
                             buffer,
                             Ne.prior,
+                            coexp.prior,
                             NeA.prior,
                             time.prior,
                             gene.prior){
