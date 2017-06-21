@@ -46,7 +46,6 @@ coexp.sample.pars.pulses<-function(nruns,
 
       time.prior.B[,c(3,4)]<-replicate(nrow(time.prior.B),sample(pulse.times,1))
 
-    }
 
     Et<-mean(time.prior.B[,3])
     Disp.index<-var(time.prior.B[,3])/Et
