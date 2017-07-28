@@ -78,7 +78,7 @@ ms.commander2<-function(model,use.alpha=use.alpha){
       string[[1]]<-paste(l,collapse = " ")
       }
       # generate alpha string
-      if(use.alpha==T){
+      if(use.alpha[1]==T){
         alpha<-NULL
         for(i in as.numeric(unique(en[,3]))){
           eg<-subset(size.pars, size.pars[,3]==i)[1:2,]
@@ -86,7 +86,8 @@ ms.commander2<-function(model,use.alpha=use.alpha){
           alpha<-c(alpha,paste("-g",i,-(1/as.numeric(eg[3,4]))*log(as.numeric(eg[2,4])/as.numeric(eg[1,4]))))
         
         }
-        string[[2]]<-paste(alpha, collapse=" ")
+        
+        string[[2]]<-paste(alpha[use.alpha[2:length(use.alpha)]], collapse=" ")
       }
       
       # generate ancestral Ne string   
