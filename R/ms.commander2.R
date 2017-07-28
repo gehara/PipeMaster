@@ -34,8 +34,8 @@ ms.commander2<-function(model,use.alpha=use.alpha){
   ####### Convertion to coalescent scale #####################################
   
   # generate coalescent scalar. Arbitrary value 
-  if(model$flags$n[1,6]=="runif") {Ne0<-min(as.numeric(model$flags$n[,4]))
-  } else {Ne0<-mean(as.numeric(model$flags$n[,4]))}
+  if(model$flags$n[1,6]=="runif") {Ne0<-mean(as.numeric(model$flags$n[,4:5]))
+  } else {Ne0<-mean(as.numeric(model$flags$n[,4:5]))}
   ms.scalar<-4*Ne0
   
   #### bind scaled theta per gene (4Ne0*m*pb)
