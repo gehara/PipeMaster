@@ -1,5 +1,5 @@
 
-sim.sumstat<-function(model,use.alpha=F,nsim.blocks,perpop.SS=T,overall.SS=T,path=getwd(),append.sims=F,sim.block.size=1000){
+sim.sumstat<-function(model,use.alpha=F,nsim.blocks,perpop.SS=T,overall.SS=T,path=getwd(),output.name,append.sims=F,sim.block.size=1000){
 
   # get population structure
   pops<-get.pops(model)
@@ -14,12 +14,14 @@ sim.sumstat<-function(model,use.alpha=F,nsim.blocks,perpop.SS=T,overall.SS=T,pat
   # write output headings
   if(append.sims==F){
     if(perpop.SS==T){
-  write.table(t(NAMES),file="SumStat.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
+  write.table(t(NAMES),file=file = paste(output.name, "_popstats.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
     }
     if(overall.SS==T){
-    write.table(t(overall.NAMES),file="GlobalSumStat.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
+    write.table(t(overall.NAMES),file=file = paste(output.name, "_overallstats.txt", 
+                                                   sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
     }
-  write.table(t(ms.commander2(model,use.alpha = use.alpha)[[nrow(model$loci)+1]][1,]),file="SampPars.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
+  write.table(t(ms.commander2(model,use.alpha = use.alpha)[[nrow(model$loci)+1]][1,]),file=file = paste(output.name, "_pars.txt", 
+                                                                                                        sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
   }
   # beggin simulations
   thou<-0
@@ -95,14 +97,16 @@ sim.sumstat<-function(model,use.alpha=F,nsim.blocks,perpop.SS=T,overall.SS=T,pat
     if(perpop.SS==T){
     ss<-Reduce("+",ss)/nrow(model$I)
     # write outputs
-    write.table(ss,file="SumStat.txt",quote=F,row.names=F, col.names = F, append=T,sep="\t")
+    write.table(ss,file=paste(output.name, "_popstats.txt",sep = ""),quote=F,row.names=F, col.names = F, append=T,sep="\t")
     
     }
     if(overall.SS==T){
     OA.ss<-Reduce("+",OA.ss)/nrow(model$I)
-    write.table(OA.ss,file="GlobalSumStat.txt",quote=F,row.names=F, col.names = F, append=T,sep="\t")
+    write.table(OA.ss,file=paste(output.name, "_overallstats.txt", 
+                                 sep = ""),quote=F,row.names=F, col.names = F, append=T,sep="\t")
     }
-    write.table(sims[[nrow(model$loci)+1]],file="SampPars.txt",quote=F,row.names=F, col.names = F,sep="\t",append=T)
+    write.table(sims[[nrow(model$loci)+1]],file=paste(output.name, "_pars.txt", 
+                                                      sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=T)
     # report job
     print(paste(j,"000 sims done!"))
     list = ls()
