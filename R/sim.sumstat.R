@@ -64,9 +64,6 @@ sim.sumstat<-function(model,use.alpha=F,nsim.blocks,perpop.SS=T,overall.SS=T,pat
         s.sites<-ss[[u]]@n.segregating.sites
         pi.within<-ss[[u]]@nuc.diversity.within/as.numeric(model$loci[u,2])
         Hap.div<-ss[[u]]@hap.diversity.within
-        ss[[u]]@Tajima.D[is.na(ss[[u]]@Tajima.D)]<-0
-        ss[[u]]@Fu.Li.D[is.na(ss[[u]]@Fu.Li.D)]<-0
-        ss[[u]]@Fu.Li.F[is.na(ss[[u]]@Fu.Li.F)]<-0
         Taj.D<-ss[[u]]@Tajima.D
         Fu.Li.D<-ss[[u]]@Fu.Li.D
         Fu.Li.F<-ss[[u]]@Fu.Li.F
@@ -81,9 +78,6 @@ sim.sumstat<-function(model,use.alpha=F,nsim.blocks,perpop.SS=T,overall.SS=T,pat
       s.sites<-ss[[u]]@n.segregating.sites
       pi.within<-ss[[u]]@nuc.diversity.within/as.numeric(model$loci[u,2])
       Hap.div<-ss[[u]]@hap.diversity.within
-      ss[[u]]@Tajima.D[is.na(ss[[u]]@Tajima.D)]<-0
-      ss[[u]]@Fu.Li.D[is.na(ss[[u]]@Fu.Li.D)]<-0
-      ss[[u]]@Fu.Li.F[is.na(ss[[u]]@Fu.Li.F)]<-0
       Taj.D<-ss[[u]]@Tajima.D
       Fu.Li.D<-ss[[u]]@Fu.Li.D
       Fu.Li.F<-ss[[u]]@Fu.Li.F
@@ -95,13 +89,13 @@ sim.sumstat<-function(model,use.alpha=F,nsim.blocks,perpop.SS=T,overall.SS=T,pat
       }
     # mean sumstats
     if(perpop.SS==T){
-    ss<-Reduce("+",ss)/nrow(model$I)
+      ss<-colMeans(do.call(rbind, ss), na.rm = TRUE)
     # write outputs
     write.table(ss,file=paste(output.name, "_popstats.txt",sep = ""),quote=F,row.names=F, col.names = F, append=T,sep="\t")
     
     }
     if(overall.SS==T){
-    OA.ss<-Reduce("+",OA.ss)/nrow(model$I)
+      OA.ss<-colMeans(do.call(rbind, OA.ss), na.rm = TRUE)
     write.table(OA.ss,file=paste(output.name, "_overallstats.txt", 
                                  sep = ""),quote=F,row.names=F, col.names = F, append=T,sep="\t")
     }

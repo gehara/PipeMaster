@@ -1,5 +1,7 @@
 observed.sumstat<-function(model,path.to.fasta,fasta.files=list.files(),overall.SS=T,perpop.SS=T){
 
+  fasta.files<-fasta.files<-fasta.files[grep(".fas",fasta.files)]
+  
   fasta2ms(path.to.fasta,fasta.files,write.file=T)
   # get population structure
   if(perpop.SS==T){
