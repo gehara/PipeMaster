@@ -2,7 +2,7 @@ observed.sumstat<-function(model,path.to.fasta,fasta.files=list.files(),overall.
 
   fasta2ms(path.to.fasta,fasta.files,write.file=T)
   # get population structure
-  if(perpop.SS=T){
+  if(perpop.SS==T){
   pops<-get.pops(model)
   # get sumstats names
   NAMES<-get.ss.pop.name(pops[[1]])
