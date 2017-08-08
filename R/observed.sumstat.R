@@ -2,9 +2,11 @@ observed.sumstat<-function(model,path.to.fasta,fasta.files=list.files(),overall.
 
   fasta2ms(path.to.fasta,fasta.files,write.file=T)
   # get population structure
+  if(perpop.SS=T){
   pops<-get.pops(model)
   # get sumstats names
   NAMES<-get.ss.pop.name(pops[[1]])
+  }
   # overall SS names
   overall.NAMES<-c("s.sites","pi","Hap.div","Taj.D","Fu.Li.D","Fu.Li.F")
 
@@ -16,9 +18,6 @@ observed.sumstat<-function(model,path.to.fasta,fasta.files=list.files(),overall.
     write.table(t(overall.NAMES),file="ObservedoverallSS.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
     }
 
-
-  
-
   ss<-list(NULL)
   OA.ss<-list(NULL)
   for(u in 1:length(fasta.files)){
@@ -29,9 +28,6 @@ observed.sumstat<-function(model,path.to.fasta,fasta.files=list.files(),overall.
       s.sites<-ss[[u]]@n.segregating.sites
       pi.within<-ss[[u]]@nuc.diversity.within/as.numeric(model$loci[u,2])
       Hap.div<-ss[[u]]@hap.diversity.within
-      ss[[u]]@Tajima.D[is.na(ss[[u]]@Tajima.D)]<-0
-      ss[[u]]@Fu.Li.D[is.na(ss[[u]]@Fu.Li.D)]<-0
-      ss[[u]]@Fu.Li.F[is.na(ss[[u]]@Fu.Li.F)]<-0
       Taj.D<-ss[[u]]@Tajima.D
       Fu.Li.D<-ss[[u]]@Fu.Li.D
       Fu.Li.F<-ss[[u]]@Fu.Li.F
@@ -44,9 +40,6 @@ observed.sumstat<-function(model,path.to.fasta,fasta.files=list.files(),overall.
       s.sites<-ss[[u]]@n.segregating.sites
       pi.within<-ss[[u]]@nuc.diversity.within/as.numeric(model$loci[u,2])
       Hap.div<-ss[[u]]@hap.diversity.within
-      ss[[u]]@Tajima.D[is.na(ss[[u]]@Tajima.D)]<-0
-      ss[[u]]@Fu.Li.D[is.na(ss[[u]]@Fu.Li.D)]<-0
-      ss[[u]]@Fu.Li.F[is.na(ss[[u]]@Fu.Li.F)]<-0
       Taj.D<-ss[[u]]@Tajima.D
       Fu.Li.D<-ss[[u]]@Fu.Li.D
       Fu.Li.F<-ss[[u]]@Fu.Li.F
@@ -56,11 +49,11 @@ observed.sumstat<-function(model,path.to.fasta,fasta.files=list.files(),overall.
     }
   }
   if(perpop.SS==T){
-    ss<-Reduce("+",ss)/nrow(model$I)
+    ss<-colMeans(do.call(rbind, ss), na.rm = TRUE)
     write.table(ss,file="ObservedSS.txt",quote=F,row.names=F, col.names = F, append=T,sep="\t")
   }
   if(overall.SS==T){
-    OA.ss<-Reduce("+",OA.ss)/nrow(model$I)
+    OA.ss<-colMeans(do.call(rbind, OA.ss), na.rm = TRUE)
     write.table(OA.ss,file="ObservedoverallSS.txt",quote=F,row.names=F, col.names = F, append=T,sep="\t")
   }
 }
