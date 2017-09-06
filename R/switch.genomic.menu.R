@@ -32,7 +32,7 @@ switch.genomic.menu<-function(){
                   sys.call(which = -1)
                   genomic.menu()},
 
-          "3" = {.e$loci[1,3]<-readline("number of loci to simulate:"))
+          "3" = {.e$loci[1,3]<-readline("number of loci to simulate:")
                   sys.call(which = -1)
                   gene.menu()},
 
