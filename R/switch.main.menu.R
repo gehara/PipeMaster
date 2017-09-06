@@ -59,12 +59,13 @@ switch.main.menu<-function(){
            sys.call(which = 0)
               condition.menu()},
 
-        I = {.e$data.type<-readline("What type of data to simulate (sanger or genomic)?: " )
+        I = {.e$data.type<-readline("What type of data to simulate (sanger or genomic)?:" )
+
         if(.e$data.type %in% c("sanger","Sanger","S")){
-          sys.call(which = 0)
-          loci.par()
-          samples.par()
-          gene.menu()
+              sys.call(which = 0)
+              loci.par()
+              samples.par()
+              gene.menu()
         } else {
           sys.call(which = 0)
           genomic.par()
