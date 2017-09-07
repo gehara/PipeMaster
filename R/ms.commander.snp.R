@@ -31,7 +31,7 @@ ms.commander.snp<-function(model,use.alpha=use.alpha,msABC){
   }
 
   #### bind sampled mutation rate
-  parameters<-rbind(parameters,loci[,c(1,4)])
+  parameters<-rbind(parameters,paste("mut.rate",loci[,4]))
 
   ####### End of parameter sampling #######################################
   #########################################################################
