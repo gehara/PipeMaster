@@ -31,7 +31,10 @@ join.par<-function()
    }
 
   ## get topology and number of nodes
-    .e$tree<-readline("write bifurcating topology in newick format: ")
+    .e$tree<-readline("write bifurcating topology in newick format or 1 for single population: ")
+    if (.e$tree=="1"){
+      .e$npops<-1
+    } else {
     check.tree()
 
     .e$npops<-as.numeric(nchar(gsub("(","",gsub(")","",gsub(",","",gsub(";","",.e$tree,fixed=T),fixed=T),fixed=T),fixed=T)))
@@ -77,5 +80,6 @@ join.par<-function()
     .e$ej[,5]<-1500000
     .e$ej[,6]<-"uniform"
 
+    }
 }
 

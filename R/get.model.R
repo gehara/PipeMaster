@@ -2,7 +2,7 @@
 
 get.model<-function(){
 
-    
+
     .e$ej<-gsub("normal","rtnorm",.e$ej)
     .e$n<-gsub("normal","rtnorm",.e$n)
     .e$m<-gsub("normal","rtnorm",.e$m)
@@ -11,7 +11,7 @@ get.model<-function(){
     .e$en$time<-gsub("normal","rtnorm",.e$en$time)
     .e$em$time<-gsub("normal","rtnorm",.e$em$time)
     .e$loci<-gsub("normal","rtnorm",.e$loci)
-    
+
     .e$ej<-gsub("uniform","runif",.e$ej)
     .e$n<-gsub("uniform","runif",.e$n)
     .e$m<-gsub("uniform","runif",.e$m)
@@ -20,12 +20,12 @@ get.model<-function(){
     .e$en$time<-gsub("uniform","runif",.e$en$time)
     .e$em$time<-gsub("uniform","runif",.e$em$time)
     .e$loci<-gsub("uniform","runif",.e$loci)
-    
+
     if(is.null(nrow(.e$em$size))){rm("em",envir=.e)}
     if(is.null(nrow(.e$en$size))){rm("en",envir=.e)}
     if(is.null(nrow(.e$m))){rm("m",envir=.e)}
-    
-      
+    if(is.null(nrow(.e$ej))){rm("ej",envir=.e)}
+
     model<-list(NULL,NULL,NULL,NULL,NULL)
     names(model)<-c("loci","I","flags","conds","tree")
     model$loci<-.e$loci
