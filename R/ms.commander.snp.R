@@ -31,7 +31,7 @@ ms.commander.snp<-function(model,use.alpha=use.alpha,msABC){
   }
 
   #### bind sampled mutation rate
-  parameters<-rbind(parameters,paste("mut.rate",loci[,4]))
+  parameters<-rbind(parameters,c("m.rate",loci[,4]))
 
   ####### End of parameter sampling #######################################
   #########################################################################
@@ -178,8 +178,6 @@ ms.commander.snp<-function(model,use.alpha=use.alpha,msABC){
   # generate -t and -I part of the command
 
   loci<-sample.pars(model$loci)
-  #### bind sampled mutation rate
-  parameters<-rbind(parameters,loci[,c(1,4)])
   #### bind scaled theta per gene (4N*m*pb)
   loci<-cbind(loci,4*Ne0*as.numeric(loci[,4])*as.numeric(loci[,2]))
   commands<-list(NULL)
