@@ -8,7 +8,7 @@ print.genomic.menu<-function()
 
   cat(paste("M > Mutation rate prior distribution:  ",.e$loci[1,6]),
       paste("P > priors                          ",dist.par),
-      paste("                              ",.e$loci[,4]," ",.e$loci[,5]),
+      paste("                                 ",.e$loci[,4]," ",.e$loci[,5]),
       paste(" "),
       paste("1 > percentage of missing data"),
       paste("                              ",.e$loci[,1],"%"),
