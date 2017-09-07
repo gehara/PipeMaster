@@ -1,7 +1,7 @@
 
 join.par<-function()
   {
-  
+
   check.tree<-function(){
     x<-strsplit(.e$tree,"")
     y<-as.numeric(length(grep("(",x[[1]],fixed=T)))
@@ -29,17 +29,17 @@ join.par<-function()
       }
       }
    }
-  
+
   ## get topology and number of nodes
     .e$tree<-readline("write bifurcating topology in newick format: ")
     check.tree()
-    
+
     .e$npops<-as.numeric(nchar(gsub("(","",gsub(")","",gsub(",","",gsub(";","",.e$tree,fixed=T),fixed=T),fixed=T),fixed=T)))
-    
-            
+
+
     .e$t<-.e$tree
     .e$joints<-NULL
-    
+
     get.joint<-function(){
      tree<-strsplit(.e$t,"")
       for(i in 1:length(tree[[1]])){
@@ -53,20 +53,20 @@ join.par<-function()
           junction<-gsub(")","",junction,fixed=T)
           junction<-gsub(","," ",junction,fixed=T)
           .e$joints<-c(.e$joints,junction)
-        break  
+        break
        }
       }
     }
 
   while(length(strsplit(.e$t,"")[[1]])>2){
     get.joint()
-  }  
-    
-  ## generate parameters of time of join of populations   
+  }
+
+  ## generate parameters of time of join of populations
 
     tot.join.par<-NULL
     for (i in 1:length(.e$joints)){
-      join.par<-paste("join",i,sep="")
+      join.par<-paste("join_",.e$joints[i],sep="")
       tot.join.par<-c(tot.join.par,join.par)
     }
     .e$ej<-matrix(nrow=length(.e$joints),ncol=6)
@@ -76,6 +76,6 @@ join.par<-function()
     .e$ej[,4]<-500000
     .e$ej[,5]<-1500000
     .e$ej[,6]<-"uniform"
-    
+
 }
 
