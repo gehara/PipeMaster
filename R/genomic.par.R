@@ -9,8 +9,8 @@ genomic.par<-function()
     .e$loci[,1]<-0
     .e$loci[,2]<-bp
     .e$loci[,3]<-.e$nloci
-    .e$loci[,4]<-1e-9
-    .e$loci[,5]<-1e-11
+    .e$loci[,4]<-1e-11
+    .e$loci[,5]<-1e-9
     .e$loci[,6]<-"uniform"
 
 }

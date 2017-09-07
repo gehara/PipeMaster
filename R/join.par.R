@@ -34,6 +34,7 @@ join.par<-function()
     .e$tree<-readline("write bifurcating topology in newick format or 1 for single population: ")
     if (.e$tree=="1"){
       .e$npops<-1
+      .e$ej<-NULL
     } else {
     check.tree()
 
