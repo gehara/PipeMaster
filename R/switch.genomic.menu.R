@@ -28,13 +28,13 @@ switch.genomic.menu<-function(){
                   sys.call(which = -1)
                   genomic.menu()},
 
-         "2" = {.e$loci[1,2]<-readline("average number of base pairs:")
+          "2" = {.e$loci[1,2]<-readline("average number of base pairs:")
                   sys.call(which = -1)
                   genomic.menu()},
 
           "3" = {.e$loci[1,3]<-readline("number of loci to simulate:")
                   sys.call(which = -1)
-                  gene.menu()},
+                  genomic.menu()},
 
           B = {sys.call(which = -1)
             main.menu()})
