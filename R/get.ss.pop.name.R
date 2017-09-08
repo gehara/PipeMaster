@@ -1,5 +1,5 @@
 get.ss.pop.name<-function(pops){
-  
+
   S.s<-NULL
   pi<-NULL
   H.pop<-NULL
@@ -36,11 +36,15 @@ get.ss.pop.name<-function(pops){
     x<-paste("FuLiF.pop",i,sep="")
     FuLiF<-c(FuLiF,x)
     }
-
+if(length(pops)>1){
   HapFst<-paste("Hap.Fst")
   nucFst<-paste("nuc.Fst")
+} else {
+  HapFst<-NULL
+  nucFst<-NULL
+}
 
   name<-c(S.s,pi,H.pop,TD,FuLiD,FuLiF,HapFst,nucFst)
-  
+
   return(name)
 }

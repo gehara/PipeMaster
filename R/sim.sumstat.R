@@ -91,8 +91,13 @@ sim.sumstat<-function(model,use.alpha=F,nsim.blocks,perpop.SS=T,overall.SS=T,pat
       Taj.D<-ss[[u]]@Tajima.D
       Fu.Li.D<-ss[[u]]@Fu.Li.D
       Fu.Li.F<-ss[[u]]@Fu.Li.F
+      if(length(pops[[1]])>1){
       Hap.Fst<-ss[[u]]@haplotype.F_ST
       nuc.Fst<-ss[[u]]@nucleotide.F_ST
+      } else{
+        Hap.Fst<-NULL
+        nuc.Fst<-NULL
+      }
       ss[[u]]<-cbind(s.sites,pi.within,Hap.div,Taj.D,Fu.Li.D,Fu.Li.F,Hap.Fst,nuc.Fst)
       }
 
