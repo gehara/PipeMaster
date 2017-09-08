@@ -16,7 +16,11 @@ switch.main.menu<-function(){
                   print(.e$ej)
                   node<-readline("which node to remove (write all node rows separated by spaces)?: ")
                   node<-as.numeric(strsplit(node," ")[[1]])
-                  .e$ej<-.e$ej[,-node]
+                  if(length(node)==nrow(.e$ej)){
+                    .e$ej<-NULL
+                  } else {
+                    .e$ej<-.e$ej[,-node]
+                  }
                   .e$tree<-"non tree-like model"
                   mig.par()
                 }
