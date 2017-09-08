@@ -1,5 +1,5 @@
 
-sim.sumstat<-function(model,use.alpha=F,nsim.blocks,perpop.SS=T,overall.SS=T,path=getwd(),output.name,append.sims=F,sim.block.size=1000){
+sim.sumstat<-function(model,use.alpha=F,nsim.blocks,perpop.SS=T,overall.SS=T,path=getwd(),output.name,get.moments=F,append.sims=F,sim.block.size=1000){
 
   # get population structure
   pops<-get.pops(model)
