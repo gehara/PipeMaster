@@ -11,8 +11,13 @@ switch.main.menu<-function(){
               sys.call(which = 0)
               main.menu()},
 
-         B = {join.par()
-              cur.Ne.par()
+         B = {.e$island.presence<-readline("would you like to remove a node (YES or NO)?: ")
+                if(.e$island.presence %in% .e$YES){
+                  print(.e$ej)
+                  node<-readline("which node to remove (write all nodes separated by a space)?: ")
+                  node<-as.numeric(strsplit(node," ")[[1]])
+                  .e$ej<-.e$ej[,-node]
+                }
               sys.call(which = 0)
               main.menu()},
 
@@ -61,7 +66,7 @@ switch.main.menu<-function(){
 
         I = {.e$data.type<-readline("What type of data to simulate (sanger or genomic)?:" )
 
-        if(.e$data.type %in% c("sanger","Sanger","S")){
+        if(.e$data.type %in% c("sanger","Sanger","S","s")){
               sys.call(which = 0)
               loci.par()
               samples.par()
