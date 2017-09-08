@@ -14,10 +14,11 @@ switch.main.menu<-function(){
          B = {.e$island.presence<-readline("would you like to remove a node (YES or NO)?: ")
                 if(.e$island.presence %in% .e$YES){
                   print(.e$ej)
-                  node<-readline("which node to remove (write all nodes separated by a space)?: ")
+                  node<-readline("which node to remove (write all node rows separated by spaces)?: ")
                   node<-as.numeric(strsplit(node," ")[[1]])
                   .e$ej<-.e$ej[,-node]
                   .e$tree<-"non tree-like model"
+                  mig.par()
                 }
               sys.call(which = 0)
               main.menu()},
