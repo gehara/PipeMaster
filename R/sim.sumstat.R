@@ -14,13 +14,23 @@ sim.sumstat<-function(model,use.alpha=F,nsim.blocks,perpop.SS=T,overall.SS=T,pat
   # write output headings
   if(append.sims==F){
     if(perpop.SS==T){
-  write.table(t(NAMES),file = paste(output.name, "_popstats.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
-    }
+    write.table(t(NAMES),file = paste(output.name, "_popstats_mean.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
+      if(get.moments==T){
+        write.table(t(NAMES),file = paste(output.name, "_popstats_var.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
+        write.table(t(NAMES),file = paste(output.name, "_popstats_kur.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
+        write.table(t(NAMES),file = paste(output.name, "_popstats_skew.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
+      }
+       }
     if(overall.SS==T){
-    write.table(t(overall.NAMES),file = paste(output.name, "_overallstats.txt", 
+    write.table(t(overall.NAMES),file = paste(output.name, "_overallstats_mean.txt",
                                                    sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
+      if(get.moments==T){
+        write.table(t(overall.NAMES),file = paste(output.name, "_overallstats_var.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
+        write.table(t(overall.NAMES),file = paste(output.name, "_overallstats_kur.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
+        write.table(t(overall.NAMES),file = paste(output.name, "_overallstats_skew.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
+      }
     }
-  write.table(t(ms.commander2(model,use.alpha = use.alpha)[[nrow(model$loci)+1]][1,]),file = paste(output.name, "_pars.txt", 
+  write.table(t(ms.commander2(model,use.alpha = use.alpha)[[nrow(model$loci)+1]][1,]),file = paste(output.name, "_pars.txt",
                                                                                                         sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
   }
   # beggin simulations
@@ -48,7 +58,7 @@ sim.sumstat<-function(model,use.alpha=F,nsim.blocks,perpop.SS=T,overall.SS=T,pat
     for(u in 1:nrow(model$I)){
     write(sims[[u]],file=paste(swap,"/locus",u,sep=""), append=F)
     }
-   
+
     # Start Summary stats calulation
     print("PopGenome!")
 
@@ -85,21 +95,82 @@ sim.sumstat<-function(model,use.alpha=F,nsim.blocks,perpop.SS=T,overall.SS=T,pat
       nuc.Fst<-ss[[u]]@nucleotide.F_ST
       ss[[u]]<-cbind(s.sites,pi.within,Hap.div,Taj.D,Fu.Li.D,Fu.Li.F,Hap.Fst,nuc.Fst)
       }
-      
+
       }
     # mean sumstats
     if(perpop.SS==T){
-      ss<-colMeans(do.call(rbind, ss), na.rm = TRUE)
+      SS<-NULL
+      kur<-NULL
+      vari<-NULL
+      skew<-NULL
+      for(j in 1:sim.block.size){
+        x<-NULL
+        for(i in 1:nrow(model$loci)){
+          x<-rbind(x,ss[[i]][j,])
+          }
+        SS<-rbind(SS,colMeans(x, na.rm=T))
+        if(get.moments==T){
+          vari<-rbind(vari,diag(var(x, na.rm=T)))
+          kk<-NULL
+          sk<-NULL
+          for(u in 1:ncol(x)){
+            s<-skewness(x[,u],na.rm=T)
+            sk<-c(sk,s)
+            k<-kurtosis(x[,u],na.rm=T)
+            kk<-c(kk,k)
+          }
+          kur<-rbind(kur,kk)
+          skew<-rbind(skew,sk)
+        }
+    }
     # write outputs
-    write.table(ss,file=paste(output.name, "_popstats.txt",sep = ""),quote=F,row.names=F, col.names = F, append=T,sep="\t")
-    
+    write.table(SS,file=paste(output.name, "_popstats_mean.txt",sep = ""),quote=F,row.names=F, col.names = F, append=T,sep="\t")
+    if(get.moments==T){
+      write.table(vari,file=paste(output.name, "_popstats_var.txt",sep = ""),quote=F,row.names=F, col.names = F, append=T,sep="\t")
+      write.table(kur,file=paste(output.name, "_popstats_kur.txt",sep = ""),quote=F,row.names=F, col.names = F, append=T,sep="\t")
+      write.table(skew,file=paste(output.name, "_popstats_skew.txt",sep = ""),quote=F,row.names=F, col.names = F, append=T,sep="\t")
+      }
     }
     if(overall.SS==T){
-      OA.ss<-colMeans(do.call(rbind, OA.ss), na.rm = TRUE)
-    write.table(OA.ss,file=paste(output.name, "_overallstats.txt", 
+      SS<-NULL
+      kur<-NULL
+      vari<-NULL
+      skew<-NULL
+      for(j in 1:sim.block.size){
+        x<-NULL
+        for(i in 1:nrow(model$loci)){
+          x<-rbind(x,OA.ss[[i]][j,])
+        }
+        SS<-rbind(SS,colMeans(x, na.rm=T))
+        if(get.moments==T){
+          vari<-rbind(vari,diag(var(x, na.rm=T)))
+          kk<-NULL
+          sk<-NULL
+          for(u in 1:ncol(x)){
+            s<-skewness(x[,u],na.rm=T)
+            sk<-c(sk,s)
+            k<-kurtosis(x[,u],na.rm=T)
+            kk<-c(kk,k)
+          }
+          kur<-rbind(kur,kk)
+          skew<-rbind(skew,sk)
+        }
+      }
+
+
+    write.table(SS,file=paste(output.name, "_overallstats_mean.txt",
                                  sep = ""),quote=F,row.names=F, col.names = F, append=T,sep="\t")
+    if(get.moments==T){
+    write.table(vari,file=paste(output.name, "_overallstats_var.txt",
+                              sep = ""),quote=F,row.names=F, col.names = F, append=T,sep="\t")
+    write.table(kur,file=paste(output.name, "_overallstats_kur.txt",
+                              sep = ""),quote=F,row.names=F, col.names = F, append=T,sep="\t")
+    write.table(skew,file=paste(output.name, "_overallstats_skew.txt",
+                              sep = ""),quote=F,row.names=F, col.names = F, append=T,sep="\t")
     }
-    write.table(sims[[nrow(model$loci)+1]],file=paste(output.name, "_pars.txt", 
+
+    }
+    write.table(sims[[nrow(model$loci)+1]],file=paste(output.name, "_pars.txt",
                                                       sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=T)
     # report job
     print(paste(j,"000 sims done!"))
