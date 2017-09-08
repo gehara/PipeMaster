@@ -103,20 +103,20 @@ sim.sumstat<-function(model,use.alpha=F,nsim.blocks,perpop.SS=T,overall.SS=T,pat
       kur<-NULL
       vari<-NULL
       skew<-NULL
-      for(j in 1:sim.block.size){
+      for(jj in 1:sim.block.size){
         x<-NULL
-        for(i in 1:nrow(model$loci)){
-          x<-rbind(x,ss[[i]][j,])
+        for(ii in 1:nrow(model$loci)){
+          x<-rbind(x,ss[[ii]][jj,])
           }
         SS<-rbind(SS,colMeans(x, na.rm=T))
         if(get.moments==T){
           vari<-rbind(vari,diag(var(x, na.rm=T)))
           kk<-NULL
           sk<-NULL
-          for(u in 1:ncol(x)){
-            s<-skewness(x[,u],na.rm=T)
+          for(uu in 1:ncol(x)){
+            s<-skewness(x[,uu],na.rm=T)
             sk<-c(sk,s)
-            k<-kurtosis(x[,u],na.rm=T)
+            k<-kurtosis(x[,uu],na.rm=T)
             kk<-c(kk,k)
           }
           kur<-rbind(kur,kk)
@@ -136,20 +136,20 @@ sim.sumstat<-function(model,use.alpha=F,nsim.blocks,perpop.SS=T,overall.SS=T,pat
       kur<-NULL
       vari<-NULL
       skew<-NULL
-      for(j in 1:sim.block.size){
+      for(jj in 1:sim.block.size){
         x<-NULL
-        for(i in 1:nrow(model$loci)){
-          x<-rbind(x,OA.ss[[i]][j,])
+        for(ii in 1:nrow(model$loci)){
+          x<-rbind(x,OA.ss[[ii]][jj,])
         }
         SS<-rbind(SS,colMeans(x, na.rm=T))
         if(get.moments==T){
           vari<-rbind(vari,diag(var(x, na.rm=T)))
           kk<-NULL
           sk<-NULL
-          for(u in 1:ncol(x)){
-            s<-skewness(x[,u],na.rm=T)
+          for(uu in 1:ncol(x)){
+            s<-skewness(x[,uu],na.rm=T)
             sk<-c(sk,s)
-            k<-kurtosis(x[,u],na.rm=T)
+            k<-kurtosis(x[,uu],na.rm=T)
             kk<-c(kk,k)
           }
           kur<-rbind(kur,kk)
