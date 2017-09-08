@@ -17,6 +17,7 @@ switch.main.menu<-function(){
                   node<-readline("which node to remove (write all nodes separated by a space)?: ")
                   node<-as.numeric(strsplit(node," ")[[1]])
                   .e$ej<-.e$ej[,-node]
+                  .e$tree<-"non tree-like model"
                 }
               sys.call(which = 0)
               main.menu()},

@@ -1,8 +1,8 @@
 
 print.main.menu<-function(){
-    
+
 {cat(paste("A > Number of populations to simulate     ",nrow(.e$n)),
-     paste("B > Tree                                  ",.e$tree),
+     paste("B > Tree (go here to remove nodes)        ",.e$tree),
      paste("    Number of nodes (junctions)           ",nrow(.e$ej)),
      paste("C > Migration                             ",exists("m",envir=.e)),
      paste("D > Pop size change through time          ",exists("en",envir=.e)),
