@@ -47,7 +47,7 @@ sim.sumstat<-function(model,use.alpha=F,nsim.blocks,perpop.SS=T,overall.SS=T,pat
       com<-ms.commander2(model,use.alpha=use.alpha)
       for(u in 1:nrow(model$I)){
         S<-ms(nreps=1,nsam=sum(as.numeric(model$I[u,4:ncol(model$I)])),opts=com[[u]])
-        while(as.numeric(strsplit(S[3]," ")[[1]][2])==0) S<-ms(nreps=1,nsam=sum(as.numeric(model$I[u,4:ncol(model$I)])),opts=com[[u]])
+        #while(as.numeric(strsplit(S[3]," ")[[1]][2])==0) S<-ms(nreps=1,nsam=sum(as.numeric(model$I[u,4:ncol(model$I)])),opts=com[[u]])
         sims[[u]]<-c(sims[[u]],S[2:length(S)])
       }
       sims[[nrow(model$loci)+1]]<-rbind(sims[[nrow(model$loci)+1]],com[[nrow(model$loci)+1]][2,])
