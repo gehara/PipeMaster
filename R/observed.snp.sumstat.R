@@ -2,7 +2,7 @@
 observed.snp.sumstat<-function(path.to.fasta,pop.assign,msABC.call){
   setwd(path.to.fasta)
   fasta.files<-list.files()
-  fasta.files<-fasta.files[grep(".fas",fasta.files,fixed=T)]
+  fasta.files<-fasta.files[grep(".fa",fasta.files,fixed=T)]
   observed<-list()
   for(i in 1:length(fasta.files)){
   ms.output<-fasta.snp.2ms(path.to.fasta,fasta.files[i],write.file=T,pop.assign)
@@ -17,7 +17,7 @@ observed.snp.sumstat<-function(path.to.fasta,pop.assign,msABC.call){
   observed<-matrix(unlist(observed), ncol = length(observed[[1]]), byrow = TRUE)
   observed<-colMeans(observed,na.rm = T)
   return(observed)
-  }  
-    
+  }
+
 
 
