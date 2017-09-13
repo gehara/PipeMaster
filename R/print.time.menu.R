@@ -1,10 +1,11 @@
 print.time.menu<-function()
   {
-
+  if(exists("ej",envir=.e)==T){
     if(.e$ej[1,6]=="normal")
       dist.par<-"Mean - SD"
     if(.e$ej[1,6]=="uniform")
       dist.par<-"Min - Max"
+  }
 
   cat(if(exists("ej", envir=.e))
       paste("A > Time prior distribution:    ",.e$ej[1,6]),
