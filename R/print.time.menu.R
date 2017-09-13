@@ -1,10 +1,14 @@
 print.time.menu<-function()
   {
-  if(.e$ej[1,6]=="normal")
-    dist.par<-"Mean - SD"
-  if(.e$ej[1,6]=="uniform")
-    dist.par<-"Min - Max"
-    
+  if(exists("ej",envir=.e)==T){
+    if(.e$ej[1,6]=="normal")
+      dist.par<-"Mean - SD"
+    if(.e$ej[1,6]=="uniform")
+      dist.par<-"Min - Max"
+  } else {
+    .e$ej<-NULL
+    dist.par<-NULL}
+
   cat(paste("A > Time prior distribution:    ",.e$ej[1,6]),
       paste("    Time priors                  ",dist.par),
       paste("   j >  time of junctions: "),
