@@ -1,19 +1,19 @@
 print.time.menu<-function()
   {
-  if(exists("ej",envir=.e)==T){
+  if(is.null(.e$ej)==F){
     if(.e$ej[1,6]=="normal")
       dist.par<-"Mean - SD"
     if(.e$ej[1,6]=="uniform")
       dist.par<-"Min - Max"
   }
 
-  cat(if(exists("ej", envir=.e))
+  cat(if(is.null(.e$ej)==F)
       paste("A > Time prior distribution:    ",.e$ej[1,6]),
-      if(exists("ej", envir=.e))
+      if(is.null(.e$ej)==F)
       paste("    Time priors                  ",dist.par),
-      if(exists("ej", envir=.e))
+      if(is.null(.e$ej)==F)
       paste("   j >  time of junctions: "),
-      if(exists("ej", envir=.e))
+      if(is.null(.e$ej)==F)
       paste("                    ",c(1:nrow(.e$ej)),"  ",.e$ej[,1],"  ",.e$ej[,4]," ",.e$ej[,5]),
       paste(" "),
       if(exists("en", envir=.e))
