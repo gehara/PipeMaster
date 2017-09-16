@@ -14,20 +14,20 @@ sim.sumstat<-function(model,use.alpha=F,nsim.blocks,perpop.SS=T,overall.SS=T,pat
   # write output headings
   if(append.sims==F){
     if(perpop.SS==T){
-    write.table(t(NAMES),file = paste(output.name, "_popstats_mean.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
+    write.table(t(paste(NAMES,"_mean",sep=""),file = paste(output.name, "_popstats_mean.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
       if(get.moments==T){
-        write.table(t(NAMES),file = paste(output.name, "_popstats_var.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
-        write.table(t(NAMES),file = paste(output.name, "_popstats_kur.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
-        write.table(t(NAMES),file = paste(output.name, "_popstats_skew.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
+        write.table(t(paste(NAMES,"_var",sep=""),file = paste(output.name, "_popstats_var.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
+        write.table(t(paste(NAMES,"_kur",sep=""),file = paste(output.name, "_popstats_kur.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
+        write.table(t(paste(NAMES,"_skew",sep=""),file = paste(output.name, "_popstats_skew.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
       }
        }
     if(overall.SS==T){
-    write.table(t(overall.NAMES),file = paste(output.name, "_overallstats_mean.txt",
+    write.table(t(paste(overall.NAMES,"_mean",sep="")),file = paste(output.name, "_overallstats_mean.txt",
                                                    sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
       if(get.moments==T){
-        write.table(t(overall.NAMES),file = paste(output.name, "_overallstats_var.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
-        write.table(t(overall.NAMES),file = paste(output.name, "_overallstats_kur.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
-        write.table(t(overall.NAMES),file = paste(output.name, "_overallstats_skew.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
+        write.table(t(paste(overall.NAMES,"_var",sep="")),file = paste(output.name, "_overallstats_var.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
+        write.table(t(paste(overall.NAMES,"_kur",sep="")),file = paste(output.name, "_overallstats_kur.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
+        write.table(t(paste(overall.NAMES,"_skew",sep="")),file = paste(output.name, "_overallstats_skew.txt",sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
       }
     }
   write.table(t(ms.commander2(model,use.alpha = use.alpha)[[nrow(model$loci)+1]][1,]),file = paste(output.name, "_pars.txt",

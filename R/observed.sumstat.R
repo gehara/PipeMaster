@@ -14,20 +14,20 @@ observed.sumstat<-function(model,path.to.fasta,fasta.files=list.files(),overall.
 
   setwd(path.to.fasta)
   if(perpop.SS==T){
-      write.table(t(NAMES),file ="observed_popstats_mean.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
+      write.table(t(paste(NAMES,"_mean",sep="")),file ="observed_popstats_mean.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
       if(get.moments==T){
-        write.table(t(NAMES),file = "observed_popstats_var.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
-        write.table(t(NAMES),file = "observed_popstats_kur.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
-        write.table(t(NAMES),file = "observed_popstats_skew.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
+        write.table(t(paste(NAMES,"_var",sep=""),file = "observed_popstats_var.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
+        write.table(t(paste(NAMES,"_kur",sep=""),file = "observed_popstats_kur.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
+        write.table(t(paste(NAMES,"_skew",sep=""),file = "observed_popstats_skew.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
       }
     }
     if(overall.SS==T){
-      write.table(t(overall.NAMES),file = "observed_overallstats_mean.txt",
+      write.table(t(paste(overall.NAMES,"_mean",sep="")),file = "observed_overallstats_mean.txt",
                                                 quote=F,row.names=F, col.names = F,sep="\t",append=F)
       if(get.moments==T){
-        write.table(t(overall.NAMES),file = "observed_overallstats_var.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
-        write.table(t(overall.NAMES),file = "observed_overallstats_kur.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
-        write.table(t(overall.NAMES),file = "observed_overallstats_skew.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
+        write.table(t(paste(overall.NAMES,"_var",sep="")),file = "observed_overallstats_var.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
+        write.table(t(paste(overall.NAMES,"_kur",sep="")),file = "observed_overallstats_kur.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
+        write.table(t(paste(overall.NAMES,"_skew",sep="")),file = "observed_overallstats_skew.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
       }
     }
 
