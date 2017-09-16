@@ -1,9 +1,9 @@
-observed.sumstat<-function(model,path.to.fasta,fasta.files=list.files(),overall.SS=T,perpop.SS=T,get.moments=F){
+observed.sumstat<-function(model,path.to.fasta,fasta.files=list.files(),overall.SS=T,perpop.SS=T,get.moments=T){
 
-  fasta.files<-fasta.files<-fasta.files[grep(".fas",fasta.files)]
+  fasta.files<-fasta.files[grep(".fas",fasta.files)]
 
   fasta2ms(path.to.fasta,fasta.files,write.file=T)
-  # get population structure
+  nrow(model$loci)# get population structure
   if(perpop.SS==T){
   pops<-get.pops(model)
   # get sumstats names
@@ -68,10 +68,9 @@ observed.sumstat<-function(model,path.to.fasta,fasta.files=list.files(),overall.
     kur<-NULL
     vari<-NULL
     skew<-NULL
-    for(jj in 1:sim.block.size){
-      x<-NULL
-      for(ii in 1:nrow(model$loci)){
-        x<-rbind(x,ss[[ii]][jj,])
+    x<-NULL
+    for(jj in 1:nrow(model$loci)){
+      x<-rbind(x,ss[[jj]][1,])
       }
       SS<-rbind(SS,colMeans(x, na.rm=T))
       if(get.moments==T){
@@ -87,7 +86,7 @@ observed.sumstat<-function(model,path.to.fasta,fasta.files=list.files(),overall.
         kur<-rbind(kur,kk)
         skew<-rbind(skew,sk)
       }
-    }
+    
     # write outputs
     write.table(SS,file="observed_popstats_mean.txt",quote=F,row.names=F, col.names = F, append=T,sep="\t")
     if(get.moments==T){
@@ -95,16 +94,15 @@ observed.sumstat<-function(model,path.to.fasta,fasta.files=list.files(),overall.
       write.table(kur,file="observed_popstats_kur.txt",quote=F,row.names=F, col.names = F, append=T,sep="\t")
       write.table(skew,file="observed_popstats_skew.txt",quote=F,row.names=F, col.names = F, append=T,sep="\t")
     }
-  }
+}
   if(overall.SS==T){
     SS<-NULL
     kur<-NULL
     vari<-NULL
     skew<-NULL
-    for(jj in 1:sim.block.size){
-      x<-NULL
-      for(ii in 1:nrow(model$loci)){
-        x<-rbind(x,OA.ss[[ii]][jj,])
+    x<-NULL
+    for(jj in 1:nrow(model$loci)){
+      x<-rbind(x,OA.ss[[jj]][1,])
       }
       SS<-rbind(SS,colMeans(x, na.rm=T))
       if(get.moments==T){
@@ -120,7 +118,7 @@ observed.sumstat<-function(model,path.to.fasta,fasta.files=list.files(),overall.
         kur<-rbind(kur,kk)
         skew<-rbind(skew,sk)
       }
-    }
+    
 
 
     write.table(SS,file="observed_overallstats_mean.txt",
