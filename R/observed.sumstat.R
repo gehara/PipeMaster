@@ -16,9 +16,9 @@ observed.sumstat<-function(model,path.to.fasta,fasta.files=list.files(),overall.
   if(perpop.SS==T){
       write.table(t(paste(NAMES,"_mean",sep="")),file ="observed_popstats_mean.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
       if(get.moments==T){
-        write.table(t(paste(NAMES,"_var",sep=""),file = "observed_popstats_var.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
-        write.table(t(paste(NAMES,"_kur",sep=""),file = "observed_popstats_kur.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
-        write.table(t(paste(NAMES,"_skew",sep=""),file = "observed_popstats_skew.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
+        write.table(t(paste(NAMES,"_var",sep="")),file = "observed_popstats_var.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
+        write.table(t(paste(NAMES,"_kur",sep="")),file = "observed_popstats_kur.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
+        write.table(t(paste(NAMES,"_skew",sep="")),file = "observed_popstats_skew.txt",quote=F,row.names=F, col.names = F,sep="\t",append=F)
       }
     }
     if(overall.SS==T){
