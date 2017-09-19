@@ -21,10 +21,20 @@ fasta2ms<-function(path.to.fasta,fasta.files,write.file=T){
       gap<-length(grep("-",fas[,i]))
       if(nrow(fas) %in% c(a,c,g,t)){
       } else if (gap>0){
-        } else if(n>0){
-        } else {bin<-cbind(bin,fas[,i])
-        pos<-c(pos,i)
-        }
+      } else if(n>0){
+      } else {bin<-cbind(bin,fas[,i])
+      pos<-c(pos,i)
+      }
+    }
+
+    if(is.null(pos)){
+      if(write.file==T){
+        write(file=paste(fasta.files[u],".ms",sep=""),paste("ms",nrow(fas),1))
+        write(file=paste(fasta.files[u],".ms",sep=""),"//",append=T)
+        write(file=paste(fasta.files[u],".ms",sep=""),paste("segsites:",0),append=T)
+        write(file=paste(fasta.files[u],".ms",sep=""),paste("positions:"),append=T)
+      }
+      next
     }
 
     pos<-pos/ncol(fas)
@@ -41,7 +51,8 @@ fasta2ms<-function(path.to.fasta,fasta.files,write.file=T){
       for(i in 1:3){
         bin[,j]<-gsub(names(bases[i]),1,bin[,j])
       }
-      }
+    }
+
     seqs<-NULL
     for(i in 1:nrow(bin)){
       seqs<-c(seqs,paste(bin[i,],collapse=""))
