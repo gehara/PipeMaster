@@ -72,7 +72,7 @@ To simulate summary statistics you run the following function.
 * perpop.SS = if TRUE calculates the summary stats per population. Default is TRUE.  
 * use.alpha = if TRUE the most recent population size change will be exponential. Sudden change if FALSE. Default is FALSE.  
 * sim.block.size = simulations are performed in blocks. This argument defines the size of the block, i.e. how many simulations you what to run per block.
-* nsim.blocks = number of blocks you what to simulate. The total number of simulations is: nsim.blocks x sim.block.size.  
+* nsim.blocks = number of blocks you want to simulate. The total number of simulations is: nsim.blocks x sim.block.size.  
 * append.sims = if TRUE simulations will be appended in the last simulation output. Default is FALSE.  
 
 ####Simulating coalescent trees
