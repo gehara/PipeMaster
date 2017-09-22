@@ -30,13 +30,14 @@ _You can use a previously build model as a template_:
 
 > model2<-main.menu(model1)
 
-The function will ask you to write a topology in newick format and the menu will pop up with the following options.
+The function will ask you to write a topology in newick format or "1" if you want to simulate a single pop model. 
+After typing your option the menu will pop up.
 
 > main.menu()  
-write bifurcating topology in newick format: (1,2);  
+write bifurcating topology in newick format or 1 for single population: (1,2);
 ```
 A > Number of populations to simulate      2  
-B > Tree                                   (1,2);  
+B > Tree (go here to remove nodes)         (1,2);  
     Number of nodes (junctions)            1  
 C > Migration                              FALSE  
 D > Pop size change through time           FALSE  
@@ -70,8 +71,8 @@ To simulate summary statistics you run the following function.
 * overall.SS = if TRUE calculates the summary stats across all your populations. Defaut is FALSE.  
 * perpop.SS = if TRUE calculates the summary stats per population. Default is TRUE.  
 * use.alpha = if TRUE the most recent population size change will be exponential. Sudden change if FALSE. Default is FALSE.  
-* sim.block.size = simulations are performed in blocks. This argument defines the size of the block. How many simulations you what to run per block.
-* nsim.blocks = that setup how many blocks you what to simulate. The total number of simulations is: nsim.blocks x sim.block.size.  
+* sim.block.size = simulations are performed in blocks. This argument defines the size of the block, i.e. how many simulations you what to run per block.
+* nsim.blocks = number of blocks you what to simulate. The total number of simulations is: nsim.blocks x sim.block.size.  
 * append.sims = if TRUE simulations will be appended in the last simulation output. Default is FALSE.  
 
 ####Simulating coalescent trees
