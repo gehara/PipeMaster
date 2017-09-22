@@ -1,4 +1,4 @@
-#PipeMaster
+# PipeMaster
 
 Pipemaster can help you build coalescent models, add prior information on model parameters and simulate data sampling parameter values from those priors.
 
@@ -6,7 +6,7 @@ Pipemaster can help you build coalescent models, add prior information on model 
 
 You can use PipeMaster to simulate summary statistics and coalescent trees. You can also calculate the same summary statistics on your empirical data. You can then perform an abc analysis using the "abc" R-package or use a machine learning algorithm to do model and/or parameter inference.
 
-####Installing the package  
+#### Installing the package  
 
 > install.packages("devtools")  
 > install_github("gehara/PipeMaster")  
@@ -21,7 +21,7 @@ If you have questions contact me at: marcelo.gehara@gmail.com
 
 
 ### Nonhierarchical models
-####Using the menu to build your model
+#### Using the menu to build your model
 You start by setting up your model through the menu, you run the main.menu() function and directs the output to an R object that will store your model.
 
 > model<-main.menu()
@@ -59,7 +59,7 @@ Q > Quit, my model is ready!
 This will give you a simple isolation model. You can add complexity to the model by using the interactive menu.
 You must go to the "_H > Conditions_" and the "_I > Gene setup_" before quitting.
 
-####Simulating summary stats
+#### Simulating summary stats
 
 To simulate summary statistics you run the following function.
 
