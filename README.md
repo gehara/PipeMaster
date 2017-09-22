@@ -11,6 +11,16 @@ You can use PipeMaster to simulate summary statistics and coalescent trees. You 
 > install.packages("devtools")  
 > install_github("gehara/PipeMaster")  
 
+### Hierarchical codemographic model used in: 
+	Gehara M, Garda AA, Werneck FP, et al. Estimating synchronous demographic changes across populations 
+	using hABC and its application for a herpetological community from northeastern Brazil.
+	Mol Ecol. 2017;00:1–16. https://doi.org/10.1111/mec.14239
+
+Soon here instructions of how to setup the simulations!
+If you have questions contact me at: marcelo.gehara@gmail.com
+
+
+### Nonhierarchical models
 ####Using the menu to build your model
 You start by setting up your model through the menu, you run the main.menu() function and directs the output to an R object that will store your model.
 
