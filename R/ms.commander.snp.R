@@ -183,12 +183,12 @@ ms.commander.snp<-function(model,use.alpha=use.alpha,msABC){
   commands<-list(NULL)
   I1<-model$I
 
-  y<-paste(msABC," ",sum(as.numeric(I1[,4:ncol(I1)]))," ",ceiling(as.numeric(model$loci[,3])*(1-as.numeric(model$loci[,1])))," -t ",loci[1,7],
+  y<-paste(msABC," ",sum(as.numeric(I1[,4:ncol(I1)]))," ",ceiling(as.numeric(model$loci[,3])*(1-(as.numeric(model$loci[,1])/100)))," -t ",loci[1,7],
            if(model$I[1,3]!="1")paste(" ",paste(I1[1,2:ncol(I1)],collapse=" "),sep=""),sep="")
   commands[[1]]<-paste(y,string,collapse=" ")
 
-  I1[4:ncol(I1)]<-as.numeric(I1[4:ncol(I1)])-floor(as.numeric(model$I[,4:ncol(model$I)])*as.numeric(model$loci[,1]))
-  y<-paste(msABC," ",sum(as.numeric(I1[,4:ncol(I1)]))," ",ceiling(as.numeric(model$loci[,3])*(as.numeric(model$loci[,1])))," -t ",loci[1,7],
+  I1[4:ncol(I1)]<-as.numeric(I1[4:ncol(I1)])-floor(as.numeric(model$I[,4:ncol(model$I)])*(as.numeric(model$loci[,1])/100))
+  y<-paste(msABC," ",sum(as.numeric(I1[,4:ncol(I1)]))," ",ceiling(as.numeric(model$loci[,3])*(as.numeric(model$loci[,1])/100))," -t ",loci[1,7],
            if(model$I[1,3]!="1")paste(" ",paste(I1[1,2:ncol(I1)],collapse=" "),sep=""),sep="")
   commands[[2]]<-paste(y,string,collapse=" ")
 
