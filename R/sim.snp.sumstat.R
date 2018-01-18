@@ -1,5 +1,5 @@
 
-sim.snp.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,
+sim.snp.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F,
                           append.sims=F,block.size=100, msABC.call="./msABC",output.name){
 
   # set working directory
@@ -10,8 +10,13 @@ sim.snp.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,
                         msABC=msABC.call)
   x<-strsplit(system(com[[1]],intern=T),"\t")
   nam<-x[1]
-  write.table(t(nam[[1]]),file=paste(output.name,"_stats.txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")
+  write.table(t(paste(nam[[1]],"_mean",sep="")),file=paste(output.name,"_mean.txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")
   write.table(t(com[[3]][1,]),file=paste(output.name,"_par.txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")
+  if(moments==T){
+    write.table(t(paste(nam[[1]],"_kur",sep="")),file=paste(output.name,"_kur.txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")
+    write.table(t(paste(nam[[1]],"_skew",sep="")),file=paste(output.name,"_skew.txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")
+    write.table(t(paste(nam[[1]],"_var",sep="")),file=paste(output.name,"_var.txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")
+  }
   }
 
   thou<-0
@@ -28,14 +33,29 @@ sim.snp.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,
     system(paste(com[[2]],"> out.txt"))
     S2<-read.table("out.txt",header = T)}
     sumstat<-rbind(S1,S2)
-    sumstat<-colMeans(sumstat,na.rm = T)
+    mean<-colMeans(sumstat,na.rm = T)
+    if(moments==T){
+      kur<-apply(sumstat,2,kurtosis, na.rm=T)
+      skew<-apply(sumstat,2,skewness, na.rm=T)
+      var<-apply(sumstat,2,var, na.rm=T)
+      VAR<-rbind(VAR,var)
+      SKEW<-rbind(SKEW,skew)
+      KUR<-rbind(KUR,kur)
+    }
     param<-rbind(param,com[[3]][2,])
-    SS<-rbind(SS,sumstat)
+    SS<-rbind(SS,mean)
+
     print(thou+i)
 
     }
   thou<-thou+block.size
-  write.table(SS,file=paste(output.name,"_stats.txt",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
+  write.table(SS,file=paste(output.name,"_mean.txt",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
   write.table(param,file=paste(output.name,"_par.txt",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
+  if(moments==T){
+    write.table(KUR,file=paste(output.name,"_kur.txt",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
+    write.table(SKEW,file=paste(output.name,"_skew.txt",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
+    write.table(VAR,file=paste(output.name,"_var.txt",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
+  }
+
   }
 }
