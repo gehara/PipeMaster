@@ -23,6 +23,13 @@ sim.snp.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F,
   for(j in 1:nsim.blocks){
   SS<-NULL
   param<-NULL
+
+  if(moments==T){
+    VAR<-NULL
+    KUR<-NULL
+    SKEW<-NULL
+  }
+
   for(i in 1:block.size){
     com<-ms.commander.snp(model,msABC=msABC.call, use.alpha = use.alpha)
 
