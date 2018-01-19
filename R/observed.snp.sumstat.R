@@ -1,5 +1,5 @@
 
-observed.snp.sumstat<-function(path.to.fasta,pop.assign,msABC.call){
+observed.snp.sumstat<-function(path.to.fasta,pop.assign,moments=F,msABC.call){
   setwd(path.to.fasta)
   fasta.files<-list.files()
   fasta.files<-fasta.files[grep(".fa",fasta.files,fixed=T)]
@@ -15,7 +15,20 @@ observed.snp.sumstat<-function(path.to.fasta,pop.assign,msABC.call){
   print(paste(i,"   ",observed[[i]][1],"SNPs"))
   }
   observed<-matrix(unlist(observed), ncol = length(observed[[1]]), byrow = TRUE)
-  observed<-colMeans(observed,na.rm = T)
+
+  mean<-colMeans(observed,na.rm = T)
+  if(moments==T){
+  kur<-apply(observed,2,kurtosis, na.rm=T)
+  skew<-apply(observed,2,skewness, na.rm=T)
+  var<-apply(observed,2,var, na.rm=T)
+  }
+  observed<-list(mean,NULL,NULL,NULL)
+  names(observed)<-c("mean","variance","kurtosis","skewness")
+  if(moments==T){
+    observed[[2]]<-var
+    observed[[3]]<-kur
+    observed[[4]]<-skew
+  }
   return(observed)
   }
 
