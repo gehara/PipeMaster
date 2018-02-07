@@ -12,7 +12,7 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
       x <- match(rownames(fas),pops[j, 1])
       x <- which(x==1)
       if (length(x)!=0) {
-        p <- rbind(p, pops[j, ])
+        p <- rbind(p, pops[rep(j,length(x)), ])
         fasta <- rbind(fasta, fas[x, ])
       }
     }
