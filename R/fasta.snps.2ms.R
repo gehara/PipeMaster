@@ -1,5 +1,5 @@
 fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
-  
+
   ms.out<-list()
   for(u in 1:length(fasta.files)){
     fas<-read.dna(file=fasta.files[1], format="fasta")
@@ -10,10 +10,10 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
     p<-NULL
     for(j in 1:nrow(pops)){
       x<-match(pops[j,1],rownames(fas))
-    if(length(x)>0){
-      p<-rbind(p,pops[j,])
-      fasta<-rbind(fasta,fas[x,])
-    }
+      if (is.na(x)==F) {
+        p <- rbind(p, pops[j, ])
+        fasta <- rbind(fasta, fas[x, ])
+      }
     }
     fas<-fasta
     pops<-p
@@ -22,9 +22,9 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
     for(i in 1:npops){
       pop.list[[i]]<-length(grep(i,pops[,2]))
     }
-   
+
     string<-paste("-I",npops,paste(unlist(pop.list),collapse=" "))
-   
+
     bin<-NULL
     pos<-NULL
     for(i in 1:ncol(fas)){
@@ -32,14 +32,14 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
       c<-length(grep("c",fas[,i]))
       g<-length(grep("g",fas[,i]))
       t<-length(grep("t",fas[,i]))
-      
+
       r<-length(grep("r",fas[,i]))
       y<-length(grep("y",fas[,i]))
       m<-length(grep("m",fas[,i]))
       k<-length(grep("k",fas[,i]))
       s<-length(grep("s",fas[,i]))
       w<-length(grep("w",fas[,i]))
-      
+
       h<-length(grep("h",fas[,i]))
       b<-length(grep("b",fas[,i]))
       v<-length(grep("v",fas[,i]))
@@ -60,14 +60,14 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
       a<-length(grep("a",bin[,j]))/nrow(bin)
       t<-length(grep("t",bin[,j]))/nrow(bin)
       c<-length(grep("c",bin[,j]))/nrow(bin)
-     
+
       r<-length(grep("r",bin[,j]))/nrow(bin)
       y<-length(grep("y",bin[,j]))/nrow(bin)
       m<-length(grep("m",bin[,j]))/nrow(bin)
       k<-length(grep("k",bin[,j]))/nrow(bin)
       s<-length(grep("s",bin[,j]))/nrow(bin)
       w<-length(grep("w",bin[,j]))/nrow(bin)
-      
+
       h<-length(grep("h",bin[,j]))/nrow(bin)
       b<-length(grep("b",bin[,j]))/nrow(bin)
       v<-length(grep("v",bin[,j]))/nrow(bin)
@@ -88,7 +88,7 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
     ss<-ncol(bin)
     }else{seqs<-NULL
     ss<-0}
-    
+
     if(write.file==T){
       write(file=paste(strsplit(fasta.files[u],".",fixed=T)[[1]][1],".ms",sep=""),paste("ms",nrow(fas),1,string))
       write(file=paste(strsplit(fasta.files[u],".",fixed=T)[[1]][1],".ms",sep=""),"//",append=T)
@@ -103,8 +103,8 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
       ms.out[[u]]<-c(ms.out[[u]],paste("segsites:",ss))
       ms.out[[u]]<-c(ms.out[[u]],paste("positions:   ",paste(pos,collapse="    ")))
       ms.out[[u]]<-c(ms.out[[u]],paste(seqs,sep="\n"))
-   
-    
+
+
   }
   return(ms.out)
 }
