@@ -61,9 +61,6 @@ ms.commander.snp<-function(model,use.alpha=use.alpha,msABC){
     # rescale to inheritance scalar and transform size parameters to relative to Ne0
     size.pars[,4:5]<-as.numeric(size.pars[,4])/Ne0
 
-    # rescale migration to inheritance scalar
-    mig.pars[,4:5]<-as.numeric(mig.pars[,4])*as.numeric(loci[,3])
-
     # empty string for ms flags
     string<-list()
 
