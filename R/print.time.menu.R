@@ -8,21 +8,21 @@ print.time.menu<-function()
   }
 
   cat(if(is.null(.e$ej)==F)
-      paste("A > Time prior distribution:    ",.e$ej[1,6]),
+      paste("P > Time prior distribution:    ",.e$ej[1,6]),
       if(is.null(.e$ej)==F)
       paste("    Time priors                  ",dist.par),
       if(is.null(.e$ej)==F)
-      paste("   j >  time of junctions: "),
+      paste("   J >  time of junctions: "),
       if(is.null(.e$ej)==F)
       paste("                    ",c(1:nrow(.e$ej)),"  ",.e$ej[,1],"  ",.e$ej[,4]," ",.e$ej[,5]),
       paste(" "),
       if(exists("en", envir=.e))
-      paste("   n >  time of ancestral Ne change: "),
+      paste("   N >  time of ancestral Ne change: "),
       if(exists("en", envir=.e))
       paste("            ",c(1:nrow(.e$en$time)),"  ",.e$en$time[,1],"  ",.e$en$time[,4]," ",.e$en$time[,5]),
       paste(" "),
       if(exists("em", envir=.e))
-      paste("   m >  time of migration change: "),
+      paste("   M >  time of migration change: "),
       if(exists("em", envir=.e))
       paste("                ",c(1:nrow(.e$em$time)),"  ",.e$em$time[,1],"  ",.e$em$time[,4]," ",.e$em$time[,5]),
       paste("B > Back to Ne menu"),

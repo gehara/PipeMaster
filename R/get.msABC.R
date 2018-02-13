@@ -3,6 +3,9 @@ get.msABC<-function(){
 
   if(Sys.info()[1]=="Linux"){
     msABC.call<-paste(pack,"/msABClinux",sep="")
-    }
+  }
+  if(Sys.info()[1]=="mac"){
+    msABC.call<-paste(pack,"/msABCmac",sep="")
+  }
   return(msABC.call)
   }

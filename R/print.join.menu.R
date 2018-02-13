@@ -4,7 +4,7 @@ print.join.menu<-function()
     dist.par<-"Mean, SD"
   if(eJt[[1]][3]=="uniform")
     dist.par<-"min, max"
-  
+
   cat(paste("A > Junction prior distribution:       ",eJt[[1]][3]),
       paste("P > Priors                          c(",dist.par,")"),
       paste("                    ",names(eJt),"     ",eJt),

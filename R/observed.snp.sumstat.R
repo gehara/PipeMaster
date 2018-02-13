@@ -30,7 +30,7 @@ observed.snp.sumstat<-function(model,path.to.fasta,pop.assign,moments=F,msABC.ca
     system(paste(msABC.call," ",xx," --obs ",locus.name,".ms > ",locus.name,".out",sep=""),wait=T)
     observed[[i]]<-read.table(file=paste(locus.name,".out",sep=""),header=T)
     snps<-grep("segs",names(observed[[i]]))
-    print(paste(i,"   ",sum(observed[[i]][snps[1:(length(snps)-1)]]),"SNPs"))
+    cat(paste(i,"   ",sum(observed[[i]][snps[1:(length(snps)-1)]]),"SNPs"))
   }
   observed<-matrix(unlist(observed), ncol = length(observed[[1]]), byrow = TRUE)
 
