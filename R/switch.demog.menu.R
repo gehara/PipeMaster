@@ -15,7 +15,11 @@ switch.demog.menu<-function(){
          sys.call(which=-1)
          demog.menu()},
 
-         "D" = {anc.Ne<-readline("Different ancestral NE (YES or NO?): ")
+         "D" = {anc.Ne<-readline("Different ancestral Ne (YES or NO?): ")
+         while(anc.Ne %in% c(.e$YES,.e$NO)==F){
+           cat(paste("Type a valid letter. You typed:",anc.Ne))
+           anc.Ne<-readline("Different ancestral migration (YES or NO?): ")
+         }
          if(anc.Ne %in% .e$YES){
            anc.Ne.par()
            sys.parent(n=1)
@@ -28,6 +32,10 @@ switch.demog.menu<-function(){
          },
 
          "C" = {xrow<-as.numeric(readline("Which parameter do you want to set up? (write the reference number from the menu): "))
+              while(xrow %in% c(1:nrow(.e$n))==F){
+                cat(paste("Type a valid number. You typed:",xrow))
+                xrow<-as.numeric(readline("Which parameter do you want to set up? (write the reference number from the menu): "))
+         }
          if(.e$n[1,6]=="normal"){
            .e$n[xrow,4]<-readline(paste("Ne prior (4Nm)",.e$n[xrow,1],"mean: "))
            .e$n[xrow,5]<-readline(paste("Ne prior (4Nm)",.e$n[xrow,1],"Standard Deviation: "))
@@ -42,6 +50,10 @@ switch.demog.menu<-function(){
 
 
          "A" = {xrow<-as.numeric(readline("Which parameter do you want to set up? (write the reference number from the menu): "))
+         while(xrow %in% c(1:nrow(.e$en$size))==F){
+           cat(paste("Type a valid number. You typed:",xrow))
+           xrow<-as.numeric(readline("Which parameter do you want to set up? (write the reference number from the menu): "))
+         }
          if(.e$en$size[1,6]=="normal"){
            .e$en$size[xrow,4]<-readline(paste("Ancestral Ne prior (4Nm)",.e$en$size[xrow,1],"mean: "))
            .e$en$size[xrow,5]<-readline(paste("Ancestral Ne prior (4Nm)",.e$en$size[xrow,1],"Standard Deviation: "))

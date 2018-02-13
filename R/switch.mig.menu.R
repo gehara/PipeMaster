@@ -31,7 +31,7 @@ switch.mig.menu<-function(){
          "P" = {xrow<-as.numeric(readline("Which parameter do you want to set up? (write the reference number from the menu): "))
               while(xrow %in% c(1:nrow(.e$m))==F){
                   cat(paste("Type a valid number. You typed:",xrow))
-                  xrow<-readline("Which parameter do you want to set up? (write the reference number from the menu): ")
+                  xrow<-as.numeric(readline("Which parameter do you want to set up? (write the reference number from the menu): "))
                }
               if(.e$m[1,6]=="normal"){
               .e$m[xrow,4]<-readline(paste("migration prior (4Nm)",.e$m[xrow,1],"mean: "))
@@ -47,7 +47,7 @@ switch.mig.menu<-function(){
         "A" = {xrow<-as.numeric(readline("Which parameter do you want to set up? (write the reference number from the menu): "))
                 while(xrow %in% c(1:nrow(.e$em$size))==F){
                       cat(paste("Type a valid number. You typed:",xrow))
-                      xrow<-readline("Which parameter do you want to set up? (write the reference number from the menu): ")
+                      xrow<-as.numeric(readline("Which parameter do you want to set up? (write the reference number from the menu): "))
                       }
                 if(.e$m[1,6]=="normal"){
                     .e$em$size[xrow,4]<-readline(paste("migration prior (4Nm)",.e$em$size[xrow,1],"mean: "))

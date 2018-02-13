@@ -48,7 +48,7 @@ sim.snp.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F,
     system(paste(com[[2]],"> out.txt"))
     S2<-read.table("out.txt",header = T)}
     sumstat<-rbind(S1,S2)
-    TD_denom<-sumstat[,grep("pi",colnames(sumstat))]-sumstat[,grep("theta_w",colnames(sumstat))]
+    TD_denom<-data.frame(sumstat[,grep("pi",colnames(sumstat))]-sumstat[,grep("theta_w",colnames(sumstat))])
     colnames(TD_denom)<-paste(colnames(sumstat)[grep("pi",colnames(sumstat))],
                               colnames(sumstat)[grep("theta_w",colnames(sumstat))],sep="_")
     sumstat<-sumstat[,-grep("ZnS",colnames(sumstat))]
