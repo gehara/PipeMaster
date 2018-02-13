@@ -1,4 +1,11 @@
-library(ape)
+#' Starts the menu for model building.
+#'
+#' @param input a model object to be used as template. Can be left blank.
+#' @return An object representing a diversification model.
+#' @examples
+#' my.model<-main.menu()
+#' sim.sumstat(my.model)
+
 .e<-new.env()
 
 main.menu<-function(input=NULL)
