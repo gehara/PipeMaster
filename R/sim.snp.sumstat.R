@@ -1,6 +1,6 @@
 
 sim.snp.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F,
-                          append.sims=F,block.size=100, msABC.call="./msABC",output.name){
+                          append.sims=F,block.size=100, msABC.call=get.msABC(),output.name){
 
   # set working directory
   setwd(path)

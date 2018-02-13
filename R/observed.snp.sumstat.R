@@ -1,6 +1,5 @@
 
-observed.snp.sumstat<-function(model,path.to.fasta,pop.assign,moments=F,msABC.call){
-
+observed.snp.sumstat<-function(model,path.to.fasta,pop.assign,moments=F,msABC.call=get.msABC()){
 
   com<-ms.commander.snp(model,use.alpha=F,
                         msABC=msABC.call)

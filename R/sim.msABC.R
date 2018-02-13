@@ -1,5 +1,5 @@
 
-sim.msABC<-function(model,use.alpha=F,nsim.blocks,path=getwd(),append.sims=F,block.size=1000, msABC.call="./msABC",output.name="sims"){
+sim.msABC<-function(model,use.alpha=F,nsim.blocks,path=getwd(),append.sims=F,block.size=1000, msABC.call=get.msABC(),output.name="sims"){
 
   # set working directory
   setwd(path)
