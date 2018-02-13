@@ -1,4 +1,3 @@
-
 observed.snp.sumstat<-function(model,path.to.fasta,pop.assign,moments=F,msABC.call=get.msABC()){
 
   com<-ms.commander.snp(model,use.alpha=F,
@@ -37,7 +36,7 @@ observed.snp.sumstat<-function(model,path.to.fasta,pop.assign,moments=F,msABC.ca
 
   colnames(observed)<-x[1][[1]]
 
-  TD_denom<-observed[,grep("pi",colnames(observed))]-observed[,grep("theta_w",colnames(observed))]
+  TD_denom<-data.frame(observed[,grep("pi",colnames(observed))]-observed[,grep("theta_w",colnames(observed))])
 
   colnames(TD_denom)<-paste(colnames(observed)[grep("pi",colnames(observed))],
                             colnames(observed)[grep("theta_w",colnames(observed))],sep="_")
