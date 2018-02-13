@@ -1,3 +1,6 @@
+#' internal function
+#' @description transforms fasta alignments in ms-like.
+#'
 fasta2ms<-function(path.to.fasta,fasta.files,write.file=T){
 
   setwd(path.to.fasta)

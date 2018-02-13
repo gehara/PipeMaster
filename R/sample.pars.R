@@ -1,3 +1,5 @@
+#' internal function of the ms.commander
+#'
 sample.pars<-function(x){
   k<-sample(nrow(x),nrow(x))
   for(i in k){

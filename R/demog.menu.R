@@ -1,4 +1,5 @@
-
+#' internal function of the Model Builder
+#'
 demog.menu<-function(){
 
   print.demog.menu()

@@ -1,3 +1,6 @@
+#' internal function of the coexpansion model
+#' @description calculates summary statistics on ms-like files.
+#'
 coexp.sumstat<-function(ms.output,gene.prior){
 sum.stat<-NULL
 

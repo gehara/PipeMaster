@@ -1,3 +1,5 @@
+#' internal function of the Model Builder
+#'
 print.time.menu<-function()
   {
   if(is.null(.e$ej)==F){

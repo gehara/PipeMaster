@@ -1,4 +1,5 @@
-
+#' internal function of the Model Builder
+#'
 loci.par<-function()
   {
     ## get topology and number of nodes
@@ -16,7 +17,7 @@ loci.par<-function()
     .e$loci[,4]<-5e-9
     .e$loci[,5]<-1.5e-8
     .e$loci[,6]<-"uniform"
-    
+
 }
 
 

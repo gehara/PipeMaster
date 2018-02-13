@@ -6,7 +6,7 @@ Date: 2017-03-22
 Authors@R: c(person("Marcelo", "Gehara", email = "marcelo.gehara@gmail.com", role = c("aut", "cre")),
              person("Guilherme","Mazzocchini", role="aut"),
              person("Frank","Burbrink", role="aut"))
-Imports:  ape,
+Imports: ape,
           e1071,
           phyclust,
           PopGenome,
@@ -17,3 +17,4 @@ License: GPL (>= 2)
 URL: http://www.marcelogehara.org/
 BugReports: https://github.com/gehara/PipeMaster
 LazyData: TRUE
+RoxygenNote: 6.0.1

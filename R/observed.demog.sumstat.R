@@ -1,3 +1,12 @@
+#' Observed summary statistics calculation for single pop demography
+#' @description This function calculates the summary statistics for each fasta files present in a partivular folder. It is instended to be used with the test.demog function. Here the same stats are calculated.
+#' @param path.to.fasta The path to the directory containing the fasta files for all species/populations.
+#' @author Marcelo Gehara
+#' @return A list of hippersummary statistics.
+#' @references Gehara M., Garda A.A., Werneck F.P., Oliveira E.F., da Fonseca E.M., Camurugi F., Magalhães F. de M., Lanna F.M., Sites J.W., Marques R., Silveira-Filho R., São Pedro V.A., Colli G.R., Costa G.C., & Burbrink F.T. (2017) Estimating synchronous demographic changes across populations using hABC and its application for a herpetological community from northeastern Brazil. Molecular Ecology, 26, 4756–4771.
+#' @references Chan Y.L., Schanzenbach D., & Hickerson M.J. (2014) Detecting concerted demographic response across community assemblages using hierarchical approximate Bayesian computation. Molecular Biology and Evolution, 31, 2501–2515.
+#'
+
 observed.demog.sumstat<-function(path.to.fasta,fasta.files){
 
   setwd(path.to.fasta)

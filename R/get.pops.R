@@ -1,3 +1,5 @@
+#' internal function of the sim.sumstat
+#'
 get.pops<-function(model){
   pops<-list(NULL)
   for(i in 1:nrow(model$I)){

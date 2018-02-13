@@ -1,4 +1,5 @@
-
+#' internal function of the Model Builder
+#'
 mig.menu<-function(){
 
   print.mig.menu()

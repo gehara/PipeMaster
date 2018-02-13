@@ -1,4 +1,5 @@
-
+#' internal function of the Model Builder
+#'
 mig.par<-function(){
   mig.par<-NULL
   pops<-NULL
@@ -10,7 +11,7 @@ mig.par<-function(){
         mig.par<-c(mig.par,m0)
         pops<-c(pops,paste(i,j))
         }
-      } 
+      }
     }
   .e$m<-matrix(nrow=length(mig.par),ncol=6)
   .e$m[,1]<-mig.par
@@ -19,5 +20,5 @@ mig.par<-function(){
   .e$m[,4]<-0.1
   .e$m[,5]<-1
   .e$m[,6]<-'uniform'
-  
+
 }

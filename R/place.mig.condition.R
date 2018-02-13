@@ -1,3 +1,5 @@
+#' internal function of the Model Builder
+#'
 place.mig.condition<-function(){
   print(.e$mig.matrix)
   cond<-readline("Write the name of 2 parameters with a logic sign inbetween ( >  or < or = ) separated by a space.
@@ -7,5 +9,5 @@ place.mig.condition<-function(){
   x<-grep(cond[[1]][3],colnames(.e$mig.matrix))
   .e$mig.matrix[y,x]<-cond[[1]][2]
   .e$mig.matrix<-inv.mirror.lower(.e$mig.matrix)
-  
+
 }

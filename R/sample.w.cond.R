@@ -1,10 +1,12 @@
+#' internal function of the ms.commander
+#'
 sample.w.cond<-function(par.matrix,cond.matrix){
-  
+
   nam<-rownames(cond.matrix)
   x<-sample.pars(par.matrix)
-  
+
   y<-which(cond.matrix=="<", arr.ind=T)
-  
+
   if(nrow(y)!=0){
     maior<-list(NULL)
     for(i in 1:nrow(y)){
@@ -15,15 +17,15 @@ sample.w.cond<-function(par.matrix,cond.matrix){
       }
       maior[[i]]<-mm
     }
-    
+
     while(eval.condition(x,y=maior)>0){
       for(j in 1:length(maior)){
       x[c(maior[[j]][1],maior[[j]][2]),]<-sample.pars(par.matrix[c(maior[[j]][1],maior[[j]][2]),])
         }
       }
-    
+
     }
-    
+
   z<-which(cond.matrix=="=", arr.ind=T)
   z<-z[order(z[,1]),]
   if(nrow(z)!=0){

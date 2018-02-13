@@ -1,6 +1,4 @@
 
-
-
 coexp.sample.pars.pulses<-function(nruns,
                             max.pulses,
                             buffer,
@@ -12,7 +10,7 @@ coexp.sample.pars.pulses<-function(nruns,
 
   dmode <- function(x) {
     den <- density(x, kernel=c("gaussian"))
-    ( den$x[den$y==max(den$y)] )
+    (den$x[den$y==max(den$y)])
   }
 
   MS.par<-list(NULL)

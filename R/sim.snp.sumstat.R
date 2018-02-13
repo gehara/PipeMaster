@@ -1,4 +1,21 @@
-
+#' Simulate summary statistics using msABC
+#'
+#' @param model A model object bult by the main.menu function.
+#' @param use.alpha Logical.If TRUE the most recent population size change will be exponential. If FALSE sudden demographic changes. Default is FALSE.
+#' @param nsim.blocks Number of blocks to simulate. The total number of simulations is: nsim.blocks x sim.block.size.
+#' @param sim.block.size Simulations are performed in blocks. This argument defines the size of the block in number of simulations, i.e. how many simulations to run per block.
+#'                       A block of 1000 will work for most cases. Increse the total number of simulations with nsim.block argument.
+#' @param path Path to write the output. By default outputs will be saved in the working directory.
+#' @param output.name String. The prefix of the output names. Defalt is "model"
+#' @param append.sims Logical. If TRUE simulations will be appended in the last output. Default is FALSE.
+#' @param get.moments Logical. If TRUE computes the four moments (mean, variance, kurtosis, skewness) of each summary statistics across loci. If False only mean is computed. Defalt is FALSE.
+#' @param msABC.call String. Path to the msABC executable. msABC binaries for Mac's and Linux are included in the package and should work in most computers.
+#'                   There is no need to change that unless you want to compile the program yourself and point the function to it.
+#' @return Writes simulations and parameters to the path directory.
+#' @references Hudson R.R. (2002) Generating samples under a Wright-Fisher neutral model of genetic variation. Bioinformatics, 18, 337–338.
+#' @references Pavlidis P., Laurent S., & Stephan W. (2010) msABC: A modification of Hudson’s ms to facilitate multi-locus ABC analysis. Molecular Ecology Resources, 10, 723–727.
+#' @author Marcelo Gehara
+#'
 sim.snp.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F,
                           append.sims=F,block.size=100, msABC.call=get.msABC(),output.name){
 

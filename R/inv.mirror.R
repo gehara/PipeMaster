@@ -1,3 +1,5 @@
+#' internal function of the Model Builder
+#'
 inv.mirror.lower<-function(x) {
   x1<-t(x)[lower.tri(x, diag=F)]
   for(i in 1:length(x1)) {

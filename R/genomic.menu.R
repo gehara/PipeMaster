@@ -1,3 +1,5 @@
+#' internal function of the Model Builder
+#'
 genomic.menu<-function(){
 
 print.genomic.menu()

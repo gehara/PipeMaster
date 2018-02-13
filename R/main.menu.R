@@ -1,15 +1,15 @@
-#' Starts the menu for model building.
+#' Model Builder
+#' @description
+#' This function starts the menu for model building.
 #'
-#' @param input a model object to be used as template. Can be left blank.
+#' @param  input A model object to be used as template. Can be left blank, defalt NULL.
 #' @return An object representing a diversification model.
 #' @examples
 #' my.model<-main.menu()
 #' sim.sumstat(my.model)
 
-.e<-new.env()
-
-main.menu<-function(input=NULL)
-    {
+main.menu<-function(input=NULL){
+  .e<-new.env()
   if(is.null(input)==T){} else{
     read.model.input(input)
   }
@@ -26,8 +26,4 @@ main.menu<-function(input=NULL)
      letter<<-readline(">>>>")
     }
   switch.main.menu()
-
   }
-
-
-

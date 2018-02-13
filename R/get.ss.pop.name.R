@@ -1,3 +1,5 @@
+#' internal function of the sim.sumstat
+#'
 get.ss.pop.name<-function(pops){
 
   S.s<-NULL

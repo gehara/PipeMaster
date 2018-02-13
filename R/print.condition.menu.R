@@ -1,4 +1,5 @@
-
+#' internal function of the Model Builder
+#'
 print.condition.menu<-function(){
 
 {cat(paste("size parameter               -- ",colnames(.e$size.matrix)),

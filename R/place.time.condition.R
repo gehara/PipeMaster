@@ -1,3 +1,5 @@
+#' internal function of the Model Builder
+#'
 place.time.condition<-function(){
   print(.e$time.matrix)
 cond<-readline("Write the name of 2 parameters with a logic sign inbetween ( >  or < or = ) separated by a space.

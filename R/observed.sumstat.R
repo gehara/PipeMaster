@@ -1,3 +1,17 @@
+#' Observed summary statistics
+#' @description This function calculates the observed summary statistics from an empirical data. This summary statistics are the same as those simulated by the sim.sumstat function. It is optimized for sanger data.
+#'
+#' @param model A model object bult by the main.menu function.
+#' @param path.to.fasta Path to the folder containing all fastas to be included in the calculation.
+#' @param list.files A list of fasta files to be included in the calculation. By default all fastas present in the folder are included.
+#' @param moments Logical. If TRUE computes the four moments (mean, variance, kurtosis, skewness) of each summary statistics across loci. If False only mean is computed. Defalt is FALSE.
+#' @param pop.assign A two-column data frame with sample names in the first column and the corresponding population membership as numbers in the second column. The numbers should match the population number in the model object.
+#' @param msABC.call String. Path to the msABC executable. msABC binaries for Mac's and Linux are included in the package and should work in most computers.
+#'                   There is no need to change that unless you want to compile the program yourself and point the function to it.
+#' @return A list of vectors containing the observed summary stats.
+#' @author Marcelo Gehara
+#' @note This function does not work on Windows systems.
+#'
 observed.sumstat<-function(model,path.to.fasta,fasta.files=list.files(),overall.SS=T,perpop.SS=T,get.moments=T){
 
   fasta.files<-fasta.files[grep(".fas",fasta.files)]

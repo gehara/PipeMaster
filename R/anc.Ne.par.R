@@ -1,4 +1,5 @@
-
+#' internal function of the Model Builder
+#'
 anc.Ne.par<-function(){
   anc.Ne.par<-NULL
   time.anc.Ne.par<-NULL
@@ -16,15 +17,15 @@ anc.Ne.par<-function(){
             }
           )
   }
-  
+
   .e$en$size<-matrix(nrow=length(anc.Ne.par),ncol=6)
   .e$en$size[,1]<-anc.Ne.par
   .e$en$size[,2]<-'-en'
   .e$en$size[,3]<-pop
   .e$en$size[,4]<-1000
   .e$en$size[,5]<-10000
-  .e$en$size[,6]<-'uniform'  
-    
+  .e$en$size[,6]<-'uniform'
+
   .e$en$time<-matrix(nrow=length(anc.Ne.par),ncol=6)
   .e$en$time[,1]<-time.anc.Ne.par
   .e$en$time[,2]<-'-en'

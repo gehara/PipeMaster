@@ -1,3 +1,5 @@
+#' internal function of the Model Builder
+#'
 condition.matrix<-function(){
   size<-.e$n[,1]
 

@@ -1,11 +1,13 @@
+#' internal function of the Model Builder
+#'
 print.mig.menu<-function()
   {
-  
+
   if(.e$m[1,6]=="normal")
     dist.par<-"Mean - SD"
   if(.e$m[1,6]=="uniform")
     dist.par<-"Min - Max"
-  
+
   cat(paste("M > Migration prior distribution:       ",.e$m[1,6]),
       paste("D > Different ancestral migration?         ",exists("em",envir=.e)),
       paste("P > priors                          ",dist.par),

@@ -1,3 +1,5 @@
+#' internal function of the Model Builder
+#'
 gene.menu<-function(){
 
 print.gene.menu()

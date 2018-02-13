@@ -1,6 +1,23 @@
-
-sim.sumstat<-function(model,use.alpha=F,nsim.blocks=1,perpop.SS=T,overall.SS=T,path=getwd(),
-                      output.name="model",get.moments=F,append.sims=F,sim.block.size=1000){
+#' Simulate summary statistics using ms and PopGenome
+#'
+#' @param model A model object bult by the main.menu function.
+#' @param use.alpha Logical.If TRUE the most recent population size change will be exponential. If FALSE sudden demographic changes. Default is FALSE.
+#' @param nsim.blocks Number of blocks to simulate. The total number of simulations is: nsim.blocks x sim.block.size.
+#' @param sim.block.size Simulations are performed in blocks. This argument defines the size of the block in number of simulations, i.e. how many simulations to run per block.
+#'                       A block of 1000 will work for most cases. Increse the total number of simulations with nsim.block argument.
+#' @param path Path to write the output. By default outputs will be saved in the working directory.
+#' @param perpop.SS Logical. If TRUE calculates the summary statistics per population. Default is TRUE.
+#' @param overall.SS Logical. If TRUE calculates the summary statistics across all your populations. Defaut is FALSE.
+#' @param output.name String. The prefix of the output names. Defalt is "model"
+#' @param append.sims Logical. If TRUE simulations will be appended in the last output. Default is FALSE.
+#' @param get.moments Logical. If TRUE computes the four moments (mean, variance, kurtosis, skewness) of each summary statistics across loci. If False only mean is computed. Defalt is FALSE.
+#' @return Writes simulations and parameters to the path directory.
+#' @references Hudson R.R. (2002) Generating samples under a Wright-Fisher neutral model of genetic variation. Bioinformatics, 18, 337–338.
+#' @references Pfeifer, B. et al. (2014) PopGenome: An Efficient Swiss Army Knife for Population Genomic Analyses in R. Mol Biol Evol 31(7): 1929-1936.<doi:10.1093/molbev/msu136>
+#' @author Marcelo Gehara
+#'
+sim.sumstat<-function(model,use.alpha=F,nsim.blocks=1,sim.block.size=1000,path=getwd(),perpop.SS=T,overall.SS=T,
+                      output.name="model",get.moments=F,append.sims=F){
 
   # get population structure
   pops<-get.pops(model)
