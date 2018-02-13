@@ -11,7 +11,7 @@ sim.snp.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F,
 
   x<-strsplit(system(com[[1]],intern=T),"\t")
   nam<-x[1][[1]]
-  TD_denom<-paste(nam[grep("pi",nam)],nam[grep("theta_w",nam)],sep=" - ")
+  TD_denom<-paste(nam[grep("pi",nam)],nam[grep("theta_w",nam)],sep="_")
   nam<-nam[-grep("ZnS",nam)]
   nam<-nam[-grep("thomson",nam)]
   nam<-c(nam, TD_denom)
