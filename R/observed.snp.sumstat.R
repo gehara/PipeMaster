@@ -6,7 +6,7 @@ observed.snp.sumstat<-function(model,path.to.fasta,pop.assign,moments=F,msABC.ca
   x<-strsplit(system(com[[1]],intern=T),"\t")
   nam<-x[1][[1]]
 
-  TD_denom<-paste(nam[grep("pi",nam)],nam[grep("theta_w",nam)],sep=" - ")
+  TD_denom<-paste(nam[grep("pi",nam)],nam[grep("theta_w",nam)],sep="_")
   nam<-nam[-grep("ZnS",nam)]
   nam<-nam[-grep("thomson",nam)]
   nam<-c(nam, TD_denom)
@@ -37,9 +37,6 @@ observed.snp.sumstat<-function(model,path.to.fasta,pop.assign,moments=F,msABC.ca
   colnames(observed)<-x[1][[1]]
 
   TD_denom<-data.frame(observed[,grep("pi",colnames(observed))]-observed[,grep("theta_w",colnames(observed))])
-
-  colnames(TD_denom)<-paste(colnames(observed)[grep("pi",colnames(observed))],
-                            colnames(observed)[grep("theta_w",colnames(observed))],sep="_")
 
   observed<-observed[,-grep("ZnS",colnames(observed))]
   observed<-observed[,-grep("thomson",colnames(observed))]
