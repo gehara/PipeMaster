@@ -28,6 +28,10 @@ switch.main.menu<-function(){
               main.menu()},
 
          C = {.e$mig.presence<-readline("Migration among populations (YES or NO)?: ")
+          while(.e$mig.presence %in% c(.e$YES,.e$NO)==F){
+                cat(paste("Type a valid letter. You typed:",.e$mig.presence))
+                .e$mig.presence<-readline("Migration among populations (YES or NO)?: ")
+                }
               if(.e$mig.presence %in% .e$YES){
                 mig.par()
                 } else if (.e$mig.presence %in% .e$NO){

@@ -1,9 +1,9 @@
 
 switch.demog.menu<-function(){
-  
+
   switch(letter,
-         
-         "1" = {prior.dist.Ne<-readline("Ne prior distribution (normal or uniform): ")
+
+         "N" = {prior.dist.Ne<-readline("Ne prior distribution (normal or uniform): ")
          while (prior.dist.Ne %in% c("normal","uniform")==F){
            print("Possible distributions are normal or uniform!")
            prior.dist.Ne<-readline("Ne prior distribution: ")
@@ -14,8 +14,8 @@ switch.demog.menu<-function(){
          }
          sys.call(which=-1)
          demog.menu()},
-         
-         "2" = {anc.Ne<-readline("Different ancestral NE (YES or NO?): ")
+
+         "D" = {anc.Ne<-readline("Different ancestral NE (YES or NO?): ")
          if(anc.Ne %in% .e$YES){
            anc.Ne.par()
            sys.parent(n=1)
@@ -26,8 +26,8 @@ switch.demog.menu<-function(){
          sys.call(which=-1)
          demog.menu()
          },
-         
-         "3" = {xrow<-as.numeric(readline("Which parameter do you want to set up? (write the reference number from the menu): "))
+
+         "C" = {xrow<-as.numeric(readline("Which parameter do you want to set up? (write the reference number from the menu): "))
          if(.e$n[1,6]=="normal"){
            .e$n[xrow,4]<-readline(paste("Ne prior (4Nm)",.e$n[xrow,1],"mean: "))
            .e$n[xrow,5]<-readline(paste("Ne prior (4Nm)",.e$n[xrow,1],"Standard Deviation: "))
@@ -39,9 +39,9 @@ switch.demog.menu<-function(){
          sys.call(which=-1)
          demog.menu()
            },
-           
-           
-         "4" = {xrow<-as.numeric(readline("Which parameter do you want to set up? (write the reference number from the menu): "))
+
+
+         "A" = {xrow<-as.numeric(readline("Which parameter do you want to set up? (write the reference number from the menu): "))
          if(.e$en$size[1,6]=="normal"){
            .e$en$size[xrow,4]<-readline(paste("Ancestral Ne prior (4Nm)",.e$en$size[xrow,1],"mean: "))
            .e$en$size[xrow,5]<-readline(paste("Ancestral Ne prior (4Nm)",.e$en$size[xrow,1],"Standard Deviation: "))
@@ -53,9 +53,9 @@ switch.demog.menu<-function(){
          sys.call(which=-1)
          demog.menu()
          },
-         
-         B = {sys.call(which=-1)
+
+         "B" = {sys.call(which=-1)
            main.menu()})
-  
+
 }
 

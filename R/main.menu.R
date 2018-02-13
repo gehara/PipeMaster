@@ -1,5 +1,3 @@
-#setwd("/media/marcelo/HD2/Dropbox/Programacao/Rcodes/ABC.package/menu")
-#setwd("C:/Users/Guilherme/Dropbox/ABC.package/menu")
 library(ape)
 .e<-new.env()
 
@@ -12,11 +10,14 @@ main.menu<-function(input=NULL)
   }else{join.par()}
   if(exists("n", envir=.e)){
   }else{cur.Ne.par()}
-  
-  print.main.menu()  
+
+  print.main.menu()
 
     letter<<-readline(">>>>")
-  
+    while(letter %in% c("A","B","C","D","E","F","G","H","I","Q")==F){
+     cat(paste("Choose a valid letter. You typed:",letter))
+     letter<<-readline(">>>>")
+    }
   switch.main.menu()
 
   }
