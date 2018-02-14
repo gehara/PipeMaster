@@ -1,6 +1,6 @@
 #' Observed summary statistics over thousends of loci
-#' @description his function calculates the observed summary statistics from an empirical data. This summary statistics are the same as those simulated by the sim.snp.sumstat function. It is optimized for nexgen data.
-#' @param model A model object bult by the main.menu function.
+#' @description This function calculates the observed summary statistics from an empirical data. This summary statistics are the same as those simulated by the sim.snp.sumstat function. It is optimized for nexgen data.
+#' @param model A model object bult by the main.menu function. Any model with the same number of populations of your empirical data will do the job. This is just to get the sumstats names correctly.
 #' @param path.to.fasta Path to the folder containing all fastas to be included in the calculation.
 #' @param moments Logical. If TRUE computes the four moments (mean, variance, kurtosis, skewness) of each summary statistics across loci. If False only mean is computed. The defalt is FALSE.
 #' @param pop.assign A two-column data frame with sample names in the first column and the corresponding population membership as numbers in the second column. The numbers should match the population number in the model object.

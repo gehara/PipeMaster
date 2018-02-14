@@ -30,7 +30,6 @@ theta<-4*Ne*mi*bp
 x<-ms(nsam=10, nrep=1, opts = paste("-t",theta))
 y<-ms.to.DNAbin(x,bp=1000)
 nuc.div(y)
-
 }
 \author{
 Marcelo Gehara

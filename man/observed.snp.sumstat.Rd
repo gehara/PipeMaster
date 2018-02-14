@@ -8,7 +8,7 @@ observed.snp.sumstat(model, path.to.fasta, pop.assign, moments = F,
   msABC.call = get.msABC())
 }
 \arguments{
-\item{model}{A model object bult by the main.menu function.}
+\item{model}{A model object bult by the main.menu function. Any model with the same number of populations of your empirical data will do the job. This is just to get the sumstats names correctly.}
 
 \item{path.to.fasta}{Path to the folder containing all fastas to be included in the calculation.}
 
@@ -23,7 +23,7 @@ There is no need to change that unless you want to compile the program yourself 
 A list of vectors containing the observed summary stats.
 }
 \description{
-his function calculates the observed summary statistics from an empirical data. This summary statistics are the same as those simulated by the sim.snp.sumstat function. It is optimized for nexgen data.
+This function calculates the observed summary statistics from an empirical data. This summary statistics are the same as those simulated by the sim.snp.sumstat function. It is optimized for nexgen data.
 }
 \note{
 This function does not work on Windows systems.

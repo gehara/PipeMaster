@@ -14,7 +14,6 @@
 #' x<-ms(nsam=10, nrep=1, opts = paste("-t",theta))
 #' y<-ms.to.DNAbin(x,bp=1000)
 #' nuc.div(y)
-#' 
 #' @export
 ms.to.DNAbin<-function(ms.output, bp.length){
   ss<-as.numeric(strsplit(ms.output[3]," ")[[1]][2]) # get seg sites

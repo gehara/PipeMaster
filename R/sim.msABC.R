@@ -1,5 +1,4 @@
 #' Simulate summary statistics using msABC
-#' @export
 #' @param model A model object bult by the main.menu function.
 #' @param use.alpha Logical.If TRUE the most recent population size change will be exponential. If FALSE sudden demographic changes. Default is FALSE.
 #' @param nsim.blocks Number of blocks to simulate. The total number of simulations is: nsim.blocks x sim.block.size.

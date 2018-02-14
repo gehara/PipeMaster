@@ -8,6 +8,8 @@ observed.sumstat(model, path.to.fasta, fasta.files = list.files(),
   overall.SS = T, perpop.SS = T, get.moments = T)
 }
 \arguments{
+\item{model}{A model object bult by the main.menu function.}
+
 \item{path.to.fasta}{Path to the folder containing all fastas to be included in the calculation.}
 
 \item{list.files}{A list of fasta files to be included in the calculation. By default all fastas present in the folder are included.}
