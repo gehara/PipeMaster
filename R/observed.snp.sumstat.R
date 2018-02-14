@@ -12,6 +12,7 @@
 #' @export
 observed.snp.sumstat<-function(model,path.to.fasta,pop.assign,moments=F,msABC.call=get.msABC()){
 
+
   setwd(path.to.fasta)
   fasta.files<-list.files()
   fasta.files<-fasta.files[grep(".fa",fasta.files,fixed=T)]
