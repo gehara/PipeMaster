@@ -5,10 +5,27 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
 
   ms.out<-list()
   for(u in 1:length(fasta.files)){
-    fas<-read.dna(file=fasta.files[1], format="fasta")
+    fas<-read.dna(file=fasta.files[u], format="fasta")
     fas<-as.character(fas)
-    pops<-read.table(pop.assign, header=T)
+    if(is.matrix(fas)==F){
+      stop(cat(paste("Something is wrong with alignment",fasta.files[u]),
+                    paste("Some potential problems:"),
+                    paste("1) sequences are not aligned"),
+                    paste("2) uknown character in the alignemt (only IUPAC nucleotide codes allowed, no question mark)"),
+                    paste("3) something else..."),sep="\n"))
+    }
+
+    pops<-pop.assign
     pops<-pops[with(pops, order(pops[,2])), ]
+
+
+    if(length(grep(-9,match(rownames(fas),pops[, 1],nomatch=-9)))>0){
+       rownames(fas)[grep(-9,match(rownames(fas),pops[, 1],nomatch=-9))]
+      stop(cat(paste("There is at least one sequence in the alignment",fasta.files[u],"without assignment."),
+             paste("The sequence name", rownames(fas)[grep(-9,match(rownames(fas),pops[, 1],nomatch=-9))]),
+             paste("has no match in the assignment file."),sep="\n"))
+    }
+
     fasta<-NULL
     p<-NULL
     for (j in 1:nrow(pops)) {
@@ -29,6 +46,7 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
 
     string<-paste("-I",npops,paste(unlist(pop.list),collapse=" "))
 
+    # keep only variable sites and get their position in the alignment
     bin<-NULL
     pos<-NULL
     for(i in 1:ncol(fas)){
@@ -58,6 +76,7 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
         }
       }
     pos<-pos/ncol(fas)
+
     if(!(is.null(bin))){
     for(j in 1:ncol(bin)){
       g<-length(grep("g",bin[,j]))/nrow(bin)
@@ -90,8 +109,17 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
       seqs<-c(seqs,paste(bin[i,],collapse=""))
     }
     ss<-ncol(bin)
+
+    x<-as.vector(bin)
+    if(length(c(grep("0",x),grep("1",x)))!=length(x)){
+      stop(paste("Something is wrong with alignment",fasta.files[u]))
+    }
+
+    ### if there is no variation
     }else{seqs<-NULL
     ss<-0}
+
+
 
     if(write.file==T){
       write(file=paste(strsplit(fasta.files[u],".",fixed=T)[[1]][1],".ms",sep=""),paste("ms",nrow(fas),1,string))
@@ -112,3 +140,4 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
   }
   return(ms.out)
 }
+
