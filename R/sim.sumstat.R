@@ -1,6 +1,6 @@
 #' Simulate summary statistics using ms and PopGenome
 #' @export
-#'#' @param model A model object bult by the main.menu function.
+#' @param model A model object bult by the main.menu function.
 #' @param use.alpha Logical.If TRUE the most recent population size change will be exponential. If FALSE sudden demographic changes. Default is FALSE.
 #' @param nsim.blocks Number of blocks to simulate. The total number of simulations is: nsim.blocks x sim.block.size.
 #' @param sim.block.size Simulations are performed in blocks. This argument defines the size of the block in number of simulations, i.e. how many simulations to run per block.
@@ -16,7 +16,6 @@
 #' @references Pfeifer, B. et al. (2014) PopGenome: An Efficient Swiss Army Knife for Population Genomic Analyses in R. Mol Biol Evol 31(7): 1929-1936.<doi:10.1093/molbev/msu136>
 #' @author Marcelo Gehara
 #' @export
-#'
 sim.sumstat<-function(model,use.alpha=F,nsim.blocks=1,sim.block.size=1000,path=getwd(),perpop.SS=T,overall.SS=T,
                       output.name="model",get.moments=F,append.sims=F){
 

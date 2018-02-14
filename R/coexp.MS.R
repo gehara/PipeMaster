@@ -1,8 +1,6 @@
 #' internal function
 #' @description control ms simulations
 #' @return ms simulations
-#'
-
 coexp.MS<-function(MS.par,gene.prior,alpha){
 
   nspecies<-length(MS.par)

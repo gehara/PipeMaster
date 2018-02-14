@@ -6,7 +6,6 @@
 #' my.model<-main.menu()
 #' sim.sumstat(my.model)
 #' @export
-#'
 main.menu<-function(input=NULL){
   .e<-new.env()
   if(is.null(input)==T){} else{

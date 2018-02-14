@@ -1,7 +1,6 @@
 #' internal function of the obs.snp.sumstat function
 #' @description transforms fasta alignments in ms-like.
 #' @export
-#'
 fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
 
   ms.out<-list()

@@ -6,7 +6,6 @@
 #' @return a list with msABC command and sampled parameters.
 #' @note This function is used internally for the sim.snp.sumstat function. One my want to run this function to check the msABC string.
 #' @export 
-#'
 ms.commander.snp<-function(model,use.alpha=use.alpha,msABC){
 
   # empty parameter vector

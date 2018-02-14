@@ -11,7 +11,6 @@
 #' @references Hudson R.R. (2002) Generating samples under a Wright-Fisher neutral model of genetic variation. Bioinformatics, 18, 337–338.
 #' @author Marcelo Gehara
 #' @export
-#'
 sim.coaltrees<-function(model,nsim.blocks,use.alpha=F,path=getwd(),append.sims=F,sim.block.size=1000){
 
   setwd(path)
