@@ -8,11 +8,11 @@ observed.snp.sumstat(model, path.to.fasta, pop.assign, moments = F,
   msABC.call = get.msABC())
 }
 \arguments{
-\item{model}{A model object bult by the main.menu function. Any model with the same number of populations of your empirical data will do the job. This is just to get the sumstats names correctly.}
+\item{model}{A model object bult by the main.menu function. Any model with the same number of populations of your empirical data will do the job. This is just to build the sumstats names correctly.}
 
 \item{path.to.fasta}{Path to the folder containing all fastas to be included in the calculation.}
 
-\item{pop.assign}{A two-column data frame with sample names in the first column and the corresponding population membership as numbers in the second column. The numbers should match the population number in the model object.}
+\item{pop.assign}{A two-column data frame with sample names in the first column and the corresponding population membership preferably as numbers in the second column (If you have a single population the numbers wont matter). The numbers should match the population number in the model object.}
 
 \item{moments}{Logical. If TRUE computes the four moments (mean, variance, kurtosis, skewness) of each summary statistics across loci. If False only mean is computed. The defalt is FALSE.}
 

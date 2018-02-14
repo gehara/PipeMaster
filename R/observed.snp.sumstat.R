@@ -1,9 +1,9 @@
 #' Observed summary statistics over thousends of loci
 #' @description This function calculates the observed summary statistics from an empirical data. This summary statistics are the same as those simulated by the sim.snp.sumstat function. It is optimized for nexgen data.
-#' @param model A model object bult by the main.menu function. Any model with the same number of populations of your empirical data will do the job. This is just to get the sumstats names correctly.
+#' @param model A model object bult by the main.menu function. Any model with the same number of populations of your empirical data will do the job. This is just to build the sumstats names correctly.
 #' @param path.to.fasta Path to the folder containing all fastas to be included in the calculation.
 #' @param moments Logical. If TRUE computes the four moments (mean, variance, kurtosis, skewness) of each summary statistics across loci. If False only mean is computed. The defalt is FALSE.
-#' @param pop.assign A two-column data frame with sample names in the first column and the corresponding population membership as numbers in the second column. The numbers should match the population number in the model object.
+#' @param pop.assign A two-column data frame with sample names in the first column and the corresponding population membership preferably as numbers in the second column (If you have a single population the numbers wont matter). The numbers should match the population number in the model object.
 #' @param msABC.call String. Path to the msABC executable. msABC binaries for Mac's and Linux are included in the package and should work in most computers.
 #'                   There is no need to change that unless you want to compile the program yourself and point the function to it.
 #' @return A list of vectors containing the observed summary stats.
@@ -16,7 +16,7 @@ observed.snp.sumstat<-function(model,path.to.fasta,pop.assign,moments=F,msABC.ca
   fasta.files<-list.files()
   fasta.files<-fasta.files[grep(".fa",fasta.files,fixed=T)]
   observed<-list()
-  pop.assign<-read.table(pop.assign, header=T)
+  #pop.assign<-read.table(pop.assign, header=T)
   for(i in 1:length(fasta.files)){
     ms.output<-fasta.snp.2ms(path.to.fasta,fasta.files[i],write.file=T,pop.assign)
     locus.name<-strsplit(fasta.files[i],".",fixed=T)[[1]][1]
