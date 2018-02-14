@@ -16,6 +16,7 @@
 #' @references Pavlidis P., Laurent S., & Stephan W. (2010) msABC: A modification of Hudson’s ms to facilitate multi-locus ABC analysis. Molecular Ecology Resources, 10, 723–727.
 #' @author Marcelo Gehara
 #'
+
 sim.snp.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F,
                           append.sims=F,block.size=100, msABC.call=get.msABC(),output.name){
 
