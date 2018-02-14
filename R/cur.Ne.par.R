@@ -1,5 +1,4 @@
 #' internal function of the Model Builder
-#'
 cur.Ne.par<-function(){
  list.Ne.pars<-NULL
   for (i in 1:.e$npops){

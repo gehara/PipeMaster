@@ -1,5 +1,4 @@
 #' internal function of the Model Builder
-#'
 get.model<-function(){
 
 

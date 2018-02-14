@@ -1,3 +1,4 @@
+#' @export
 test.demog<-function(nsims,
                      Ne.prior,
                      time.prior,

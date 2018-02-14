@@ -1,5 +1,4 @@
 #' internal function of the Model Builder
-#'
 loci.par<-function()
   {
     ## get topology and number of nodes

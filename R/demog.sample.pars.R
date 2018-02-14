@@ -1,5 +1,4 @@
 #' internal function of the test.demog function
-#'
 demog.sample.pars<-function(nruns,
                             var.zeta,
                             coexp.prior,

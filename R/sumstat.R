@@ -1,3 +1,4 @@
+
 sumstat<-function(ms.output,gene.prior){
 sum.stat<-NULL
 

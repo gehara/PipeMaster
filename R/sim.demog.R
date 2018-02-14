@@ -1,3 +1,4 @@
+#' @export
 sim.demog<-function(nsims,
                     coexp.prior,
                     Ne.prior,

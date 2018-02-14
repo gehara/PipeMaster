@@ -1,3 +1,4 @@
+
 sim.coexp.pulses<-function(nsims,
                     max.pulses,
                     coexp.prior,

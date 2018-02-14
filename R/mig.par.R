@@ -1,5 +1,4 @@
 #' internal function of the Model Builder
-#'
 mig.par<-function(){
   mig.par<-NULL
   pops<-NULL

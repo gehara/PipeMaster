@@ -9,7 +9,7 @@
 #' @return A list of vectors containing the observed summary stats.
 #' @author Marcelo Gehara
 #' @note This function does not work on Windows systems.
-#'
+#' @export
 observed.snp.sumstat<-function(model,path.to.fasta,pop.assign,moments=F,msABC.call=get.msABC()){
 
   com<-ms.commander.snp(model,use.alpha=F,

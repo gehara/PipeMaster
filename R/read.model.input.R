@@ -1,5 +1,4 @@
 #' internal function of the Model Builder
-#'
 read.model.input<-function(input){
 
   .e$ej<-input$flags$ej

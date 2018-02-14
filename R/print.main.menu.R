@@ -1,5 +1,4 @@
 #' internal function of the Model Builder
-#'
 print.main.menu<-function(){
 
 {cat(paste("A > Number of populations to simulate     ",nrow(.e$n)),

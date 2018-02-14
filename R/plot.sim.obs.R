@@ -4,7 +4,7 @@
 #' @param obs A vector of observed summary stats corresponding to the sim object.
 #' @return Graphic
 #' @author Marcelo Gehara
-#'
+#' @export
 plot.sim.obs<-function (sim, obs)
   {
     mylabels <- colnames(sim)

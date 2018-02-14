@@ -5,7 +5,7 @@
 #' @author Marcelo Gehara, according to Nei and Tajima (1981).
 #' @references Nei, M., & Tajima, F. (1981). DNA polymorphism detectable by restriction endonucleases. Genetics, 97, 145–163.
 #' @note requires Pegas package
-#'
+#' @export
 H.div<-function(x){
   h<-haplotype(x)
   hap<-attr(h, "index")

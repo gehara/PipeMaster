@@ -4,7 +4,7 @@
 #' @param use.alpha Logical.If TRUE the most recent population size change will be exponential. If FALSE sudden demographic changes.
 #' @return a list with msABC command and sampled parameters.
 #' @note This function is used internally for the sim.msABC function. One mey want to run this function to check the msABC string.
-#'
+#' @export
 msABC.commander<-function(model,use.alpha=use.alpha){
 
   # bind Ne, mig and Time priors

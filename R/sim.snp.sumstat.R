@@ -1,6 +1,6 @@
 #' Simulate summary statistics using msABC
-#'
-#' @param model A model object bult by the main.menu function.
+#' @export 
+#'#' @param model A model object bult by the main.menu function.
 #' @param use.alpha Logical.If TRUE the most recent population size change will be exponential. If FALSE sudden demographic changes. Default is FALSE.
 #' @param nsim.blocks Number of blocks to simulate. The total number of simulations is: nsim.blocks x sim.block.size.
 #' @param sim.block.size Simulations are performed in blocks. This argument defines the size of the block in number of simulations, i.e. how many simulations to run per block.
@@ -15,7 +15,7 @@
 #' @references Hudson R.R. (2002) Generating samples under a Wright-Fisher neutral model of genetic variation. Bioinformatics, 18, 337–338.
 #' @references Pavlidis P., Laurent S., & Stephan W. (2010) msABC: A modification of Hudson’s ms to facilitate multi-locus ABC analysis. Molecular Ecology Resources, 10, 723–727.
 #' @author Marcelo Gehara
-#'
+#' @export
 
 sim.snp.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F,
                           append.sims=F,block.size=100, msABC.call=get.msABC(),output.name){

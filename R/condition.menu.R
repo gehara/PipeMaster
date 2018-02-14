@@ -1,5 +1,4 @@
 #' internal function of the Model Builder
-#'
 condition.menu<-function(){
 
   print.condition.menu()

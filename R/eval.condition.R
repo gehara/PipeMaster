@@ -1,5 +1,4 @@
 #' internal function of the Model Builder
-#'
 eval.condition<-function(x,y){
   value<-NULL
   for(i in 1:length(y)){

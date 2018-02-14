@@ -1,6 +1,6 @@
 #' Internal function of the sim.coexp function
 #' @description sample the parameters of the models from prior distributions.
-#'
+#' @export
 coexp.sample.pars<-function(nruns,
                             var.zeta,
                             coexp.prior,

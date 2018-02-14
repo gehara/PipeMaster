@@ -1,5 +1,4 @@
 #' internal function of the Model Builder
-#'
 print.demog.menu<-function()
   {
   if(.e$n[1,6]=="normal")

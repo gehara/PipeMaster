@@ -1,5 +1,4 @@
 #' internal function of the ms.commander
-#'
 sample.w.cond<-function(par.matrix,cond.matrix){
 
   nam<-rownames(cond.matrix)

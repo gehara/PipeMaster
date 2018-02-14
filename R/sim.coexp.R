@@ -1,3 +1,4 @@
+#' @export
 sim.coexp<-function(nsims,
                     var.zeta,
                     coexp.prior,
