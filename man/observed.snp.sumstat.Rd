@@ -2,7 +2,7 @@
 % Please edit documentation in R/observed.snp.sumstat.R
 \name{observed.snp.sumstat}
 \alias{observed.snp.sumstat}
-\title{Observed summary statistics over thousends of loci}
+\title{Observed summary statistics for nexgen data}
 \usage{
 observed.snp.sumstat(model, path.to.fasta, pop.assign, moments = F,
   msABC.call = get.msABC())
