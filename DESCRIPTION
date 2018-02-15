@@ -1,7 +1,7 @@
 Package: PipeMaster
 Type: Package
 Title: Building and Simulating Coalescent models.
-Version: 0.0.8
+Version: 0.0.9
 Date: 2017-03-22
 Authors@R: c(person("Marcelo", "Gehara", email = "marcelo.gehara@gmail.com", role = c("aut", "cre")),
              person("Guilherme","Mazzocchini", role="aut"),
@@ -12,6 +12,13 @@ Imports: ape,
           PopGenome,
           pegas,
           abc
+Depends:ape,
+          e1071,
+          phyclust,
+          PopGenome,
+          pegas,
+          abc
+
 Description: PipeMaster helps you build and simulate coalescent models within R. One can use the interactive menu to build a colescent model that can be further simulated. It can also simulate simutaineous expansion for single locus data across multiple species. It can output summary statistics and coalescent trees. It will output hyper summary statistics in the case of coexpansion models. It can also calculate the same summary stats from your own data. It uses the ms coalescent simulator implemented as a function in "phyclust" and "PopGenome" to calculate summary stats.
 License: GPL (>= 2)
 URL: http://www.marcelogehara.org/
