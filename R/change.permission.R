@@ -1,4 +1,4 @@
-
+#' @export
 change.permission<-function(mode="0777"){
 
 pack<-find.package("PipeMaster")
