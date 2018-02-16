@@ -55,9 +55,9 @@ sim.coexp<-function(nsims,
   print(TIME)
 }
 
-#' Internal function of the sim.coexp function
-#' @description sample the parameters of the models from prior distributions.
-#' @export
+# Internal function of the sim.coexp function
+# @description sample the parameters of the models from prior distributions.
+# @export
 coexp.sample.pars<-function(nruns,
                             var.zeta,
                             coexp.prior,
@@ -150,9 +150,9 @@ coexp.sample.pars<-function(nruns,
   return(pars)
 }
 
-#' internal function
-#' @description control ms simulations
-#' @return ms simulations
+# internal function
+# @description control ms simulations
+# @return ms simulations
 coexp.MS<-function(MS.par,gene.prior,alpha){
 
   nspecies<-length(MS.par)
@@ -188,8 +188,8 @@ coexp.MS<-function(MS.par,gene.prior,alpha){
   return(sim)
 }
 
-#' internal function of the coexpansion model
-#' @description calculates summary statistics on ms-like files.
+# internal function of the coexpansion model
+# @description calculates summary statistics on ms-like files.
 coexp.sumstat<-function(ms.output,gene.prior){
   sum.stat<-NULL
 

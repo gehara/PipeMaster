@@ -20,9 +20,3 @@ H.div<-function(x){
   return(c(n.hap,H.d))
 }
 
-
-
-
-
-
-

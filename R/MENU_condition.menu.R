@@ -1,4 +1,4 @@
-#' internal function of the Model Builder
+# internal function of the Model Builder
 condition.menu<-function(){
 
   print.condition.menu()
@@ -12,7 +12,7 @@ condition.menu<-function(){
   switch.condition.menu()
 
 }
-#' internal function of the Model Builder
+# internal function of the Model Builder
 switch.condition.menu<-function(){
   switch(letter,
 
@@ -48,7 +48,7 @@ switch.condition.menu<-function(){
            main.menu()}
 
   )}
-#' internal function of the Model Builder
+# internal function of the Model Builder
 print.condition.menu<-function(){
 
   {cat(paste("size parameter               -- ",colnames(.e$size.matrix)),
@@ -72,7 +72,7 @@ print.condition.menu<-function(){
        sep="\n")
   }
 }
-#' internal function of the Model Builder
+# internal function of the Model Builder
 condition.matrix<-function(){
   size<-.e$n[,1]
 
@@ -113,7 +113,7 @@ condition.matrix<-function(){
     diag(.e$time.matrix)<-0
   }
 }
-#' internal function of the Model Builder
+# internal function of the Model Builder
 inv.mirror.lower<-function(x) {
   x1<-t(x)[lower.tri(x, diag=F)]
   for(i in 1:length(x1)) {
@@ -126,7 +126,7 @@ inv.mirror.lower<-function(x) {
   x[lower.tri(x, diag=F)]<-x1
   return(x)
 }
-#' internal function of the Model Builder
+# internal function of the Model Builder
 inv.mirror.upper<-function(x) {
   x1<-t(x)[upper.tri(x, diag=F)]
   for(i in 1:length(x1)) {
@@ -139,7 +139,7 @@ inv.mirror.upper<-function(x) {
   x[upper.tri(x, diag=F)]<-x1
   return(x)
 }
-#' internal function of the Model Builder
+# internal function of the Model Builder
 place.mig.condition<-function(){
   print(.e$mig.matrix)
   cond<-readline("Write the name of 2 parameters with a logic sign inbetween ( >  or < or = ) separated by a space.
@@ -151,7 +151,7 @@ place.mig.condition<-function(){
   .e$mig.matrix<-inv.mirror.lower(.e$mig.matrix)
 
 }
-#' internal function of the Model Builder
+# internal function of the Model Builder
 place.size.condition<-function(){
   print(.e$size.matrix)
   cond<-readline("Write the name of 2 parameters with a logic sign inbetween ( >  or < or = ) separated by a space.
@@ -163,7 +163,7 @@ place.size.condition<-function(){
   .e$size.matrix<-inv.mirror.lower(.e$size.matrix)
 
 }
-#' internal function of the Model Builder
+# internal function of the Model Builder
 place.time.condition<-function(){
   print(.e$time.matrix)
   cond<-readline("Write the name of 2 parameters with a logic sign inbetween ( >  or < or = ) separated by a space.
@@ -175,5 +175,4 @@ place.time.condition<-function(){
   .e$time.matrix<-inv.mirror.lower(.e$time.matrix)
 
 }
-
 

@@ -1,4 +1,4 @@
-#' internal function of the ms.commander
+# internal function of the ms.commander
 sample.pars<-function(x){
   k<-sample(nrow(x),nrow(x))
   for(i in k){
@@ -7,7 +7,7 @@ sample.pars<-function(x){
   return(x)
 }
 
-#' internal function of the ms.commander
+# internal function of the ms.commander
 sample.w.cond<-function(par.matrix,cond.matrix){
 
   nam<-rownames(cond.matrix)
@@ -49,7 +49,7 @@ sample.w.cond<-function(par.matrix,cond.matrix){
   return(x)
 }
 
-#' internal function of the Model Builder
+# internal function of the Model Builder
 eval.condition<-function(x,y){
   value<-NULL
   for(i in 1:length(y)){

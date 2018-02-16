@@ -139,7 +139,7 @@ sim.demog<-function(nsims,
   print(TIME)
 }
 
-#' internal function of the test.demog function
+# internal function of the test.demog function
 demog.sample.pars<-function(nruns,
                             var.zeta,
                             coexp.prior,
@@ -163,11 +163,11 @@ demog.sample.pars<-function(nruns,
   Ne.EXP.t <- e.t/time.prior[1,5] #corrects by generations
   theta.A.ratio <- runif(1, NeA.prior[1], NeA.prior[2])# thetaA (NeA) ratio
   NeA <- Ne*theta.A.ratio
-  mi <- do.call(as.character(gene.prior[1,2]),args=list(1,gene.prior[1,3],gene.prior[1,4]),quote=F)
+  mi <- do.call(as.character(gene.prior[1,2]), args=list(1, gene.prior[1,3], gene.prior[1,4]), quote=F)
   while(mi<0){
-    mi <- do.call(as.character(gene.prior[1,2]),args=list(1,gene.prior[1,3],gene.prior[1,4]),quote=F)
+    mi <- do.call(as.character(gene.prior[1,2]), args=list(1, gene.prior[1,3], gene.prior[1,4]), quote=F)
   }
-  po.par<-c(Ne,e.t,NeA,mi)
+  po.par<-c(Ne, e.t, NeA,mi)
 
   Ne <- Ne*gene.prior[1,7]
   theta=4*Ne*mi*gene.prior[1,5]
@@ -176,20 +176,20 @@ demog.sample.pars<-function(nruns,
 
   g.rate=-log(NeA/Ne)/Ne.EXP.t
 
-  ms.par<-cbind(theta,EXP.time,theta.A.ratio,g.rate)
+  ms.par<-cbind(theta,EXP.time, theta.A.ratio,g.rate)
 
   MS.par[[1]][1,]<-ms.par
   pop.par[[1]][1,]<-po.par
 
   pars<-list(NULL,NULL,NULL)
-  names(pars)<-c("MS.par","pop.par")
+  names(pars)<-c("MS.par", "pop.par")
   pars$MS.par<-MS.par
   pars$pop.par<-po.par
   return(pars)
 }
 
-#' internal function of the test.demog function
-sumstat<-function(ms.output,gene.prior){
+# internal function of the test.demog function
+sumstat<-function(ms.output, gene.prior){
   sum.stat<-NULL
   for (j in 1:length(ms.output)){
 

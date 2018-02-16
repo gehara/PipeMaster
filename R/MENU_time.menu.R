@@ -1,4 +1,4 @@
-#' internal function of the Model Builder
+# internal function of the Model Builder
 time.menu<-function(){
 
   print.time.menu()
@@ -13,7 +13,7 @@ time.menu<-function(){
 
 }
 
-#' internal function of the Model Builder
+# internal function of the Model Builder
 print.time.menu<-function(){
   if(is.null(.e$ej)==F){
     if(.e$ej[1,6]=="normal")
@@ -44,7 +44,7 @@ print.time.menu<-function(){
     sep="\n")
 }
 
-#' internal function of the Model Builder
+# internal function of the Model Builder
 switch.time.menu<-function(){
   switch(letter,
          "P" = {prior.dist.Ne<-readline("time prior distribution (normal or uniform): ")

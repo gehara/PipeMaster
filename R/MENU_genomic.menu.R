@@ -1,4 +1,4 @@
-#' internal function of the Model Builder
+# internal function of the Model Builder
 genomic.menu<-function(){
 
 print.genomic.menu()
@@ -12,7 +12,7 @@ while(letter %in% c("M","P","1","2","3","B")==F){
 switch.genomic.menu()
 
 }
-#' internal function of the Model Builder
+# internal function of the Model Builder
 print.genomic.menu<-function(){
 
   if(.e$loci[1,6]=="normal")
@@ -36,7 +36,7 @@ print.genomic.menu<-function(){
       paste("B > Back to main menu"),
       sep="\n")
 }
-#' internal function of the Model Builder
+# internal function of the Model Builder
 switch.genomic.menu<-function(){
 
   switch(letter,
@@ -94,7 +94,7 @@ switch.genomic.menu<-function(){
            main.menu()})
 
 }
-#' internal function of the Model Builder
+# internal function of the Model Builder
 genomic.samples.par<-function(){
 
   tot.gene.par<-NULL
@@ -113,7 +113,7 @@ genomic.samples.par<-function(){
     }
   }
 }
-#' internal function of the Model Builder
+# internal function of the Model Builder
 genomic.par<-function(){
   ## get topology and number of nodes
   .e$ngenes<-1

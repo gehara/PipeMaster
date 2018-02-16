@@ -1,4 +1,4 @@
-#' internal function of the Model Builder
+# internal function of the Model Builder
 demog.menu<-function(){
 
   print.demog.menu()
@@ -12,7 +12,7 @@ demog.menu<-function(){
   switch.demog.menu()
 
 }
-#' internal function of the Model Builder
+# internal function of the Model Builder
 print.demog.menu<-function(){
   if(.e$n[1,6]=="normal")
     dist.par<-"Mean, SD"
@@ -31,7 +31,7 @@ print.demog.menu<-function(){
       paste("B > Back to main menu"),
       sep="\n")
 }
-#' internal function of the Model Builder
+# internal function of the Model Builder
 switch.demog.menu<-function(){
 
   switch(letter,
@@ -103,7 +103,7 @@ switch.demog.menu<-function(){
            main.menu()})
 
 }
-#' internal function of the Model Builder
+# internal function of the Model Builder
 anc.Ne.par<-function(){
   anc.Ne.par<-NULL
   time.anc.Ne.par<-NULL
@@ -138,7 +138,7 @@ anc.Ne.par<-function(){
   .e$en$time[,5]<-100000
   .e$en$time[,6]<-'uniform'
 }
-#' internal function of the Model Builder
+# internal function of the Model Builder
 cur.Ne.par<-function(){
   list.Ne.pars<-NULL
   for (i in 1:.e$npops){

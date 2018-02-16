@@ -1,4 +1,4 @@
-#' internal function of the Model Builder
+# internal function of the Model Builder
 get.msABC<-function(){
   pack<-find.package("PipeMaster")
 

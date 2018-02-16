@@ -55,8 +55,8 @@ sim.coexp2<-function(nsims,
   print(TIME)
 }
 
-#' Internal function of the sim.coexp2 function
-#' @description sample the parameters of the models from prior distributions.
+# Internal function of the sim.coexp2 function
+# @description sample the parameters of the models from prior distributions.
 coexp.sample.pars2<-function(nruns,
                              var.zeta,
                              coexp.prior,

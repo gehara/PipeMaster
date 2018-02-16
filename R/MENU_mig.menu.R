@@ -1,4 +1,4 @@
-#' internal function of the Model Builder
+# internal function of the Model Builder
 mig.menu<-function(){
 
   print.mig.menu()
@@ -13,7 +13,7 @@ mig.menu<-function(){
 
 }
 
-#' internal function of the Model Builder
+# internal function of the Model Builder
 print.mig.menu<-function(){
 
   if(.e$m[1,6]=="normal")
@@ -34,7 +34,7 @@ print.mig.menu<-function(){
       sep="\n")
 }
 
-#' internal function of the Model Builder
+# internal function of the Model Builder
 switch.mig.menu<-function(){
 
   switch(letter,
@@ -101,7 +101,7 @@ switch.mig.menu<-function(){
 
 }
 
-#' internal function of the Model Builder
+#internal function of the Model Builder
 mig.par<-function(){
   mig.par<-NULL
   pops<-NULL
@@ -125,7 +125,7 @@ mig.par<-function(){
 
 }
 
-#' internal function of the Model Builder
+# internal function of the Model Builder
 anc.mig.par<-function(){
   mig.par<-NULL
   pops<-NULL

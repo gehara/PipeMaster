@@ -1,4 +1,4 @@
-#' internal function of the Model Builder
+# internal function of the Model Builder
 gene.menu<-function(){
 
 print.gene.menu()
@@ -12,7 +12,7 @@ while(letter %in% c("M","P","1","2","3","B")==F){
 switch.gene.menu()
 
 }
-#' internal function of the Model Builder
+# internal function of the Model Builder
 print.gene.menu<-function(){
 
   if(.e$loci[1,6]=="normal")
@@ -36,7 +36,7 @@ print.gene.menu<-function(){
       paste("B > Back to main menu"),
       sep="\n")
 }
-#' internal function of the Model Builder
+# internal function of the Model Builder
 switch.gene.menu<-function(){
 
   switch(letter,
@@ -99,7 +99,7 @@ switch.gene.menu<-function(){
            main.menu()})
 
 }
-#' internal function of the Model Builder
+# internal function of the Model Builder
 loci.par<-function(){
   ## get topology and number of nodes
   .e$ngenes<-as.numeric(readline("how many loci to simulate?: "))

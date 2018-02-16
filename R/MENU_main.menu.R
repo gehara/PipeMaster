@@ -28,7 +28,7 @@ main.menu<-function(input=NULL){
   }
 ### hidden environment
 .e<-new.env()
-#' internal function of the Model Builder
+# internal function of the Model Builder
 print.main.menu<-function(){
 
   {cat(paste("A > Number of populations to simulate     ",nrow(.e$n)),
@@ -53,7 +53,7 @@ print.main.menu<-function(){
        sep="\n")
   }
 }
-#' internal function of the Model Builder
+# internal function of the Model Builder
 switch.main.menu<-function(){
   .e$YES<-c("Y","y","yes","YES","Yes")
   .e$NO<-c("N","n","No","NO","no")
@@ -154,7 +154,7 @@ switch.main.menu<-function(){
            get.model()}
 
   )}
-#' internal function of the Model Builder
+# internal function of the Model Builder
 join.par<-function(){
 
   check.tree<-function(){
@@ -238,7 +238,7 @@ join.par<-function(){
 
   }
 }
-#' internal function of the Model Builder
+# internal function of the Model Builder
 get.model<-function(){
 
 
@@ -293,14 +293,14 @@ get.model<-function(){
   return(model)
 
 }
-#' internal function of the Model Builder
+# internal function of the Model Builder
 remove.all.par<-function(){
   options(warn=-1)
   rm(list=c("loci","I","n","en","m","em","ej","conds","tree","npops"), envir=.e)
   options(warn=0)
 }
 
-#' internal function of the Model Builder
+# internal function of the Model Builder
 read.model.input<-function(input){
 
   .e$ej<-input$flags$ej
@@ -344,7 +344,7 @@ read.model.input<-function(input){
 
 }
 
-#' internal function of the Model Builder
+# internal function of the Model Builder
 samples.par<-function(){
 
   tot.gene.par<-NULL
@@ -363,5 +363,4 @@ samples.par<-function(){
     }
   }
 }
-
 
