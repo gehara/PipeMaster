@@ -65,7 +65,7 @@ ms.commander.snp<-function(model,use.alpha=use.alpha,msABC){
   # rescale to inheritance scalar and transform size parameters to relative to Ne0
   size.pars[,4:5]<-as.numeric(size.pars[,4])/Ne0
 
-  string<-ms.string.generator(model,size.pars,mig.pars,use.alpha=use.alpha)
+  string<-ms.string.generator(model,size.pars,mig.pars,time.pars,use.alpha=use.alpha)
   # generate -t and -I part of the command
 
   loci<-sample.pars(model$loci)

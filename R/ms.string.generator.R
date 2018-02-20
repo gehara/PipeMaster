@@ -1,4 +1,4 @@
-ms.string.generator<-function(model,size.pars,mig.pars,use.alpha,scalar=1){
+ms.string.generator<-function(model,size.pars,mig.pars,time.pars,use.alpha,scalar=1){
 
   # rescale to inheritance scalar and transform size parameters to relative to Ne0
   size.pars[,4:5]<-as.numeric(size.pars[,4])*scalar
