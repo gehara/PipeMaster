@@ -290,6 +290,7 @@ get.model<-function(){
   model$tree<-.e$tree
 
   rm(list=ls(envir=.e),envir=.e)
+  class(model)<-"Model"
   return(model)
 
 }
