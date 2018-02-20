@@ -8,6 +8,6 @@ get.msABC<-function(){
   if(Sys.info()[1]=="Darwin"){
     msABC.call<-paste(pack,"/msABCmac",sep="")
   }
-  Sys.chmod(paths=msABC.call, mode = 777, use_umask = TRUE)
+  Sys.chmod(paths=msABC.call, mode = 7777, use_umask = TRUE)
   return(msABC.call)
   }
