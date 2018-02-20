@@ -68,7 +68,7 @@ ms.commander2<-function(model,use.alpha=use.alpha){
   commands<-list(NULL)
   for(u in 1:nrow(loci)){
 
-      string<-ms.string.generator(model,size.pars,mig.pars,use.alpha=use.alpha,Ne0 = Ne0,scalar=as.numeric(loci[u,3]))
+      string<-ms.string.generator(model,size.pars,mig.pars,use.alpha=use.alpha,scalar=as.numeric(loci[u,3]))
 
       #################################### theta and structure ###########################
       ######### generate -t and -I part of the command
