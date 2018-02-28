@@ -13,7 +13,7 @@
 #' @param observed Observed summary statistics calculated for the empirical data.
 #' @param CV logical. If TRUE cros-validation is performed. Defaut is FALSE
 #' @details This function will take the same inputs used in the codemographic simulations and test for demographic change for each
-#' population separatelly. This test could be usefull to select which populations will be included in the codemographic model and two optimize the prior distributions.
+#' population separatelly. This test could be usefull to select which populations will be included in the codemographic model and to optimize the prior distributions.
 #' @export
 single.pop.demog<-function(nsims,
                      Ne.prior,
