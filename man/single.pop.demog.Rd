@@ -25,9 +25,9 @@ single.pop.demog(nsims, Ne.prior, time.prior, gene.prior, observed, alpha = F,
 
 \item{nval}{Number of validations for the cross-validation of the ABC. Ignored if do.ABC = FALSE. Default is 100.}
 
-\item{do.ABC}{logical. If TRUE ABC analysis is conducted. Default is FALSE.}
+\item{do.ABC}{logical. If TRUE ABC analysis is performed. Default is FALSE.}
 
-\item{do.PCA}{logical. If TRUE PCA of the observed against the simulated data is conducted. Default is FALSE.}
+\item{do.PCA}{logical. If TRUE PCA of the observed against the simulated data is performed. Default is FALSE.}
 
 \item{CV}{logical. If TRUE cros-validation is performed. Defaut is FALSE}
 
@@ -38,5 +38,5 @@ Test for constante size, population expation and bottleneck for single populatio
 }
 \details{
 This function will take the same inputs used in the codemographic simulations and test for demographic change for each
-population separatelly. This test could be usefull to select which populations will be included in the codemographic model and two optimize the prior distributions.
+population separatelly. This test could be usefull to select which populations will be included in the codemographic model and to optimize the prior distributions.
 }
