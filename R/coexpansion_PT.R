@@ -1,8 +1,23 @@
+#'  Simulation of codemographic models
+#' @description Simulation of the PT model of Gehara et al. (2017)
+#' @param nsims Total number of simulations
+#' @param var.zeta Variation on zeta parameter. Can be "FREE" to vary or be set to a specific value (between 0-1).
+#' @param coexp.prior Uniform prior for the coespansion time. Vector of two numbers with the lower and upper boudary of the prior.
+#' @param Ne.prior Data frame with the prior values for the Ne of each population.
+#' @param NeA.prior Data frame with the prior values for the ancestral Ne of each population.
+#' @param time.prior Data frame with parameter values for the priors of the time of demographic change of each population.
+#' @param gene.prior Data frame with parameter values for the priors of the mutation rate of each species.
+#' @param alpha logical. If TRUE all demographic chages are exponential. If FALSE sudden changes. Defaut is FALSE.
+#' @param append.sims logical. If TRUE simulations are appended to the simulations file.  Defaut is FALSE.
+#' @param path Path to the directiry to write the simulations. Defaut is the working directory.
+#' @details To simulate the model of Chan et al. (2014), the Threshold model and the Narrow Coexpansion Time model use the sim.coexp function.
+#' @details See references for more details.
+#' @references Gehara M., Garda A.A., Werneck F.P. et al. (2017) Estimating synchronous demographic changes across populations using hABC and its application for a herpetological community from northeastern Brazil. Molecular Ecology, 26, 4756–4771.
+#' @references Chan Y.L., Schanzenbach D., & Hickerson M.J. (2014) Detecting concerted demographic response across community assemblages using hierarchical approximate Bayesian computation. Molecular Biology and Evolution, 31, 2501–2515.
 #' @export
 sim.coexp2<-function(nsims,
                     var.zeta,
                     coexp.prior,
-                    buffer,
                     Ne.prior,
                     NeA.prior,
                     time.prior,
@@ -60,7 +75,6 @@ sim.coexp2<-function(nsims,
 coexp.sample.pars2<-function(nruns,
                              var.zeta,
                              coexp.prior,
-                             buffer,
                              Ne.prior,
                              NeA.prior,
                              time.prior,

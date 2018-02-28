@@ -1,3 +1,19 @@
+#'  Simulation of demographic models for single populations.
+#' @description Test for constante size, population expation and bottleneck for single population.
+#' @param nsims Total number of simulations per model.
+#' @param Ne.prior Data frame with the prior values for the Ne of each population.
+#' @param time.prior Data frame with parameter values for the priors of the time of demographic change of each population.
+#' @param gene.prior Data frame with parameter values for the priors of the mutation rate of each species.
+#' @param alpha logical. If TRUE all demographic chages are exponential. If FALSE sudden changes. Defaut is FALSE.
+#' @param path Path to the directory to write the simulations. Defaut is the working directory.
+#' @param tol Tolerance level of the ABC analysis. Ignored if do.ABC = FALSE. Defaut is 0.01.
+#' @param nval Number of validations for the cross-validation of the ABC. Ignored if do.ABC = FALSE. Default is 100.
+#' @param do.ABC logical. If TRUE ABC analysis is conducted. Default is FALSE.
+#' @param do.PCA logical. If TRUE PCA of the observed against the simulated data is conducted. Default is FALSE.
+#' @param observed Observed summary statistics calculated for the empirical data.
+#' @param CV logical. If TRUE cros-validation is performed. Defaut is FALSE
+#' @details This function will take the same inputs used in the codemographic simulations and test for demographic change for each
+#' population separatelly. This test could be usefull to select which populations will be included in the codemographic model and two optimize the prior distributions.
 #' @export
 single.pop.demog<-function(nsims,
                      Ne.prior,
@@ -7,14 +23,13 @@ single.pop.demog<-function(nsims,
                      alpha=F,
                      tol=0.01,
                      nval=100,
-                     method="rejection",
                      do.ABC=F,
                      do.PCA=F,
                      CV=F,
                      mod=cbind(c(1,0.001,2),c(1,0.1,20)),
                      path=path){
   tabela<-NULL
-
+  method="rejection"
 
   for(i in 1:nrow(Ne.prior)){
 
@@ -97,7 +112,7 @@ single.pop.demog<-function(nsims,
 
 }
 
-#' @export
+#'
 sim.demog<-function(nsims,
                     coexp.prior,
                     Ne.prior,
