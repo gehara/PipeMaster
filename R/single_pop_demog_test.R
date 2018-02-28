@@ -8,8 +8,8 @@
 #' @param path Path to the directory to write the simulations. Defaut is the working directory.
 #' @param tol Tolerance level of the ABC analysis. Ignored if do.ABC = FALSE. Defaut is 0.01.
 #' @param nval Number of validations for the cross-validation of the ABC. Ignored if do.ABC = FALSE. Default is 100.
-#' @param do.ABC logical. If TRUE ABC analysis is conducted. Default is FALSE.
-#' @param do.PCA logical. If TRUE PCA of the observed against the simulated data is conducted. Default is FALSE.
+#' @param do.ABC logical. If TRUE ABC analysis is performed. Default is FALSE.
+#' @param do.PCA logical. If TRUE PCA of the observed against the simulated data is performed. Default is FALSE.
 #' @param observed Observed summary statistics calculated for the empirical data.
 #' @param CV logical. If TRUE cros-validation is performed. Defaut is FALSE
 #' @details This function will take the same inputs used in the codemographic simulations and test for demographic change for each
