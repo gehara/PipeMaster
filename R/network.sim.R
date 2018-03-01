@@ -169,10 +169,8 @@ get.tree.info<-function(tree){
 #' @param mi a vector of two numbers indicsting the min and max mutation rate across all loci.
 #' @param nsims Total number of simulations.
 #' @param nloci Number of loci to be simulated in each iteration.
-#' @param segsites Logical. If TRUE simulates segregating sites.
 #' @param gen.time Generation time in years.
 #' @param time.modif A time modifier to alter the age of the nodes in the newick tree.
-#' @param coaltrees Logical. If TRUE coalescent trees are simulated.
 #' @param time.scalar multiplier for three heights in the newick tree.
 #' @export
 sim.sp.tree<-function(tree,
