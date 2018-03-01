@@ -189,11 +189,8 @@ sim.sp.tree<-function(tree,
                       mi,
                       nsims,
                       nloci,
-                      segsites,
                       gen.time,
                       time.modif,
-                      coaltrees,
-                      distance,
                       time.scalar=1)
 {
 
@@ -241,7 +238,7 @@ sim.sp.tree<-function(tree,
 
   #######################
   #######################
-  # start simulations ###
+  # simulations #########
   for(j in 1:nsims){
     sim.t<-NULL
     trees<-list()
@@ -337,16 +334,7 @@ sim.sp.tree<-function(tree,
       ########################################
       ########################################
       ########################################
-      #### get the coalescent trees
-      if(coaltrees==T){
-        t<-ms(nreps = 1, nsam=(nrow(ej)+1),opts=paste("-T",ms.string.final))
-        t<-strsplit(t,"//")[[3]]
-        t<-read.tree(text=t)
-        trees[[i]]<-t
-      }
-
-      #### build trees from simulated segregating sites
-      if(segsites==T){
+      #### simulated segregating sites
         fas<-ms.to.DNAbin(ms(nreps = 1, nsam=(nrow(ej)+1),opts=ms.string.final),bp.length = 0)
 
         while(length(fas)==0){
@@ -355,20 +343,15 @@ sim.sp.tree<-function(tree,
 
         d<-dist.dna(fas, model="N")/seq.length
 
-        if(distance==T){
-          sim.t<-rbind(sim.t,as.vector(d))
-        }
 
+        sim.t<-rbind(sim.t,as.vector(d))
 
-      }
       rm(fas)
     }
 
 
-    if(distance==T){
-      if(segsites==F){
-        stop("you need to have segsites=TRUE to get the distance")} else {
           if(nrow(sim.t)>1){
+
             nam<-t(combn(attr(d,"Labels"),2))
             nam<-apply(nam,1,paste,collapse="_")
             colnames(sim.t)<-nam
@@ -383,16 +366,16 @@ sim.sp.tree<-function(tree,
             nam<-t(combn(attr(d,"Labels"),2))
             nam<-apply(nam,1,paste,collapse="_")
             colnames(sim.t)<-nam
-            sim<-t(sim.t)}
-        }
-    }
+            sim<-t(sim.t)
+            }
+
+
     #print(i)
     sim<-cbind(time.mod,Ne.mean,Ne.SD,mi.mean,mi.SD,Mig.rate,Admix.prob.minor,t(sim))
     simulated<-rbind(simulated,sim)
     rm(time.mod,Ne.mean,Ne.SD,mi.mean,mi.SD,Mig.rate,Admix.prob.minor,sim,sim.t)
     print(j)
-    gc()
-  }
+    }
   return(simulated)
 }
 
