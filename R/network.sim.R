@@ -273,8 +273,8 @@ sim.sp.tree<-function(tree,
     }else{
       Admix.prob.minor<-0
     }
-    ### simulate n-trees
-    for(i in 1:nloci){
+    ### simulate n-loci
+    foreach(i = 1:nloci,.combine = "rbind") %dopar% {
       master.theta<-0
       while(master.theta<0.000001){
       # sample mutation rate per site per year
@@ -339,10 +339,10 @@ sim.sp.tree<-function(tree,
           fas<-ms.to.DNAbin(ms(nreps = 1, nsam=(nrow(ej)+1),opts=ms.string.final),bp.length = 0)
         }
 
-        d<-dist.dna(fas, model="N")/seq.length
+        sim.t<-dist.dna(fas, model="N")/seq.length
 
 
-        sim.t<-rbind(sim.t,as.vector(d))
+        return(sim.t)
 
       rm(fas)
     }
