@@ -6,7 +6,7 @@
 \usage{
 sim.sp.tree(tree, Ne.prior, bifurcating = T, migration = F, admixture = F,
   mig, hib.clade, hib.priors, major.sister, minor.sister, bp, mi, nsims, nloci,
-  segsites, gen.time, time.modif, coaltrees, distance, time.scalar = 1)
+  gen.time, time.modif, time.scalar = 1)
 }
 \arguments{
 \item{tree}{The bifurcating tree topology in newick format.}
@@ -37,15 +37,15 @@ sim.sp.tree(tree, Ne.prior, bifurcating = T, migration = F, admixture = F,
 
 \item{nloci}{Number of loci to be simulated in each iteration.}
 
-\item{segsites}{Logical. If TRUE simulates segregating sites.}
-
 \item{gen.time}{Generation time in years.}
 
 \item{time.modif}{A time modifier to alter the age of the nodes in the newick tree.}
 
-\item{coaltrees}{Logical. If TRUE coalescent trees are simulated.}
-
 \item{time.scalar}{multiplier for three heights in the newick tree.}
+
+\item{segsites}{Logical. If TRUE simulates segregating sites.}
+
+\item{coaltrees}{Logical. If TRUE coalescent trees are simulated.}
 }
 \description{
 Simulation of bifurcating and nonbifurcating species tree
