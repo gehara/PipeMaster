@@ -1,4 +1,4 @@
-#'  Simulation of demographic models for single populations.
+#' Simulation of demographic models for single populations.
 #' @description Test for constante size, population expation and bottleneck for single population.
 #' @param nsims Total number of simulations per model.
 #' @param Ne.prior Data frame with the prior values for the Ne of each population.
@@ -112,7 +112,7 @@ single.pop.demog<-function(nsims,
 
 }
 
-#'
+#' internal function
 sim.demog<-function(nsims,
                     coexp.prior,
                     Ne.prior,

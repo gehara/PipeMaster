@@ -42,10 +42,6 @@ sim.sp.tree(tree, Ne.prior, bifurcating = T, migration = F, admixture = F,
 \item{time.modif}{A time modifier to alter the age of the nodes in the newick tree.}
 
 \item{time.scalar}{multiplier for three heights in the newick tree.}
-
-\item{segsites}{Logical. If TRUE simulates segregating sites.}
-
-\item{coaltrees}{Logical. If TRUE coalescent trees are simulated.}
 }
 \description{
 Simulation of bifurcating and nonbifurcating species tree

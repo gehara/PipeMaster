@@ -10,7 +10,7 @@
 #' @author Marcelo Gehara
 #' @note This function does not work on Windows systems.
 #' @export
-observed.snp.sumstat<-function(model,path.to.fasta,pop.assign,moments=F,msABC.call=get.msABC()){
+obs.sumstat.ngs<-function(model,path.to.fasta,pop.assign,moments=F,msABC.call=get.msABC()){
 
 
   setwd(path.to.fasta)
