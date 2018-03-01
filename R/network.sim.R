@@ -273,14 +273,15 @@ sim.sp.tree<-function(tree,
     }else{
       Admix.prob.minor<-0
     }
-    ### simulate n-loci
-    sim.t<-foreach(i = 1:nloci,.combine = "rbind") %dopar% {
+
+    mi.mean<-runif(1,mi[1],mi[2])
+    mi.SD<-mi.mean*runif(1,0.1,1)
+
+    ### simulate n-loci #################################################################################
+    for(i in 1:nloci) {
       master.theta<-0
       while(master.theta<0.000001){
       # sample mutation rate per site per year
-      mi.mean<-runif(1,mi[1],mi[2])
-      mi.SD<-mi.mean*runif(1,0.1,1)
-
       rate<-rnorm(1,mi.mean,mi.SD)
       while(rate<=0){
         rate<-rnorm(1,mi.mean,mi.SD)
@@ -339,16 +340,14 @@ sim.sp.tree<-function(tree,
           fas<-ms.to.DNAbin(ms(nreps = 1, nsam=(nrow(ej)+1),opts=ms.string.final),bp.length = 0)
         }
 
-        sim.t<-dist.dna(fas, model="N")/seq.length
+        d<-dist.dna(fas, model="N")/seq.length
 
-        sim.t->d
-        return(sim.t)
+        sim.t<-rbind(sim.t, as.vector(d))
 
       rm(fas)
     }
 
           if(nrow(sim.t)>1){
-
             nam<-t(combn(attr(d,"Labels"),2))
             nam<-apply(nam,1,paste,collapse="_")
             colnames(sim.t)<-nam
@@ -358,7 +357,7 @@ sim.sp.tree<-function(tree,
             #var<-paste("var",names(sim[(length(nam)+1):(2*length(nam))]),sep="_")
             #kur<-paste("kur",names(sim[((2*length(nam))+1):(3*length(nam))]),sep="_")
             #skew<-paste("skew",names(sim[((3*length(nam))+1):(4*length(nam))]),sep="_")
-            names(sim)<-c(mean)#,var,kur,skew)
+            names(sim)<-mean#,var,kur,skew)
           } else {
             nam<-t(combn(attr(d,"Labels"),2))
             nam<-apply(nam,1,paste,collapse="_")
