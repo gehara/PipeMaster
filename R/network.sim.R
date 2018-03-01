@@ -341,7 +341,7 @@ sim.sp.tree<-function(tree,
 
         sim.t<-dist.dna(fas, model="N")/seq.length
 
-
+        sim.t->d
         return(sim.t)
 
       rm(fas)
