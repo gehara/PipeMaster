@@ -274,7 +274,7 @@ sim.sp.tree<-function(tree,
       Admix.prob.minor<-0
     }
     ### simulate n-loci
-    foreach(i = 1:nloci,.combine = "rbind") %dopar% {
+    sim.t<-foreach(i = 1:nloci,.combine = "rbind") %dopar% {
       master.theta<-0
       while(master.theta<0.000001){
       # sample mutation rate per site per year
@@ -346,7 +346,6 @@ sim.sp.tree<-function(tree,
 
       rm(fas)
     }
-
 
           if(nrow(sim.t)>1){
 
