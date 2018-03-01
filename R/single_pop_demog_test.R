@@ -112,7 +112,7 @@ single.pop.demog<-function(nsims,
 
 }
 
-#' internal function
+# internal function
 sim.demog<-function(nsims,
                     coexp.prior,
                     Ne.prior,
