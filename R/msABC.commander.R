@@ -5,7 +5,7 @@
 # @return a list with msABC command and sampled parameters.
 # @note This function is used internally for the sim.msABC function. One mey want to run this function to check the msABC string.
 #
-msABC.commander<-function(model,use.alpha=use.alpha){
+msABC.commander<-function(model,use.alpha=use.alpha,msABC){
 
   # empty parameter vector
   parameters<-vector()
@@ -71,7 +71,7 @@ msABC.commander<-function(model,use.alpha=use.alpha){
       #################################### theta and structure ###########################
       ######### generate -t and -I part of the command
 
-      y<-paste(sum(as.numeric(model$I[u,4:ncol(model$I)])),"1 -t",loci[u,7],paste(model$I[u,2:ncol(model$I)],collapse=" "),collapse=" ")
+      y<-paste(msABC,sum(as.numeric(model$I[u,4:ncol(model$I)])),"1 -t",loci[u,7],paste(model$I[u,2:ncol(model$I)],collapse=" "),collapse=" ")
       commands[[u]]<-paste(y,string, collapse=" ")
       }
   #### attach sampled parameters
