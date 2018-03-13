@@ -158,20 +158,20 @@ get.tree.info<-function(tree){
 #' @param tree The bifurcating tree topology in newick format.
 #' @param Ne.prior A vector of two values representing the min and max boundaries of a uniform prior for Ne.
 #' @param bifurcating Logical. If TRUE the bifurcating topology is simulated.
-#' @param migration Logical. If TRUE gene flow between two branches is allowed. Migrarion prior need to be specified in the 'mig' argument.
-#' @param admixture Logical. If TRUE an admixture event between two branches is allowed.
-#' @param mig A vector of two values representing the min and max boundaries of a uniform prior for gene flow in number of migrant coppies (2Nm).
+#' @param migration Logical. If TRUE gene flow between two branches is allowed. Migrarion prior need to be specified in the 'mig' argument. hib.clade, hib.priors, major.sister and minor.sister need to be specified.
+#' @param admixture Logical. If TRUE an admixture event between two branches is allowed. hib.clade, hib.priors, major.sister and minor.sister need to be specified.
+#' @param mig A vector of two values representing the min and max boundaries of a uniform prior for gene flow in number of migrant copies (4Nm).
 #' @param hib.clade a vector of numbers indicating the hybrid clade. Number associated with terminals can be checked with the get.tree.info function.
-#' @param hib.priors a vector of 5 numbers representing the lower, upper boundaries of the hybridization time; the upper boundary of the minor sister; lower and upper boundaries of admixture proportion (0-1).
+#' @param hib.priors a vector of 5 numbers representing the lower, upper boundaries of the hybridization time; the upper boundary for the connection with the minor sister; lower and upper boundaries of the admixture proportion (between 0-1).
 #' @param major.sister vector of numbers indicating the the major sister clade. Number associated with terminals can be checked with the get.tree.info function.
 #' @param minor.sister vector of numbers indicating the minor sister clade. Number associated with terminals can be checked with the get.tree.info function.
-#' @param bp a vector of two numbers indicsting the mean and SD of base pairs across all loci.
-#' @param mi a vector of two numbers indicsting the min and max mutation rate across all loci.
+#' @param bp a vector of two numbers indicating the mean and SD of base pairs across all loci.
+#' @param mi a vector of two numbers indicating the min and max mutation rate across all loci.
 #' @param nsims Total number of simulations.
 #' @param nloci Number of loci to be simulated in each iteration.
 #' @param gen.time Generation time in years.
-#' @param time.modif A time modifier to alter the age of the nodes in the newick tree.
-#' @param time.scalar multiplier for three heights in the newick tree.
+#' @param time.modif A time modifier to alter the age of the nodes in the newick tree. This is a uniform prior for node heights and it is provided as a multiplyer. A vector of two numbers, min and max, need to be specified. For instace, if you like to simulate node heights that are min 1/2 the heights of the input tree and max 2x the heights of the input tree you should use: c(0.5,2)
+#' @param time.scalar multiplier to scale the three heights in the newick tree to years. For instance, if the node heights in the input tree are in Mya, the time.scalar should be 1000000. If time is in years, the time.scalar should be 1.
 #' @export
 sim.sp.tree<-function(tree,
                       Ne.prior,
@@ -321,7 +321,7 @@ sim.sp.tree<-function(tree,
       }
       if(migration==T){
         mig.time<-((hib.priors[1]/gen.time)*time.mod)/(4*master.Ne)
-        em<-paste("-em",mig.time,max(minor.sister),max(hib.clade),Mig.rate)
+        em<-paste("-em",mig.time,max(hib.clade),max(minor.sister),Mig.rate)
         ms.string[[6]]<-em
       }
       }
