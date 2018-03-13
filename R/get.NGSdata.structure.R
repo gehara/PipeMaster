@@ -1,3 +1,4 @@
+#' @export
 get.NGSdata.structure<-function(model,path.to.fasta,pop.assign){
 
   setwd(path.to.fasta)

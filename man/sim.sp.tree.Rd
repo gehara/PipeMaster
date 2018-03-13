@@ -15,23 +15,23 @@ sim.sp.tree(tree, Ne.prior, bifurcating = T, migration = F, admixture = F,
 
 \item{bifurcating}{Logical. If TRUE the bifurcating topology is simulated.}
 
-\item{migration}{Logical. If TRUE gene flow between two branches is allowed. Migrarion prior need to be specified in the 'mig' argument.}
+\item{migration}{Logical. If TRUE gene flow between two branches is allowed. Migrarion prior need to be specified in the 'mig' argument. hib.clade, hib.priors, major.sister and minor.sister need to be specified.}
 
-\item{admixture}{Logical. If TRUE an admixture event between two branches is allowed.}
+\item{admixture}{Logical. If TRUE an admixture event between two branches is allowed. hib.clade, hib.priors, major.sister and minor.sister need to be specified.}
 
-\item{mig}{A vector of two values representing the min and max boundaries of a uniform prior for gene flow in number of migrant coppies (2Nm).}
+\item{mig}{A vector of two values representing the min and max boundaries of a uniform prior for gene flow in number of migrant copies (4Nm).}
 
 \item{hib.clade}{a vector of numbers indicating the hybrid clade. Number associated with terminals can be checked with the get.tree.info function.}
 
-\item{hib.priors}{a vector of 5 numbers representing the lower, upper boundaries of the hybridization time; the upper boundary of the minor sister; lower and upper boundaries of admixture proportion (0-1).}
+\item{hib.priors}{a vector of 5 numbers representing the lower, upper boundaries of the hybridization time; the upper boundary for the connection with the minor sister; lower and upper boundaries of the admixture proportion (between 0-1).}
 
 \item{major.sister}{vector of numbers indicating the the major sister clade. Number associated with terminals can be checked with the get.tree.info function.}
 
 \item{minor.sister}{vector of numbers indicating the minor sister clade. Number associated with terminals can be checked with the get.tree.info function.}
 
-\item{bp}{a vector of two numbers indicsting the mean and SD of base pairs across all loci.}
+\item{bp}{a vector of two numbers indicating the mean and SD of base pairs across all loci.}
 
-\item{mi}{a vector of two numbers indicsting the min and max mutation rate across all loci.}
+\item{mi}{a vector of two numbers indicating the min and max mutation rate across all loci.}
 
 \item{nsims}{Total number of simulations.}
 
@@ -39,9 +39,9 @@ sim.sp.tree(tree, Ne.prior, bifurcating = T, migration = F, admixture = F,
 
 \item{gen.time}{Generation time in years.}
 
-\item{time.modif}{A time modifier to alter the age of the nodes in the newick tree.}
+\item{time.modif}{A time modifier to alter the age of the nodes in the newick tree. This is a uniform prior for node heights and it is provided as a multiplyer. A vector of two numbers, min and max, need to be specified. For instace, if you like to simulate node heights that are min 1/2 the heights of the input tree and max 2x the heights of the input tree you should use: c(0.5,2)}
 
-\item{time.scalar}{multiplier for three heights in the newick tree.}
+\item{time.scalar}{multiplier to scale the three heights in the newick tree to years. For instance, if the node heights in the input tree are in Mya, the time.scalar should be 1000000. If time is in years, the time.scalar should be 1.}
 }
 \description{
 Simulation of bifurcating and nonbifurcating species tree
