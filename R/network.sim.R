@@ -405,6 +405,12 @@ observed.pw.distances<-function(tree, path){
   }
   print("Done!")
 
+  fas<-read.dna(x[1],format="fasta")
+  fas<-fas[match(tree[[1]],rownames(fas)),]
+  length<-ncol(fas)
+  fas<-fas2ms2(fas)
+  fas<-ms.to.DNAbin(fas[[1]],bp.length=length-fas[[2]])
+  d<-dist.dna(fas, model="raw")
   nam<-t(combn(attr(d,"Labels"),2))
   nam<-apply(nam,1,paste,collapse="_")
   nam<-c(nam,"bp_lengh")
