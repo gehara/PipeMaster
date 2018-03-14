@@ -73,7 +73,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
 
     })[3]
     } else {
-      simulations<-NULL
+          simulations<-NULL
           param<-NULL
           TIM<-system.time(
        for(i in 1:block.size){
@@ -96,7 +96,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
         var<-apply(sumstat,2,var, na.rm=T)
         #kur<-apply(sumstat,2,kurtosis, na.rm=T)
         #skew<-apply(sumstat,2,skewness, na.rm=T)
-        param<-rbind(param,com[[nrow(model$loci)+1]][2,])
+        param<-com[[nrow(model$loci)+1]][2,]
         simulations<-rbind(simulations,c(param,Mean,var))
 
       })[3]
