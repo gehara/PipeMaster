@@ -31,7 +31,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
       } else {
       com<-msABC.commander(model,use.alpha=use.alpha,msABC=msABC.call)
       }
-    
+
     x<-strsplit(system(com[[1]],intern=T),"\t")
     nam<-x[1][[1]]
     TD_denom<-paste(nam[grep("pi",nam)],nam[grep("theta_w",nam)],sep="_")
@@ -45,16 +45,16 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
 
   thou<-0
   for(j in 1:nsim.blocks) {
-    
+
   if(model$I[1,1]=="genomic"){
     TIM<-system.time(
-  simulations <- foreach(i = 1:block.size,.combine="rbind") %dopar% {
-  
+    simulations <- foreach(i = 1:block.size,.combine="rbind") %dopar% {
+
       com<-ms.commander.snp(model,msABC=msABC.call, use.alpha = use.alpha)
 
       system(paste(com[[1]]," > ",i,"out.txt",sep=""))
       sumstat<-read.table(paste0(i,"out.txt"),header = T)
-  
+
       TD_denom<-data.frame(sumstat[,grep("pi",colnames(sumstat))]-sumstat[,grep("theta_w",colnames(sumstat))])
       colnames(TD_denom)<-paste(colnames(sumstat)[grep("pi",colnames(sumstat))],
                               colnames(sumstat)[grep("theta_w",colnames(sumstat))],sep="_")
@@ -66,16 +66,17 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
       var<-apply(sumstat,2,var, na.rm=T)
       #kur<-apply(sumstat,2,kurtosis, na.rm=T)
       #skew<-apply(sumstat,2,skewness, na.rm=T)
-  
+
       param<-as.numeric(com[[3]][2,])
-    
+
       c(param,Mean,var)
-      
+
     })[3]
     } else {
-      SS<-NULL
+          SS<-NULL
+          param<-NULL
           TIM<-system.time(
-          for(i in 1:block.size){
+       for(i in 1:block.size){
           com<-msABC.commander(model,use.alpha=use.alpha, msABC = msABC.call)
           ### runs msABC for each locus
           sumstat<-foreach(u = 1:nrow(model$loci),.combine=rbind) %dopar% {
@@ -83,7 +84,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
             ss<-read.table(paste0(u,"out.txt"),header=T)
             ss
             }
-        
+
         TD_denom<-data.frame(sumstat[,grep("pi",colnames(sumstat))]-sumstat[,grep("theta_w",colnames(sumstat))])
         colnames(TD_denom)<-paste(colnames(sumstat)[grep("pi",colnames(sumstat))],
                                   colnames(sumstat)[grep("theta_w",colnames(sumstat))],sep="_")
@@ -97,15 +98,15 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
         #skew<-apply(sumstat,2,skewness, na.rm=T)
         param<-rbind(param,com[[nrow(model$loci)+1]][2,])
         SS<-rbind(SS,c(param,Mean,var))
-        
+
       })[3]
-        
+
       }
-      
+
       TIM2<-system.time(
       write.table(simulations,file=paste(path,"SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
       )[3]
-  
+
   thou<-thou+block.size
   Total.time<-round(((((TIM+TIM2)*nsim.blocks)-((TIM+TIM2)*j))/60)/60,3)
   cat(paste("PipeMaster:: ",thou," (",round(block.size/(TIM+TIM2),1)," sims/sec) | ",Total.time," hours remaining",sep=""),"\n")
