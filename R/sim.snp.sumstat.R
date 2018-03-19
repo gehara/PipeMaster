@@ -40,7 +40,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
     nam<-c(nam, TD_denom)
     nam<-c(t(com[[length(com)]][1,]),t(paste(nam,"_mean",sep="")),t(paste(nam,"_var",sep="")))
          #t(paste(nam,"_skew",sep="")),t(paste(nam,"_var",sep="")))
-    write.table(t(nam),file=paste("SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")
+    write.table(t(nam),file=paste(path,"SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")
     }
 
   thou<-0
