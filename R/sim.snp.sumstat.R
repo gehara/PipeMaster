@@ -83,13 +83,11 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
 
          sumstat <- foreach(u = 1:nrow(model$loci), .combine="rbind") %dopar% {
 
-          system(paste0(com[[u]]," > ",u,"out.txt"), wait=F)
+          system(paste0(com[[u]]," > ",u,"out.txt"), wait=T)
           ss <- read.table(paste0(u,"out.txt"), header=T)
           ss
 
           }
-
-
 
         TD_denom<-data.frame(sumstat[,grep("pi",colnames(sumstat))]-sumstat[,grep("theta_w",colnames(sumstat))])
         colnames(TD_denom)<-paste(colnames(sumstat)[grep("pi",colnames(sumstat))],
@@ -104,7 +102,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
         #skew<-apply(sumstat,2,skewness, na.rm=T)
         param<-com[[nrow(model$loci)+1]][2,]
         simulations<-rbind(simulations,c(param,Mean,var))
-        file.remove(list.files(pattern = "out.txt"))
+        #file.remove(list.files(pattern = "out.txt"))
 
 
       })[3]
