@@ -65,16 +65,18 @@ msABC.commander<-function(model,use.alpha=use.alpha,msABC){
   time.pars[,4:5]<-as.numeric(time.pars[,4])/ms.scalar
 
   #### ms string command
-  commands<-list(NULL)
-  for(u in 1:nrow(loci)){
+  commands<-foreach(u = 1:nrow(loci)) %dopar% {
        string<-ms.string.generator(model,size.pars,mig.pars,time.pars,use.alpha=use.alpha,scalar=as.numeric(loci[u,3]))
       #################################### theta and structure ###########################
       ######### generate -t and -I part of the command
 
       y<-paste(msABC,sum(as.numeric(model$I[u,4:ncol(model$I)])),"1 -t",loci[u,7],paste(model$I[u,2:ncol(model$I)],collapse=" "),collapse=" ")
-      commands[[u]]<-paste(y,string, collapse=" ")
+
+      paste(y,string, collapse=" ")
+
       }
   #### attach sampled parameters
   commands[[nrow(loci)+1]]<-t(parameters)
   return(commands)
   }
+
