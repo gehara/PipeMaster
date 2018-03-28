@@ -78,16 +78,17 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
           param<-NULL
           TIM<-system.time(
        for(i in 1:block.size){
-          com<-msABC.commander(model,use.alpha=use.alpha, msABC = msABC.call)
-          ### runs msABC for each locus
-          foreach(u = 1:nrow(model$loci)) %dopar% {
-            system(paste0(com[[u]]," > ",u,"out.txt"),wait=F)
+
+         com <- msABC.commander(model,use.alpha=use.alpha, msABC = msABC.call)
+
+         sumstat <- foreach(u = 1:nrow(model$loci), .combine="rbind") %dopar% {
+
+          system(paste0(com[[u]]," > ",u,"out.txt"), wait=F)
+          ss <- read.table(paste0(u,"out.txt"), header=T)
+          ss
+
           }
 
-          sumstat<-foreach(u = 1:nrow(model$loci),.combine=rbind) %dopar% {
-            ss<-read.table(paste0(u,"out.txt"),header=T)
-            ss
-          }
 
 
         TD_denom<-data.frame(sumstat[,grep("pi",colnames(sumstat))]-sumstat[,grep("theta_w",colnames(sumstat))])
