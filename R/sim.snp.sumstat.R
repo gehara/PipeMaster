@@ -91,8 +91,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
            sumstat <- rbind(sumstat,as.numeric(x[[2]]))
          }
 
-        colnames(ss)<-x[[1]]
-        sumstat<-ss
+        colnames(sumstat)<-x[[1]]
 
         TD_denom<-data.frame(sumstat[,grep("pi",colnames(sumstat))]-sumstat[,grep("theta_w",colnames(sumstat))])
         colnames(TD_denom)<-paste(colnames(sumstat)[grep("pi",colnames(sumstat))],
