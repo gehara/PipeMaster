@@ -38,7 +38,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
     nam<-nam[-grep("ZnS",nam)]
     nam<-nam[-grep("thomson",nam)]
     nam<-c(nam, TD_denom)
-    nam<-c(t(com[[length(com)]][1,]),t(paste(nam,"_mean",sep="")),t(paste(nam,"_var",sep="")))
+    nam<-c(t(com[[length(com)]][1,ncol(com[[length(com)]])-(nrow(model$loci)-1)]),t(paste(nam,"_mean",sep="")),t(paste(nam,"_var",sep="")))
          #t(paste(nam,"_skew",sep="")),t(paste(nam,"_var",sep="")))
     write.table(t(nam),file=paste("SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")
     }
@@ -79,7 +79,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
     } else {
           simulations<-NULL
           param<-NULL
-          TIM<-system.time(
+      TIM <- system.time(
   simulations <- foreach(i = 1:block.size,.combine="rbind",.multicombine=TRUE,.inorder=FALSE) %dopar% {
 
          com <- PipeMaster:::msABC.commander(model,use.alpha=use.alpha, msABC = msABC.call)
