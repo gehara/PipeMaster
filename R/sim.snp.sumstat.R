@@ -80,18 +80,18 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
           simulations<-NULL
           param<-NULL
           TIM<-system.time(
-       for(i in 1:block.size){
+  simulations <- foreach(i = 1:block.size,.combine="rbind",.multicombine=TRUE,.inorder=FALSE) %dopar% {
 
          com <- PipeMaster:::msABC.commander(model,use.alpha=use.alpha, msABC = msABC.call)
 
-         sumstat <- foreach(u = 1:nrow(model$loci), .combine="rbind",.multicombine=TRUE,.inorder=FALSE) %dopar% {
-
+         ss<-NULL
+         for(u in 1:nrow(model$loci)){
+           #, .combine="rbind",.multicombine=TRUE,.inorder=FALSE) %dopar% {
            x<-lapply(lapply(system(paste(com[[u]],sep=""),intern=T),strsplit,"\t"),unlist)
-           ss <- as.numeric(x[[2]])
-           ss
-
+           ss <- rbind(ss,as.numeric(x[[2]]))
          }
-         colnames(sumstat)<-x[[1]]
+
+        colnames(sumstat)<-x[[1]]
 
         TD_denom<-data.frame(sumstat[,grep("pi",colnames(sumstat))]-sumstat[,grep("theta_w",colnames(sumstat))])
         colnames(TD_denom)<-paste(colnames(sumstat)[grep("pi",colnames(sumstat))],
@@ -104,9 +104,12 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
         var<-apply(sumstat,2,var, na.rm=T)
         #kur<-apply(sumstat,2,kurtosis, na.rm=T)
         #skew<-apply(sumstat,2,skewness, na.rm=T)
-        param<-as.numeric(com[[nrow(model$loci)+1]][2,])
-        simulations<-rbind(simulations,c(param,Mean,var))
+        pp<-as.numeric(com[[nrow(model$loci)+1]][2,])
+        param<-pp[1:(length(pp)-nrow(model$loci))]
+        param<-c(param,mean(pp[(length(param)+1):length(pp)]))
+        #simulations<-rbind(simulations,c(param,Mean,var))
         #file.remove(list.files(pattern = "out.txt"))
+        c(param,Mean,var)
 
 
       })[3]
