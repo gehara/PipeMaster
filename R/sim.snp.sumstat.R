@@ -107,6 +107,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
         pp<-as.numeric(com[[nrow(model$loci)+1]][2,])
         param<-pp[1:(length(pp)-nrow(model$loci))]
         param<-c(param,mean(pp[(length(param)+1):length(pp)]))
+        names(param)<-com[length(com)][[1]][1,1:length(param)]
         #simulations<-rbind(simulations,c(param,Mean,var))
         #file.remove(list.files(pattern = "out.txt"))
         simulations<-rbind(simulations,c(param,Mean,var))
