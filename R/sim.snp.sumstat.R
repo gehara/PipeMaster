@@ -78,20 +78,21 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
     })[3]
     } else {
           simulations<-NULL
-          param<-NULL
-      TIM <- system.time(
-  simulations <- foreach(i = 1:block.size,.combine="rbind",.multicombine=TRUE,.inorder=FALSE) %dopar% {
+          #param<-NULL
+          TIM <- system.time(
+      for(i in 1:block.size){
 
          com <- PipeMaster:::msABC.commander(model,use.alpha=use.alpha, msABC = msABC.call)
 
-         ss<-NULL
+         sumstat<-NULL
          for(u in 1:nrow(model$loci)){
            #, .combine="rbind",.multicombine=TRUE,.inorder=FALSE) %dopar% {
            x<-lapply(lapply(system(paste(com[[u]],sep=""),intern=T),strsplit,"\t"),unlist)
-           ss <- rbind(ss,as.numeric(x[[2]]))
+           sumstat <- rbind(sumstat,as.numeric(x[[2]]))
          }
 
-        colnames(sumstat)<-x[[1]]
+        colnames(ss)<-x[[1]]
+        sumstat<-ss
 
         TD_denom<-data.frame(sumstat[,grep("pi",colnames(sumstat))]-sumstat[,grep("theta_w",colnames(sumstat))])
         colnames(TD_denom)<-paste(colnames(sumstat)[grep("pi",colnames(sumstat))],
@@ -109,7 +110,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
         param<-c(param,mean(pp[(length(param)+1):length(pp)]))
         #simulations<-rbind(simulations,c(param,Mean,var))
         #file.remove(list.files(pattern = "out.txt"))
-        c(param,Mean,var)
+        simulations<-rbind(simulations,c(param,Mean,var))
 
 
       })[3]
