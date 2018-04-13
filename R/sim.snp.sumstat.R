@@ -27,7 +27,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
 
   if(append.sims==F){
     if(model$I[1,1]=="genomic"){
-      com<-ms.commander.snp(model,use.alpha=use.alpha,msABC=msABC.call)
+      com<-PipeMaster:::ms.commander.snp(model,use.alpha=use.alpha,msABC=msABC.call)
       } else {
       com<-msABC.commander(model,use.alpha=use.alpha,msABC=msABC.call)
       }
@@ -48,13 +48,16 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
   for(j in 1:nsim.blocks) {
     setwd(tempdir())
   if(model$I[1,1]=="genomic"){
-    TIM<-system.time(
+    TIM <- system.time(
     simulations <- foreach(i = 1:block.size,.combine="rbind") %dopar% {
 
-      com<-ms.commander.snp(model,msABC=msABC.call, use.alpha = use.alpha)
+      com<-PipeMaster:::ms.commander.snp(model,msABC=msABC.call, use.alpha = use.alpha)
 
-      system(paste(com[[1]]," > ",i,"out.txt",sep=""))
-      sumstat<-read.table(paste0(i,"out.txt"),header = T)
+      #system(paste(com[[1]]," > ",i,"out.txt",sep=""))
+      #sumstat<-read.table(paste0(i,"out.txt"),header = T)
+      x<-lapply(lapply(system(paste(com[[1]],sep=""),intern=T),strsplit,"\t"),unlist)
+      sumstat <- matrix(as.numeric(unlist(x[1:as.numeric(model$loci[,3])+1])), ncol = length(x[[1]]), byrow = TRUE)
+      colnames(sumstat)<-x[[1]]
 
       TD_denom<-data.frame(sumstat[,grep("pi",colnames(sumstat))]-sumstat[,grep("theta_w",colnames(sumstat))])
       colnames(TD_denom)<-paste(colnames(sumstat)[grep("pi",colnames(sumstat))],
@@ -69,7 +72,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
       #skew<-apply(sumstat,2,skewness, na.rm=T)
 
       param<-as.numeric(com[[3]][2,])
-
+      names(param)<-com[[3]][1,]
       c(param,Mean,var)
 
     })[3]
@@ -79,15 +82,16 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
           TIM<-system.time(
        for(i in 1:block.size){
 
-         com <- msABC.commander(model,use.alpha=use.alpha, msABC = msABC.call)
+         com <- PipeMaster:::msABC.commander(model,use.alpha=use.alpha, msABC = msABC.call)
 
-         sumstat <- foreach(u = 1:nrow(model$loci), .combine="rbind") %dopar% {
+         sumstat <- foreach(u = 1:nrow(model$loci), .combine="rbind",.multicombine=TRUE,.inorder=FALSE) %dopar% {
 
-          system(paste0(com[[u]]," > ",u,"out.txt"), wait=T)
-          ss <- read.table(paste0(u,"out.txt"), header=T)
-          ss
+           x<-lapply(lapply(system(paste(com[[u]],sep=""),intern=T),strsplit,"\t"),unlist)
+           ss <- as.numeric(x[[2]])
+           ss
 
-          }
+         }
+         colnames(sumstat)<-x[[1]]
 
         TD_denom<-data.frame(sumstat[,grep("pi",colnames(sumstat))]-sumstat[,grep("theta_w",colnames(sumstat))])
         colnames(TD_denom)<-paste(colnames(sumstat)[grep("pi",colnames(sumstat))],
@@ -100,7 +104,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
         var<-apply(sumstat,2,var, na.rm=T)
         #kur<-apply(sumstat,2,kurtosis, na.rm=T)
         #skew<-apply(sumstat,2,skewness, na.rm=T)
-        param<-com[[nrow(model$loci)+1]][2,]
+        param<-as.numeric(com[[nrow(model$loci)+1]][2,])
         simulations<-rbind(simulations,c(param,Mean,var))
         #file.remove(list.files(pattern = "out.txt"))
 
