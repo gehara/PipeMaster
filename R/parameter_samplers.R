@@ -2,7 +2,11 @@
 sample.pars<-function(x){
   k<-sample(nrow(x),nrow(x))
   for(i in k){
-    x[i,4:5]<-do.call(x[i,6],args=list(1,as.numeric(x[i,4]),as.numeric(x[i,5])),quote=F)
+    samp<-do.call(x[i,6],args=list(1,as.numeric(x[i,4]),as.numeric(x[i,5])),quote=F)
+    while(samp<=0){
+      samp<-do.call(x[i,6],args=list(1,as.numeric(x[i,4]),as.numeric(x[i,5])),quote=F)
+    }
+  x[i,4:5]<-samp
   }
   return(x)
 }

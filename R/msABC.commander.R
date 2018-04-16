@@ -26,7 +26,13 @@ msABC.commander<-function(model,use.alpha=use.alpha,msABC){
     parameters<-rbind(parameters,time.pars[,c(1,4)])
   }
 
-  loci<-sample.pars(model$loci)
+  if(model$loci[1,1]=="rate"){
+    loci<-model$loci
+    loci[,4]<-sample.pars(model$loci[1:2,])[1,4]
+    loci[,5]<-sample.pars(model$loci[1:2,])[1,4]
+    loci[,6]<-"rnorm"
+    loci<-sample.pars(loci)
+  } else {loci<-sample.pars(model$loci)}
 
   # sample migrations if present and bind sampled parameters
   if(is.null(mig.pars)==F){
