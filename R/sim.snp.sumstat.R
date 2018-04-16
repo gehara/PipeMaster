@@ -103,6 +103,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
 
         Mean<-colMeans(sumstat,na.rm = T)
         var<-apply(sumstat,2,var, na.rm=T)
+
         #kur<-apply(sumstat,2,kurtosis, na.rm=T)
         #skew<-apply(sumstat,2,skewness, na.rm=T)
         pp<-as.numeric(com[[nrow(model$loci)+1]][2,])
