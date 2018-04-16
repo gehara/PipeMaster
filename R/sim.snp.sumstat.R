@@ -123,7 +123,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
 
   thou<-thou+block.size
   Total.time<-round(((((TIM+TIM2)*nsim.blocks)-((TIM+TIM2)*j))/60)/60,3)
-  cat(paste("PipeMaster:: ",thou," (",round(block.size/(TIM+TIM2),1)," sims/sec) | ",Total.time," hours remaining",sep=""),"\n")
+  cat(paste("PipeMaster:: ",thou," (",round(block.size/(TIM+TIM2),2)," sims/sec) | ",Total.time," hours remaining",sep=""),"\n")
   #write.table(param,file=paste(output.name,"_par.txt",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
   }
 
