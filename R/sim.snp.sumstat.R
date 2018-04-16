@@ -39,7 +39,8 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
     nam<-nam[-grep("thomson",nam)]
     nam<-c(nam, TD_denom)
     if(model$I[1,1]=="genomic"){
-    nam<-c(com[[3]][1,],nam)
+      nam<-c(t(paste(nam,"_mean",sep="")),t(paste(nam,"_var",sep="")))
+      nam<-c(com[[3]][1,],nam)
     }else{
     nam<-c(t(com[[length(com)]][1,1:(ncol(com[[length(com)]])-(nrow(model$loci)-2))]),t(paste(nam,"_mean",sep="")),t(paste(nam,"_var",sep="")))
     }
