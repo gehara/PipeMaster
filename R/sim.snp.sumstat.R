@@ -38,7 +38,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
     nam<-nam[-grep("ZnS",nam)]
     nam<-nam[-grep("thomson",nam)]
     nam<-c(nam, TD_denom)
-    nam<-c(t(com[[length(com)]][1,1:(ncol(com[[length(com)]])-(nrow(model$loci)-1))]),t(paste(nam,"_mean",sep="")),t(paste(nam,"_var",sep="")))
+    nam<-c(t(com[[length(com)]][1,1:(ncol(com[[length(com)]])-(nrow(model$loci)-2))]),t(paste(nam,"_mean",sep="")),t(paste(nam,"_var",sep="")))
          #t(paste(nam,"_skew",sep="")),t(paste(nam,"_var",sep="")))
     write.table(t(nam),file=paste("SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")
     }
@@ -46,10 +46,11 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
 
   thou<-0
   for(j in 1:nsim.blocks) {
-    setwd(tempdir())
+
   if(model$I[1,1]=="genomic"){
+    simulations <- NULL
     TIM <- system.time(
-    simulations <- foreach(i = 1:block.size,.combine="rbind") %dopar% {
+      for(i in 1:block.size) {
 
       com<-PipeMaster:::ms.commander.snp(model,msABC=msABC.call, use.alpha = use.alpha)
 
@@ -73,7 +74,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
 
       param<-as.numeric(com[[3]][2,])
       names(param)<-com[[3]][1,]
-      c(param,Mean,var)
+      simulations<-rbind(simulations,c(param,Mean,var))
 
     })[3]
     } else {
@@ -107,6 +108,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
         pp<-as.numeric(com[[nrow(model$loci)+1]][2,])
         param<-pp[1:(length(pp)-nrow(model$loci))]
         param<-c(param,mean(pp[(length(param)+1):length(pp)]))
+        param<-c(param,sd(pp[(length(param)+1):length(pp)]))
         names(param)<-com[length(com)][[1]][1,1:length(param)]
         #simulations<-rbind(simulations,c(param,Mean,var))
         #file.remove(list.files(pattern = "out.txt"))
@@ -116,8 +118,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,moments=F
       })[3]
 
       }
-        setwd(path)
-      TIM2<-system.time(
+        TIM2<-system.time(
         write.table(simulations,file=paste("SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
       )[3]
 
