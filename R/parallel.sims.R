@@ -4,6 +4,9 @@ parallel.sims<-function(ncores,code,model)
 
   model.name<-strsplit(code,",")[[1]]
   model.name<-model.name[grep("output.name",model.name)]
+  if(length(model.name)==0){
+    stop("Argument model.name needs to be specified in the code.")
+  }
   model.name<-gsub(")","",model.name)
   model.name<-gsub(" ","",model.name)
   model.name<-gsub("\"","",model.name)
@@ -23,6 +26,24 @@ parallel.sims<-function(ncores,code,model)
     }
   }
 
+  tot<-strsplit(code,",")[[1]]
+  nsim.blocks<-tot[grep("nsim.blocks",tot)]
+  if(length(nsim.blocks)==0){
+    stop("Argument nsim.blocks needs to be specified in the code.")
+  }
+  nsim.blocks<-gsub(")","",nsim.blocks)
+  nsim.blocks<-gsub(" ","",nsim.blocks)
+  nsim.blocks<-sum(as.numeric(strsplit(nsim.blocks,"=")[[1]][2]))
+
+  block.size<-tot[grep("block.size",tot)]
+  if(length(block.size)==0){
+    block.size<-100
+  } else {
+    block.size<-gsub(")","",block.size)
+    block.size<-gsub(" ","",block.size)
+    block.size<-sum(as.numeric(strsplit(block.size,"=")[[1]][2]))
+  }
+  tot<-nsim.blocks*block.size*ncores
 
   for(i in 1:ncores){
 
@@ -39,24 +60,13 @@ parallel.sims<-function(ncores,code,model)
     #setwd("../")
   }
   Sys.sleep(10)
-  S<-list.files()[grep("SIMS",list.files())]
+  S<-list.files()[grep(paste("SIMS_",model.name,sep=""),list.files())]
   while(length(S)<1){
-    S<-list.files()[grep("SIMS",list.files())]
+    S<-list.files()[grep(paste("SIMS_",model.name,sep=""),list.files())]
   }
   rows<-nrow(read.table(S,header=T,sep="\t"))
 
-  tot<-strsplit(code,",")[[1]]
-  a<-tot[grep("nsim",tot)]
-  a<-gsub(")","",a)
-  a<-gsub(" ","",a)
-  a<-sum(as.numeric(strsplit(a,"=")[[1]][2]))
 
-  b<-tot[grep("size",tot)]
-  b<-gsub(")","",b)
-  b<-gsub(" ","",b)
-  b<-sum(as.numeric(strsplit(b,"=")[[1]][2]))
-
-  tot<-a*b*ncores
 
 
   while(rows!=tot){
