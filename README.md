@@ -11,12 +11,19 @@ PipeMaster simulates summary statistics and coalescent trees. It calculates the 
 > install.packages("devtools")  
 > install_github("gehara/PipeMaster")  
 
-### Hierarchical codemographic model used in: 
+### Hierarchical codemographic model
+
+PipeMaster can simulate a hierarchical demographic model for comparative analys of populations/species. The hABC method used in the package was first described in Chan et al 2014 and improved in Gehara et al 2017. These two papers show good examples of this analysis. If you use this tool please cite these references.
+
+	Chan Y.L., Schanzenbach D., & Hickerson M.J. (2014) Detecting concerted demographic response across community
+	assemblages using hierarchical approximate Bayesian computation. Molecular Biology and Evolution, 31,
+	2501–2515.
+
 	Gehara M, Garda AA, Werneck FP, et al. Estimating synchronous demographic changes across populations 
 	using hABC and its application for a herpetological community from northeastern Brazil.
 	Mol Ecol. 2017;00:1–16. https://doi.org/10.1111/mec.14239
 
-[Contribution guidelines for this project](hABC_manual.md)
+[Instructions to run the hABC](hABC_manual.md)
 
 
 ### Nonhierarchical models
