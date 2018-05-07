@@ -95,7 +95,7 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
       stop(cat(paste("Something is wrong with alignment",fasta.files[u]),
                paste("Some potential problems:"),
                paste("1) sequences are not aligned"),
-               paste("2) uknown character in the alignemt (only IUPAC nucleotide codes allowed, no question mark)"),
+               paste("2) uknown character in the alignemt (only IUPAC nucleotide codes allowed, no question marks)"),
                paste("3) something else..."),sep="\n"))
     }
 
@@ -125,7 +125,7 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
     npops<-length(unique(pops[,2]))
     pop.list<-list()
     for(i in 1:npops){
-      pop.list[[i]]<-length(grep(i,pops[,2]))
+      pop.list[[i]]<-length(which(pops[,2]==i))
     }
 
     string<-paste("-I",npops,paste(unlist(pop.list),collapse=" "))
