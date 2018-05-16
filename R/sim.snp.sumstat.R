@@ -128,8 +128,8 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,
     }
     return(simulations)
   }
-
-  save.image(file='.PM_objects.RData')
+  parentls <- function()ls(envir=parent.frame())
+  save(list=parentls(),file='.PM_objects.RData')
 
   thou<-0
   for(j in 1:nsim.blocks) {
