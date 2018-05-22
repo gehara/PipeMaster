@@ -66,9 +66,8 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,
         com<-PipeMaster:::ms.commander.snp(model,msABC=msABC.call, use.alpha = use.alpha)
         #system(paste(com[[1]]," > ",i,"out.txt",sep=""))
         #sumstat<-read.table(paste0(i,"out.txt"),header = T)
-        x<-lapply(lapply(system(paste(com[[1]],sep=""),intern=T),strsplit,"\t"),unlist)
-        sumstat <- matrix(as.numeric(unlist(x[1:as.numeric(model$loci[,3])+1])), ncol = length(x[[1]]), byrow = TRUE)
-        colnames(sumstat)<-x[[1]]
+        sumstat<-read.table(text=system(paste(com[[1]],sep=""),intern=T),header=T,sep="\t")
+        sumstat<-subset(sumstat,select=-X)
 
         TD_denom<-data.frame(sumstat[,grep("pi",colnames(sumstat))]-sumstat[,grep("theta_w",colnames(sumstat))])
         colnames(TD_denom)<-paste(colnames(sumstat)[grep("pi",colnames(sumstat))],
@@ -94,11 +93,10 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,
         com <- PipeMaster:::msABC.commander(model,use.alpha=use.alpha, msABC = msABC.call)
         sumstat<-NULL
         for(u in 1:nrow(model$loci)){
-          x<-lapply(lapply(system(paste(com[[u]],sep=""),intern=T),strsplit,"\t"),unlist)
-          sumstat <- rbind(sumstat,as.numeric(x[[2]]))
+          x<-read.table(text=system(paste(com[[u]],sep=""),intern=T),header=T,sep="\t")
+          sumstat <- rbind(sumstat,x)
         }
-
-        colnames(sumstat)<-x[[1]]
+        sumstat<-subset(sumstat, select=-c(X))
 
         TD_denom<-data.frame(sumstat[,grep("pi",colnames(sumstat))]-sumstat[,grep("theta_w",colnames(sumstat))])
         colnames(TD_denom)<-paste(colnames(sumstat)[grep("pi",colnames(sumstat))],
@@ -135,16 +133,19 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,
   for(j in 1:nsim.blocks) {
 
     write(0,".log")
+
     for(c in 1:ncores){
       system(paste("Rscript .script_parallel.R",c), wait = F)
     }
 
-    l<-readLines(".log")
+    l<-0
     TIM1<-system.time(
     while(sum(as.numeric(l)) < ncores){
       Sys.sleep(1)
       l<-readLines(".log")
       })[3]
+
+    file.remove(".log")
 
     simulations<-NULL
     TIM2<-system.time(
