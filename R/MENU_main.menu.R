@@ -225,7 +225,7 @@ join.par<-function(){
 
     tot.join.par<-NULL
     for (i in 1:length(.e$joints)){
-      join.par<-paste("join_",.e$joints[i],sep="")
+      join.par<-paste("join",paste(strsplit(.e$joints[i]," ")[[1]],collapse="_"),sep="")
       tot.join.par<-c(tot.join.par,join.par)
     }
     .e$ej<-matrix(nrow=length(.e$joints),ncol=6)
