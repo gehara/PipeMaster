@@ -51,6 +51,9 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,
   write(paste('args <- commandArgs(TRUE)',
               'cat(paste("Core",args),sep="\n")',
             "suppressMessages(library(PipeMaster))",
+            "if('doMC' %in% rownames(installed.packages())){",
+            "suppressMessages(library(doMC))",
+            "registerDoMC(paste(args))}",
             'load(file=".PM_objects.RData")',
             "res<-sim.func()",
             'write.table(res,file=paste(".",args,"SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")',
@@ -76,7 +79,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,
         sumstat<-sumstat[,-grep("thomson",colnames(sumstat))]
         sumstat<-cbind(sumstat, TD_denom)
 
-        Mean<-colMeans(sumstat,na.rm = T)
+        Mean<-apply(sumstat,2,mean, na.rm = T)
         var<-apply(sumstat,2,var, na.rm=T)
         #kur<-apply(sumstat,2,kurtosis, na.rm=T)
         #skew<-apply(sumstat,2,skewness, na.rm=T)
@@ -106,7 +109,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,
         sumstat<-sumstat[,-grep("thomson",colnames(sumstat))]
         sumstat<-cbind(sumstat, TD_denom)
 
-        Mean<-colMeans(sumstat,na.rm = T)
+        Mean<-apply(sumstat,2,mean, na.rm = T)
         var<-apply(sumstat,2,var, na.rm=T)
 
         #kur<-apply(sumstat,2,kurtosis, na.rm=T)
