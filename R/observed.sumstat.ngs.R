@@ -52,7 +52,7 @@ obs.sumstat.ngs<-function(model,path.to.fasta,pop.assign,moments=F,msABC.call=ge
 
   ## get names of sumstats
   nam<-colnames(observed)
-
+  #observed[observed==0]<-NA
   mean<-colMeans(observed,na.rm = T)
   names(mean)<-paste(nam,"_mean",sep="")
   if(moments==T){

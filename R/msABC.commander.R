@@ -5,7 +5,7 @@
 # @return a list with msABC command and sampled parameters.
 # @note This function is used internally for the sim.msABC function. One mey want to run this function to check the msABC string.
 #
-msABC.commander<-function(model,use.alpha=use.alpha,msABC){
+msABC.commander<-function(model,use.alpha=use.alpha,msABC,arg){
 
   # empty parameter vector
   parameters<-vector()
@@ -16,23 +16,17 @@ msABC.commander<-function(model,use.alpha=use.alpha,msABC){
   time.pars<-rbind(model$flags$ej,model$flags$en$time,model$flags$em$time)
 
   # sample Ne, div.time and mutation rate
-  size.pars<-sample.w.cond(par.matrix=size.pars,cond.matrix=model$conds$size.matrix)
+  size.pars<-PipeMaster:::sample.w.cond(par.matrix=size.pars,cond.matrix=model$conds$size.matrix)
   # bind Ne sampled parameters
   parameters<-rbind(parameters,size.pars[,c(1,4)])
 
   if(is.null(time.pars)==F){
-    time.pars<-sample.w.cond(par.matrix=time.pars,cond.matrix=model$conds$time.matrix)
+    time.pars<-PipeMaster:::sample.w.cond(par.matrix=time.pars,cond.matrix=model$conds$time.matrix)
     # bind sampled time parameters
     parameters<-rbind(parameters,time.pars[,c(1,4)])
   }
 
-  if(model$loci[1,1]=="rate"){
-    loci<-model$loci
-    loci[,4]<-sample.pars(model$loci[1:2,])[1,4]
-    loci[,5]<-sample.pars(model$loci[1:2,])[1,4]
-    loci[,6]<-"rnorm"
-    loci<-sample.pars(loci)
-  } else {loci<-sample.pars(model$loci)}
+  loci<-model$loci
 
   # sample migrations if present and bind sampled parameters
   if(is.null(mig.pars)==F){
@@ -42,7 +36,7 @@ msABC.commander<-function(model,use.alpha=use.alpha,msABC){
   }
 
   #### bind sampled mutation rate
-  parameters<-rbind(parameters,loci[,c(1,4)])
+  #parameters<-parameters#,loci[,c(1,4)])
 
   ####### End of parameter sampling #######################################
   #########################################################################
@@ -65,24 +59,24 @@ msABC.commander<-function(model,use.alpha=use.alpha,msABC){
   size.pars[,4:5]<-as.numeric(size.pars[,4])/Ne0
 
   #### bind scaled theta per gene (4Ne0*m*pb)
-  loci<-cbind(loci,ms.scalar*as.numeric(loci[,4])*as.numeric(loci[,2]))
+  # loci<-cbind(loci,ms.scalar*as.numeric(loci[,4])*as.numeric(loci[,2]))
 
   #### convertion of time to coalescent scale
   time.pars[,4:5]<-as.numeric(time.pars[,4])/ms.scalar
 
+  commands<-list(NULL,NULL)
   #### ms string command
-  commands<-foreach(u = 1:nrow(loci)) %dopar% {
-       string<-ms.string.generator(model,size.pars,mig.pars,time.pars,use.alpha=use.alpha,scalar=as.numeric(loci[u,3]))
-      #################################### theta and structure ###########################
-      ######### generate -t and -I part of the command
+  string <- PipeMaster:::ms.string.generator(model,size.pars,mig.pars,time.pars,use.alpha=use.alpha,scalar=as.numeric(loci[1,3]))
+  #################################### theta and structure ###########################
+  ######### generate -t and -I part of the command
+  y <- paste(msABC,sum(as.numeric(model$I[1,4:ncol(model$I)])),1,paste(model$I[1,2:ncol(model$I)],collapse=" "),collapse=" ")
+  ######### generate locfile part of the command
+  loc.string <- paste("--frag-begin --finp ","locfile.txt --N ",Ne0," --frag-end",sep="")
+  #### final command
+  commands[[1]]<-paste(y,string,loc.string, collapse=" ")
 
-      y<-paste(msABC,sum(as.numeric(model$I[u,4:ncol(model$I)])),"1 -t",loci[u,7],paste(model$I[u,2:ncol(model$I)],collapse=" "),collapse=" ")
-
-      paste(y,string, collapse=" ")
-
-      }
   #### attach sampled parameters
-  commands[[nrow(loci)+1]]<-t(parameters)
+  commands[[2]]<-t(parameters)
   return(commands)
   }
 

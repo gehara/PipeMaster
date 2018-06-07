@@ -5,8 +5,8 @@
 \title{Simulate summary statistics using msABC}
 \usage{
 sim.msABC.sumstat(model, nsim.blocks, path = getwd(), use.alpha = F,
-  moments = F, append.sims = F, block.size = 100,
-  msABC.call = get.msABC(), output.name)
+  append.sims = F, block.size = 10, msABC.call = get.msABC(), output.name,
+  ncores)
 }
 \arguments{
 \item{model}{A model object bult by the main.menu function. Both genomic and sanger type models are allowed.}
@@ -20,8 +20,8 @@ This argument changes ONLY the MOST RECENT demographich change.}
 
 \item{append.sims}{Logical. If TRUE simulations will be appended in the last output. Default is FALSE.}
 
-\item{msABC.call}{String. Path to the msABC executable. msABC binaries for Mac's and Linux are included in the package and should work in most computers.
-There is no need to change that unless you want to compile the program yourself and point the function to it.}
+\item{msABC.call}{String. Path to the msABC executable. msABC binaries for Mac and Linux are included in the package and should work cases for these operating systems.
+There is no need to change this unless you want to compile the program yourself and point the function to it.}
 
 \item{output.name}{String. The prefix of the output names. Defalt is "model"}
 
