@@ -25,106 +25,102 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,
   # set working directory
   setwd(path)
 
+  if(model$I[1,1]!="genomic") {locfile<-get.locfile(model)
+                              msABC.path<-find.package("PipeMaster")}
+
   if(append.sims==F){
     if(model$I[1,1]=="genomic"){
-      com<-PipeMaster:::ms.commander.snp(model,use.alpha=use.alpha,msABC=msABC.call)
+      com<-ms.commander.snp(model,use.alpha=use.alpha,msABC=msABC.call)
       } else {
-      com<-PipeMaster:::msABC.commander(model,use.alpha=use.alpha,msABC=msABC.call)
+      com<-msABC.commander(model,use.alpha=use.alpha,msABC=msABC.call,arg=1)
       }
 
     x<-strsplit(system(com[[1]],intern=T),"\t")
     nam<-x[1][[1]]
-    TD_denom<-paste(nam[grep("pi",nam)],nam[grep("theta_w",nam)],sep="_")
-    nam<-nam[-grep("ZnS",nam)]
-    nam<-nam[-grep("thomson",nam)]
+    TD_denom<-paste(nam[grep("pi",nam)],nam[grep("_w",nam)],sep="_")
+    #nam<-nam[-grep("ZnS",nam)]
+    #nam<-nam[-grep("thomson",nam)]
     nam<-c(nam, TD_denom)
     if(model$I[1,1]=="genomic"){
       nam<-c(t(paste(nam,"_mean",sep="")),t(paste(nam,"_var",sep="")))
       nam<-c(com[[3]][1,],nam)
     }else{
-    nam<-c(t(com[[length(com)]][1,1:(ncol(com[[length(com)]])-(nrow(model$loci)-2))]),t(paste(nam,"_mean",sep="")),t(paste(nam,"_var",sep="")))
+    nam<-c(com[[2]][1,],"mean.rate","sd.rate",nam)
     }
          #t(paste(nam,"_skew",sep="")),t(paste(nam,"_var",sep="")))
     write.table(t(nam),file=paste("SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")
     }
 
-  write(paste('args <- commandArgs(TRUE)',
-              'cat(paste("Core",args),sep="\n")',
-            "suppressMessages(library(PipeMaster))",
+
+
+ write(paste('arg <- commandArgs(TRUE)',
+              'cat(paste("Core",arg),sep="\n")',
+            #"suppressMessages(library(PipeMaster))",
+            "suppressMessages(library(devtools))",
+            "load_all('~/Github/PipeMaster')",
             "if('doMC' %in% rownames(installed.packages())){",
             "suppressMessages(library(doMC))",
-            "registerDoMC(paste(args))}",
+            "registerDoMC(paste(arg))}",
             'load(file=".PM_objects.RData")',
-            "res<-sim.func()",
-            'write.table(res,file=paste(".",args,"SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")',
+            "res<-sim.func(arg)",
+            'write.table(res,file=paste(".",arg,"SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")',
             'write(1,".log",append=T)',
             "quit(save='no')",sep="\n"),".script_parallel.R")
 
-  sim.func<-function(){
+  sim.func<-function(arg){
 
-    if(model$I[1,1]=="genomic"){
+     if(model$I[1,1]=="genomic"){
 
       simulations <- NULL
       for(i in 1:block.size) {
-        com<-PipeMaster:::ms.commander.snp(model,msABC=msABC.call, use.alpha = use.alpha)
-        #system(paste(com[[1]]," > ",i,"out.txt",sep=""))
-        #sumstat<-read.table(paste0(i,"out.txt"),header = T)
+        com<-ms.commander.snp(model,msABC=msABC.call, use.alpha = use.alpha)
         sumstat<-read.table(text=system(paste(com[[1]],sep=""),intern=T),header=T,sep="\t")
         sumstat<-subset(sumstat,select=-X)
 
-        TD_denom<-data.frame(sumstat[,grep("pi",colnames(sumstat))]-sumstat[,grep("theta_w",colnames(sumstat))])
-        colnames(TD_denom)<-paste(colnames(sumstat)[grep("pi",colnames(sumstat))],
-                                  colnames(sumstat)[grep("theta_w",colnames(sumstat))],sep="_")
-        sumstat<-sumstat[,-grep("ZnS",colnames(sumstat))]
-        sumstat<-sumstat[,-grep("thomson",colnames(sumstat))]
-        sumstat<-cbind(sumstat, TD_denom)
 
-        Mean<-apply(sumstat,2,mean, na.rm = T)
-        var<-apply(sumstat,2,var, na.rm=T)
-        #kur<-apply(sumstat,2,kurtosis, na.rm=T)
-        #skew<-apply(sumstat,2,skewness, na.rm=T)
+      TD_denom <- data.frame(sumstat[,grep("pi",colnames(sumstat))]-sumstat[,grep("theta_w",colnames(sumstat))])
+      colnames(TD_denom) <- paste(colnames(sumstat)[grep("pi",colnames(sumstat))],
+                              colnames(sumstat)[grep("theta_w",colnames(sumstat))],sep="_")
+      sumstat <- sumstat[,-grep("ZnS",colnames(sumstat))]
+      sumstat <- sumstat[,-grep("thomson",colnames(sumstat))]
+      sumstat <- cbind(sumstat, TD_denom)
 
-        param<-as.numeric(com[[3]][2,])
-        names(param)<-com[[3]][1,]
-        simulations<-rbind(simulations,c(param,Mean,var))
+       param<-as.numeric(com[[3]][2,])
+       names(param)<-com[[3]][1,]
+       simulations<-rbind(simulations,c(param,Mean,var))
+       
       }
     } else {
       simulations<-NULL
       #param<-NULL
       for(i in 1:block.size){
 
-        com <- PipeMaster:::msABC.commander(model,use.alpha=use.alpha, msABC = msABC.call)
-        sumstat<-NULL
-        for(u in 1:nrow(model$loci)){
-          x<-read.table(text=system(paste(com[[u]],sep=""),intern=T),header=T,sep="\t")
-          sumstat <- rbind(sumstat,x)
-        }
-        sumstat<-subset(sumstat, select=-c(X))
+       rates <- sample.mu.rates(model)
+        locfile[,5] <- rates[[1]]
+        write.table(locfile,paste(msABC.path,"/","locfile.txt",sep=""),row.names = F,col.names = T,quote = F,sep=" ")
 
-        TD_denom<-data.frame(sumstat[,grep("pi",colnames(sumstat))]-sumstat[,grep("theta_w",colnames(sumstat))])
+        com <- msABC.commander(model, use.alpha=use.alpha, msABC = msABC.call,arg=arg)
+
+        sumstat <- read.table(text=system(com[[1]],intern=T),header=T,sep="\t")
+        sumstat <- subset(sumstat, select=-c(X))
+
+
+        TD_denom<-data.frame(sumstat[,grep("pi",colnames(sumstat))]-sumstat[,grep("_w",colnames(sumstat))])
         colnames(TD_denom)<-paste(colnames(sumstat)[grep("pi",colnames(sumstat))],
-                                  colnames(sumstat)[grep("theta_w",colnames(sumstat))],sep="_")
 
-        sumstat<-sumstat[,-grep("ZnS",colnames(sumstat))]
-        sumstat<-sumstat[,-grep("thomson",colnames(sumstat))]
+        #sumstat<-sumstat[,-grep("ZnS",colnames(sumstat))]
+        #sumstat<-sumstat[,-grep("thomson",colnames(sumstat))]
         sumstat<-cbind(sumstat, TD_denom)
 
-        Mean<-apply(sumstat,2,mean, na.rm = T)
-        var<-apply(sumstat,2,var, na.rm=T)
-
+        #Mean<-apply(sumstat,2,mean, na.rm = T)
+        #var<-apply(sumstat,2,var, na.rm=T)
         #kur<-apply(sumstat,2,kurtosis, na.rm=T)
         #skew<-apply(sumstat,2,skewness, na.rm=T)
-        pp<-as.numeric(com[[nrow(model$loci)+1]][2,])
-        param<-pp[1:(length(pp)-nrow(model$loci))]
-        param<-c(param,mean(pp[(length(param)+1):length(pp)]))
-        param<-c(param,sd(pp[(length(param)+1):length(pp)]))
-        names(param)<-com[length(com)][[1]][1,1:length(param)]
-        #simulations<-rbind(simulations,c(param,Mean,var))
-        #file.remove(list.files(pattern = "out.txt"))
-        simulations<-rbind(simulations,c(param,Mean,var))
 
-
-      }
+        param<-c(com[[2]][2,],rates[[2]])
+        names(param)<-c(com[[2]][1,],"mean.rate","sd.rate")
+        simulations<-rbind(simulations,c(param,sumstat))
+        }
 
     }
     return(simulations)
