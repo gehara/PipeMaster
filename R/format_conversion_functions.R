@@ -121,7 +121,9 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
       }
     }
     fas<-fasta
+    write.dna(as.DNAbin(fas),fasta.files[u],format = "fasta", colw = 10000)
     pops<-p
+
     npops<-length(unique(pops[,2]))
     pop.list<-list()
     for(i in 1:npops){
@@ -202,7 +204,6 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
       ### if there is no variation
     }else{seqs<-NULL
     ss<-0}
-
 
 
     if(write.file==T){

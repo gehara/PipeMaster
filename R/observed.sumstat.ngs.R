@@ -19,57 +19,54 @@ obs.sumstat.ngs<-function(model,path.to.fasta,pop.assign,moments=F,msABC.call=ge
   observed<-list()
   #pop.assign<-read.table(pop.assign, header=T)
   for(i in 1:length(fasta.files)){
-    ms.output<-fasta.snp.2ms(path.to.fasta,fasta.files[i],write.file=T,pop.assign)
-    locus.name<-strsplit(fasta.files[i],".",fixed=T)[[1]][1]
+    ms.output <- fasta.snp.2ms(path.to.fasta,fasta.files[i],write.file=T,pop.assign)
+    locus.name <- strsplit(fasta.files[i],".",fixed=T)[[1]][1]
     xx<-strsplit(ms.output[[1]][1]," ")
     xx<-xx[[1]][2:length(xx[[1]])]
     xx<-paste(xx, collapse=" ")
     system(paste(msABC.call," ",xx," --obs ",locus.name,".ms > ",locus.name,".out",sep=""),wait=T)
     observed[[i]]<-read.table(file=paste(locus.name,".out",sep=""),header=T)
     snps<-grep("segs",names(observed[[i]]))
-    print(paste(i,"   ",sum(observed[[i]][snps[1:(length(snps)-1)]]),"SNPs"))
+    print(paste(i,"   ",observed[[i]][snps[(length(snps))]],"SNPs"))
   }
   observed<-matrix(unlist(observed), ncol = length(observed[[1]]), byrow = TRUE)
 
-  com<-ms.commander.snp(model,use.alpha=F,
-                        msABC=msABC.call)
-
-  nam<-strsplit(system(com[[1]],intern=T),"\t")[1][[1]]
+  com<-ms.commander2(model,use.alpha=use.alpha)
+  options(warn=-1)
+  x<-strsplit(system2(msABC.call, args=paste(sum(as.numeric(model$I[1,4:5])),1,com[[1]]), stdout = T,stderr=T,wait=T),"\t")
+  options(warn=0)
+  nam<-x[1][[1]]
 
   if(ncol(observed)!=length(nam)){
-    stop(cat("your model pop structure does not match your assignment file pop structure.",
-              paste("you have",length(unique(pop.assign[,2])),"populations in your assignment file"),
-              paste("you have",model$I[,3],"populations in your model"),sep="\n"))
+  stop(cat("your model pop structure does not match your assignment file pop structure.",
+            paste("you have",length(unique(pop.assign[,2])),"populations in your assignment file"),
+            paste("you have",model$I[,3],"populations in your model"),sep="\n"))
   }
   colnames(observed)<-nam
 
-  TD_denom<-data.frame(observed[,grep("pi",colnames(observed))]-observed[,grep("theta_w",colnames(observed))])
-  colnames(TD_denom)<-paste(nam[grep("pi",nam)],nam[grep("theta_w",nam)],sep="_")
+  TD_denom<-data.frame(observed[,grep("pi",colnames(observed))]-observed[,grep("_w",colnames(observed))])
+  colnames(TD_denom)<-paste(nam[grep("pi",nam)],nam[grep("_w",nam)],sep="_")
 
-  observed<-observed[,-grep("ZnS",colnames(observed))]
-  observed<-observed[,-grep("thomson",colnames(observed))]
-  observed<-cbind(observed, TD_denom)
+  #observed<-observed[,-grep("ZnS",colnames(observed))]
+  #observed<-observed[,-grep("thomson",colnames(observed))]
+  observed <- cbind(observed, TD_denom)
 
   ## get names of sumstats
-  nam<-colnames(observed)
+  nam <- colnames(observed)
   #observed[observed==0]<-NA
-  mean<-colMeans(observed,na.rm = T)
-  names(mean)<-paste(nam,"_mean",sep="")
-  if(moments==T){
-    kur<-apply(observed,2,kurtosis, na.rm=T)
-    names(kur)<-paste(nam,"_kur",sep="")
-    skew<-apply(observed,2,skewness, na.rm=T)
-    names(skew)<-paste(nam,"_skew",sep="")
-    var<-apply(observed,2,var, na.rm=T)
-    names(var)<-paste(nam,"_var",sep="")
-  }
+  mean <- colMeans(observed,na.rm = T)
+  var <- apply(observed,2,var, na.rm=T)
+  observed <- cbind(mean,var)
 
-  observed<-list(mean,NULL,NULL,NULL)
-  names(observed)<-c("mean","variance","kurtosis","skewness")
-  if(moments==T){
-    observed[[2]]<-var
-    observed[[3]]<-kur
-    observed[[4]]<-skew
-  }
-  return(observed)
+  observed<-as.vector(t(observed))
+
+  com<-msABC.commander(model,use.alpha=use.alpha,arg=1)
+  options(warn=-1)
+  x<-strsplit(system2(msABC.call, args=com[[1]], stdout = T,stderr=T,wait=T),"\t")
+  options(warn=0)
+  nam<-x[1][[1]]
+
+  names(observed) <- c(nam,paste(nam[grep("pi",nam)],nam[grep("_w",nam)],sep="_"))
+
+  return(t(data.frame(observed)))
 }
