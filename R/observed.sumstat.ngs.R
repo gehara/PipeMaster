@@ -63,7 +63,7 @@ obs.sumstat.ngs<-function(model,path.to.fasta,pop.assign,moments=F,msABC.call=ge
 
   observed<-as.vector(t(observed))
 
-  com<-msABC.commander(model,use.alpha=use.alpha,arg=1)
+  com<-msABC.commander(model,use.alpha=F,arg=1)
   options(warn=-1)
   x<-strsplit(system2(msABC.call, args=com[[1]], stdout = T,stderr=T,wait=T),"\t")
   options(warn=0)
