@@ -12,6 +12,9 @@
 #' @export
 obs.sumstat.ngs<-function(model,path.to.fasta,pop.assign,moments=F,msABC.call=get.msABC()){
 
+  if(is.na(get0("model",ifnotfound=NA))){
+    stop("You need to include a model to calculate sumstats.")
+  }
 
   setwd(path.to.fasta)
   fasta.files<-list.files()
@@ -31,7 +34,7 @@ obs.sumstat.ngs<-function(model,path.to.fasta,pop.assign,moments=F,msABC.call=ge
   }
   observed<-matrix(unlist(observed), ncol = length(observed[[1]]), byrow = TRUE)
 
-  com<-ms.commander2(model,use.alpha=use.alpha)
+  com<-ms.commander2(model,use.alpha=F)
   options(warn=-1)
   x<-strsplit(system2(msABC.call, args=paste(sum(as.numeric(model$I[1,4:5])),1,com[[1]]), stdout = T,stderr=T,wait=T),"\t")
   options(warn=0)
