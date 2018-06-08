@@ -5,7 +5,7 @@
 # @return a list with msABC command and sampled parameters.
 # @note This function is used internally for the sim.msABC function. One mey want to run this function to check the msABC string.
 #
-msABC.commander<-function(model,use.alpha=use.alpha,msABC,arg){
+msABC.commander<-function(model,use.alpha=use.alpha,arg){
 
   # empty parameter vector
   parameters<-vector()
@@ -69,9 +69,9 @@ msABC.commander<-function(model,use.alpha=use.alpha,msABC,arg){
   string <- PipeMaster:::ms.string.generator(model,size.pars,mig.pars,time.pars,use.alpha=use.alpha,scalar=as.numeric(loci[1,3]))
   #################################### theta and structure ###########################
   ######### generate -t and -I part of the command
-  y <- paste(msABC,sum(as.numeric(model$I[1,4:ncol(model$I)])),1,paste(model$I[1,2:ncol(model$I)],collapse=" "),collapse=" ")
+  y <- paste(sum(as.numeric(model$I[1,4:ncol(model$I)])),1,paste(model$I[1,2:ncol(model$I)],collapse=" "),collapse=" ")
   ######### generate locfile part of the command
-  loc.string <- paste("--frag-begin --finp ","locfile.txt --N ",Ne0," --frag-end",sep="")
+  loc.string <- paste("--frag-begin --finp .",arg,"locfile.txt --N ",Ne0," --frag-end",sep="")
   #### final command
   commands[[1]]<-paste(y,string,loc.string, collapse=" ")
 

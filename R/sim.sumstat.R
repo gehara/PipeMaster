@@ -15,7 +15,7 @@
 #' @references Pfeifer, B. et al. (2014) PopGenome: An Efficient Swiss Army Knife for Population Genomic Analyses in R. Mol Biol Evol 31(7): 1929-1936.<doi:10.1093/molbev/msu136>
 #' @author Marcelo Gehara
 #' @export
-sim.sumstat<-function(model,use.alpha=F,nsim.blocks=1,sim.block.size=1000,path=getwd(),perpop.SS=T,overall.SS=T,
+sim.ms.sumstat<-function(model,use.alpha=F,nsim.blocks=1,sim.block.size=1000,path=getwd(),perpop.SS=T,overall.SS=T,
                       output.name="model",get.moments=F,append.sims=F){
 
   # get population structure
