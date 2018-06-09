@@ -52,9 +52,7 @@ get.data.structure<-function(model,path.to.fasta,pop.assign){
 
   model$loci<-LOCI
   model$I<-I
-  }
-
-  if(model$I[1,1]!="genomic"){
+  } else {
     model$loci[,2] <- base_pairs
     model$I[,4:5] <- pop_str
     }
