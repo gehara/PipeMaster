@@ -36,7 +36,7 @@ obs.sumstat.ngs<-function(model,path.to.fasta,pop.assign,moments=F,msABC.call=ge
 
   com<-ms.commander2(model,use.alpha=F)
   options(warn=-1)
-  x<-strsplit(system2(msABC.call, args=paste(sum(as.numeric(model$I[1,4:5])),1,com[[1]]), stdout = T,stderr=T,wait=T),"\t")
+  x<-strsplit(system2(msABC.call, args=paste(sum(as.numeric(model$I[1,4:ncol(model)])),1,com[[1]]), stdout = T,stderr=T,wait=T),"\t")
   options(warn=0)
   nam<-x[1][[1]]
 
