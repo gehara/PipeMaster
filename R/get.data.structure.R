@@ -37,17 +37,17 @@ get.data.structure<-function(model,path.to.fasta,pop.assign){
     cat(paste(i,"loci"),"\n")
   }
   if(model$I[1,1]=="genomic"){
-  LOCI<-cbind(rep("rate",as.numeric(model$loci[,3])),
+  LOCI<-cbind(rep("rate",length(base_pairs)),
               base_pairs,
-              rep(1,as.numeric(model$loci[,3])),
-              rep(model$loci[,4], as.numeric(model$loci[,3])),
-              rep(model$loci[,5], as.numeric(model$loci[,3])),
-              rep(model$loci[,6], as.numeric(model$loci[,3])))
+              rep(1,length(base_pairs)),
+              rep(model$loci[1,4], length(base_pairs)),
+              rep(model$loci[1,5], length(base_pairs)),
+              rep(model$loci[1,6], length(base_pairs)))
   colnames(LOCI)<-NULL
 
-  I<-cbind(paste("locus",1:as.numeric(model$loci[,3]),sep=""),
-           rep("-I",as.numeric(model$loci[,3])),
-           rep(model$I[,3],as.numeric(model$loci[,3])),
+  I<-cbind(paste("locus",1:length(base_pairs),sep=""),
+           rep("-I",length(base_pairs)),
+           rep(model$I[1,3],length(base_pairs)),
            pop_str)
 
   model$loci<-LOCI
