@@ -16,7 +16,7 @@
 #' @references Pavlidis P., Laurent S., & Stephan W. (2010) msABC: A modification of Hudson’s ms to facilitate multi-locus ABC analysis. Molecular Ecology Resources, 10, 723–727.
 #' @author Marcelo Gehara
 #' @export
-sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,
+sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.rates=NULL,
                             append.sims=F,block.size=10, msABC.call=get.msABC(),output.name,ncores){
 
   if(class(model)!="Model"){
@@ -33,6 +33,7 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,
 
   if(append.sims==F){
     com<-msABC.commander(model,use.alpha=use.alpha,arg=1)
+    write.table(locfile,paste(".",1,"locfile.txt",sep=""),row.names = F,col.names = T,quote = F,sep=" ")
     options(warn=-1)
     x<-strsplit(system2(msABC.call, args=com[[1]], stdout = T,stderr=T,wait=T),"\t")
     options(warn=0)
@@ -64,7 +65,13 @@ sim.msABC.sumstat<-function(model,nsim.blocks,path=getwd(),use.alpha=F,
 
       simulations<-NULL
       for(i in 1:block.size){
+        if(!(is.null(mu.rates))){
+          rates<-do.call(mu.rates[[1]],args=mu.rates[2:length(mu.rates)])
+          rates<-rep(rates, each=as.numeric(model$I[1,3]))
+          rates<-list(rates,c(0,0))
+        } else {
         rates <- sample.mu.rates(model)
+        }
         locfile[,5] <- rates[[1]]
         write.table(locfile,paste(".",arg,"locfile.txt",sep=""),row.names = F,col.names = T,quote = F,sep=" ")
         com <- msABC.commander(model, use.alpha=use.alpha,arg=arg)
