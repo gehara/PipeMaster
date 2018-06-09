@@ -69,7 +69,7 @@ obs.sumstat.ngs<-function(model,path.to.fasta,pop.assign,moments=F,msABC.call=ge
   options(warn=0)
   nam<-x[1][[1]]
 
-  names(observed) <- c(nam,paste(nam[grep("pi",nam)],nam[grep("_w",nam)],sep="_"))
-
-  return(t(data.frame(observed)))
+  observed<-t(data.frame(observed))
+  colnames(observed) <- c(nam,paste(nam[grep("pi",nam)],nam[grep("_w",nam)],sep="_"))
+  return(observed)
 }
