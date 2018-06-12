@@ -9,7 +9,7 @@ PipeMaster simulates summary statistics and coalescent trees. It calculates the 
 #### Installing the package  
 
 > install.packages("devtools")  
-> install_github("gehara/PipeMaster")  
+> install_github("gehara/PipeMaster@developing")  
 
 ### Hierarchical codemographic model
 
