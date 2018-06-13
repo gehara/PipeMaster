@@ -1,8 +1,10 @@
 # PipeMaster
+** under development**
 
 PipeMaster is an R-package to build and simulate diversification models under the coalescent. Current implementation can simulate diversification models for single species or species complex diversification studies, hierarchical  demographic models for comparative studies and species trees with one horizontal connection.
 
 **This is a beta version of the package!**
+
 
 PipeMaster simulates summary statistics and coalescent trees. It calculates the same summary statistics on an empirical data. The user can use these sumary statistics to perform aproximate Bayesian computation (ABC) or supervized machine learning (SML) for model and parameter inference.
 
