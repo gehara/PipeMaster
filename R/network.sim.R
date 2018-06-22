@@ -281,7 +281,7 @@ sim.sp.tree<-function(tree,
     for(i in 1:nloci) {
 
       # sample mutation rate per site per year
-      rate <- rtnorm(1,mi.mean,mi.SD,mig[1])
+      rate <- rtnorm(1,mi.mean,mi.SD,mi[1])
 
       # sample sequence length
       seq.length <- rnorm(1,bp[1],bp[2])
