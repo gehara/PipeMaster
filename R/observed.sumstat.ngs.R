@@ -46,7 +46,7 @@ obs.sumstat.ngs<-function(model=NULL,path.to.fasta,pop.assign,moments=F,msABC.ca
   if(ncol(observed)!=length(nam)){
   stop(cat("your model pop structure does not match your assignment file pop structure.",
             paste("you have",length(unique(pop.assign[,2])),"populations in your assignment file"),
-            paste("you have",model$I[,3],"populations in your model"),sep="\n"))
+            paste("you have",model$I[1,3],"populations in your model"),sep="\n"))
   }
   colnames(observed)<-nam
 
