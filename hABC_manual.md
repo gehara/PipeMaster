@@ -126,11 +126,20 @@ To see an example of the gene.prior input that was used in Gehara et al 2017 run
 14 P_diploli        rnorm 1e-08 1.5e-09  601     166        0.25
 ```
 
-## 2) Hierarchical model simulation
+You can create all prior tables using Excel, Libre office or a text editor. They can also be created within R and saved as a text file. If you use Excel you should save the table as text. To read the table in R you should use the read.table function. Your .txt file should be in your working directory or you should specify the path to your table.
 
-After setting up the inputs one can run simulations using two functions: sim.coexp and sim.coexpPT. The sim.coexp function simulates the implementation of Chan et al 2014, Chan et al with threshold and the narow coexpantion time used in Gehara et al 2017. Explanations about the specifics of each implementation can be found in Gehara et al 2017. The sim.coexpPT simulates the partitioned time model used in Gehara et al 2017. Here is a link to the paper: https://onlinelibrary.wiley.com/doi/abs/10.1111/mec.14239
+> Ne_prior <- read.table("myNepriortable.txt", header = T, sep = "\t")
 
-To simulate data run:
+or
+
+> Ne_prior <- read.table("path/myNepriortable.txt", header = T, sep = "\t")
+
+
+### 2) Hierarchical model simulation
+
+After setting up the inputs you can run simulations using two functions: sim.coexp and sim.coexpPT. The sim.coexp function simulates the implementation of Chan et al 2014, Chan et al with threshold and the narow coexpantion time used in Gehara et al 2017. Explanations about the specifics of each implementation can be found in Gehara et al 2017. The sim.coexpPT simulates the partitioned time model used in Gehara et al 2017. Here is a link to the paper: https://onlinelibrary.wiley.com/doi/abs/10.1111/mec.14239
+
+To simulate data used in Gehara et al 2017 run:
 
 > library(PipeMaster)
 
@@ -139,7 +148,7 @@ To simulate data run:
 > sim.coexp(nsims = 1000, var.zeta="FREE", th=50000, coexp.prior = c(20000,1000000), 
           Ne.prior = hABC.priors$Ne.prior, alpha=F, NeA.prior = hABC.priors$NeA.prior, 
           time.prior = hABC.priors$time.prior, gene.prior = hABC.priors$gene.prior,
-          append.sims = F, path="~/Desktop/")
+          append.sims = F, path = getwd())
 
 The arguments of this function are:
 ```
@@ -173,7 +182,82 @@ run
 
 for more details about the function.
 
-The output is a tab delimited table containing with the parameters in the first four columns and the hiper summary statistics in the remainning 16 columns.
+The output of this function is a tab delimited table, saved in your working directory or specified path, containing the parameters in the first four columns and the hiper summary statistics in the remainning 16 columns.
+
+While running the simulations the R console shows the number of simulations finished, the total number of simulations and the zeta value being simulated.
+
+```
+[1] "1 sims of 1000 | zeta =  0.357142857142857"
+[1] "2 sims of 1000 | zeta =  1"
+[1] "3 sims of 1000 | zeta =  0.214285714285714"
+[1] "4 sims of 1000 | zeta =  0.571428571428571"
+[1] "5 sims of 1000 | zeta =  0.928571428571428"
+[1] "6 sims of 1000 | zeta =  0.714285714285714"
+[1] "7 sims of 1000 | zeta =  0.285714285714286"
+...
+```
+
+### 3) Calculating the the observed hipersummary statistics (hss) and estimating parameters.
+
+The most simple ABC algorithm, the rejection algorithm, calculates the euclidian distances between each simulated data and your empirical data and rejects all simulated datasets that are too distant from the empirical data. Hopefully, the retained simulations will have information on the posterior probability of the model parameters.
+Check this video for a lightning explanation of ABC: https://www.youtube.com/watch?v=EUCl4v_NIRs
+
+The euclidian distance threshold (or tolerace) is arbitrary but a cross-validation experiment should help you decide what tolerance level to use. See the abc package vignette for a good example of how to perform an ABC analisys in R. 
+https://cran.r-project.org/web/packages/abc/vignettes/abcvignette.pdf
+
+#### These references have good examples and explanations of ABC:
+Csilléry K., Blum M.G.B., Gaggiotti O.E., & François O. (2010) Approximate Bayesian Computation (ABC) in practice. Trends in Ecology and Evolution, 25, 410–418. 
+
+Fagundes N.J., Ray N., Beaumont M., Neuenschwander S., Salzano F.M., Bonatto S.L., & Excoffier L. (2007) Statistical evaluation of alternative models of human evolution. Proc Natl Acad Sci U S A, 104, 17614–17619.
+
+Beaumont M.A. (2011) Approximate Bayesian Computation in Evolution and Ecology. Annual Review of Ecology, Evolution, and Systematics, 41, 379–406.
+
+#### Another emerging method in population genetics is supervised machine learning (SML):
+
+Schrider D.R. & Kern A.D. (2018) Supervised Machine Learning for Population Genetics: A New Paradigm. Trends in Genetics, xx, 1–12.
+
+Sheehan S. & Song Y.S. (2016) Deep Learning for Population Genetic Inference. PLoS Computational Biology, 12,
 
 
+To perform the ABC analysis or SML you need to calculate the observed summary stats.
+To calculate the hss for your empirical data you should place aligned fasta files in a folder and rund the following function. 
 
+> observed <- observed.coexp.sumstat(path.to.fasta = "path to the folder where the fastas are")
+
+You will also need to read the simulations table generated by the sim.coexp function back to R. If you have many simulations it is advisable to use the bigmemory R package, which helps handling large amounts of data in R.
+
+> install.packages("bigmemory")
+
+> library(bigmemory)
+
+> simulated <- read.big.matrix(file="simulations.txt", header=T, type="float", sep="\t")
+
+
+### To estimate the parameters with abc you can use the abc R-package
+
+> install.packages("abc")
+
+> library(abc)
+
+> abc.rej <- abc(target = observed, param = simulated[,1:4], sumstat = simulated[,5:20],
+               tol = 0.001, method = "rejection")
+
+> summary(abc.rej)
+               
+Check the abc R-package vignette for more details on this function.
+For SML check the caret R-package. It has a vast number of machine learning algorithms and a good online manual.
+
+### 4) Citation
+
+#### If you use these functions please cite:
+Gehara M., Garda A.A., Werneck F.P., Oliveira E.F., da Fonseca E.M., Camurugi F., Magalhães F. de M., Lanna F.M., Sites J.W., Marques R., Silveira-Filho R., São Pedro V.A., Colli G.R., Costa G.C., & Burbrink F.T. (2017) Estimating synchronous demographic changes across populations using hABC and its application for a herpetological community from northeastern Brazil. Molecular Ecology, 26, 4756–4771.
+
+Chan Y.L., Schanzenbach D., & Hickerson M.J. (2014) Detecting concerted demographic response across community assemblages using hierarchical approximate Bayesian computation. Molecular Biology and Evolution, 31, 2501–2515. 
+
+#### PipeMaster uses ms to simulate the data and pegas to calculate the summaries: 
+Hudson R.R. (2002) Generating samples under a Wright-Fisher neutral model of genetic variation. Bioinformatics, 18, 337–338. 
+
+Paradis E. 2010. pegas: an R package for population genetics with an integrated-modular approach. Bioinformatics 26: 419-420. 
+
+#### If you use the abc package to estimate parameters you should also cite:
+Csilléry K., François O., & Blum M.G.B. (2012) Abc: An R package for approximate Bayesian computation (ABC). Methods in Ecology and Evolution, 3, 475–479. 
