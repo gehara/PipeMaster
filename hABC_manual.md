@@ -81,20 +81,20 @@ To see an example of the time.prior input that was used in Gehara et al 2017 run
 
 ```
      species distribution   min    max generationtime
-1   A_ocel_1        runif 50000 500000              2
-2   A_ocel_2        runif 50000 500000              2
-3   D_muel_1        runif 50000 500000              1
-4   D_muel_2        runif 50000 500000              1
-5   L_klugei        runif 50000 500000              1
-6  P_nattere        runif 50000 500000              2
-7  P_polli_1        runif 50000 500000              1
-8  P_polli_2        runif 50000 500000              1
-9  M_maximil        runif 50000 500000              1
-10 V_multisc        runif 50000 500000              1
-11 P_norde_1        runif 50000 500000              1
-12 P_norde_2        runif 50000 500000              1
-13    R_jimi        runif 50000 500000              1
-14 P_diploli        runif 50000 500000              1
+1   A_ocel_1        runif 20000 1000000             2
+2   A_ocel_2        runif 20000 1000000             2
+3   D_muel_1        runif 20000 1000000             1
+4   D_muel_2        runif 20000 1000000             1
+5   L_klugei        runif 20000 1000000             1
+6  P_nattere        runif 20000 1000000             2
+7  P_polli_1        runif 20000 1000000             1
+8  P_polli_2        runif 20000 1000000             1
+9  M_maximil        runif 20000 1000000             1
+10 V_multisc        runif 20000 1000000             1
+11 P_norde_1        runif 20000 1000000             1
+12 P_norde_2        runif 20000 1000000             1
+13    R_jimi        runif 20000 1000000             1
+14 P_diploli        runif 20000 1000000             1
 ```
 
 #### 1.4) gene.prior
