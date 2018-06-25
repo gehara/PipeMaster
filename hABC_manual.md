@@ -200,7 +200,7 @@ While running the simulations the R console shows the number of simulations fini
 ### 3) Calculating the the observed hipersummary statistics (hss) and estimating parameters.
 
 The most simple ABC algorithm, the rejection algorithm, calculates the euclidian distances between each simulated data and your empirical data and rejects all simulated datasets that are too distant from the empirical data. Hopefully, the retained simulations will have information on the posterior probability of the model parameters.
-Check this video for a lightning explanation of ABC: https://www.youtube.com/watch?v=EUCl4v_NIRs
+Check the first 60 secounds of this video for a lightning explanation of ABC: https://www.youtube.com/watch?v=EUCl4v_NIRs
 
 The euclidian distance threshold (or tolerace) is arbitrary but a cross-validation experiment should help you decide what tolerance level to use. See the abc package vignette for a good example of how to perform an ABC analisys in R. 
 https://cran.r-project.org/web/packages/abc/vignettes/abcvignette.pdf
