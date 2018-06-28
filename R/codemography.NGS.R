@@ -134,7 +134,7 @@ coexp.sample.pars.msABC<-function(nruns,
       g.rate=-log(NeA/Ne)/Ne.EXP.t
 
       ms.par<-cbind(0,EXP.time,theta.A.ratio,g.rate)
-      po.par<-c(Ne,time.prior.B[i,3],NeA,mi)
+      po.par<-c(Ne,time.prior.B[i,3],NeA,0)
       MS.par[[i]][j,]<-ms.par
       pop.par[[i]][j,]<-po.par
     }
