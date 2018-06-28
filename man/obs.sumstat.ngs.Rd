@@ -4,11 +4,11 @@
 \alias{obs.sumstat.ngs}
 \title{Observed summary statistics for nexgen data}
 \usage{
-obs.sumstat.ngs(model, path.to.fasta, pop.assign, moments = F,
+obs.sumstat.ngs(model = NULL, path.to.fasta, pop.assign, moments = F,
   msABC.call = get.msABC())
 }
 \arguments{
-\item{model}{A model object bult by the main.menu function. Any model with the same number of populations of your empirical data will do the job. This is just to build the sumstats names correctly.}
+\item{model}{A model object bult by the main.menu function. Any model with the same number of populations of your empirical data will work. This is just to build the sumstats names correctly.}
 
 \item{path.to.fasta}{Path to the folder containing all fastas to be included in the calculation.}
 

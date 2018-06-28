@@ -15,7 +15,7 @@
 #' @references Gehara M., Garda A.A., Werneck F.P. et al. (2017) Estimating synchronous demographic changes across populations using hABC and its application for a herpetological community from northeastern Brazil. Molecular Ecology, 26, 4756–4771.
 #' @references Chan Y.L., Schanzenbach D., & Hickerson M.J. (2014) Detecting concerted demographic response across community assemblages using hierarchical approximate Bayesian computation. Molecular Biology and Evolution, 31, 2501–2515.
 #' @export
-sim.coexp2<-function(nsims,
+sim.coexpPT<-function(nsims,
                     var.zeta,
                     coexp.prior,
                     Ne.prior,

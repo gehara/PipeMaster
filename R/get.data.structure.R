@@ -1,5 +1,5 @@
 #' @export
-get.data.structure<-function(model,path.to.fasta,pop.assign){
+get.data.structure<-function(model,path.to.fasta,pop.assign, proceed.nomatch=F){
 
   setwd(path.to.fasta)
   pops<-pop.assign
@@ -27,10 +27,12 @@ get.data.structure<-function(model,path.to.fasta,pop.assign){
     npop<-list()
     for(j in 1:length(pops_samples)){
       npop[[j]]<-length(na.omit(match(rownames(seq),as.character(pops_samples[[j]][,1]))))
-      }
+    }
+
+    if(proceed.nomatch!=T){
     if(sum(unlist(npop))!=nrow(seq)){
       stop(paste("one or more samples in locus",fasta[i],"have no assignment in your pop.assign file"))
-    }
+    }}
 
     pop_str<-rbind(pop_str,unlist(npop))
     base_pairs<-c(base_pairs,bp)

@@ -5,8 +5,8 @@
 \title{Simulate summary statistics using msABC}
 \usage{
 sim.msABC.sumstat(model, nsim.blocks, path = getwd(), use.alpha = F,
-  append.sims = F, block.size = 10, msABC.call = get.msABC(), output.name,
-  ncores)
+  mu.rates = NULL, append.sims = F, block.size = 10,
+  msABC.call = get.msABC(), output.name, ncores)
 }
 \arguments{
 \item{model}{A model object bult by the main.menu function. Both genomic and sanger type models are allowed.}
