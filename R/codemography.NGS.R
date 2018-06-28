@@ -166,6 +166,8 @@ coexp.msABC<-function(MS.par, gene.prior, alpha, pop.par) {
 
       locfile <- gene.prior[[xx]]
 
+      locfile[,5] <- runif(nrow(locfile),1e-10,5e-10)
+
       write.table(locfile,paste(".locfile.txt",sep=""),row.names = F,col.names = T,quote = F,sep=" ")
 
       sims <- read.table(text=system(paste(msABC,gene.prior[[xx]][1,2],1,"-eN",MS.par[[xx]][ii,2],MS.par[[xx]][ii,3],
