@@ -10,6 +10,7 @@
 #' @param gene.prior Data frame with parameter values for the priors of the mutation rate of each species.
 #' @param alpha logical. If TRUE all demographic chages are exponential. If FALSE sudden changes. Defaut is FALSE.
 #' @param append.sims logical. If TRUE simulations are appended to the simulations file.  Defaut is FALSE.
+#' @param mu.rates list. A list of parameters of mutation rate prior distribution. Fist parameter: the type of distribution. Secound element should be NA. Third and remainning elements are parameters of the distribution which should be givin in order. For instance if using the rnorm distribution the third parameter is the mean and the forth the SD.
 #' @param path Path to the directiry to write the simulations. Defaut is the working directory.
 #' @details To simulate the model of Chan et al. (2014) the th parameter should be set to zero and the time.prior should have the same value of the coexp.prior.
 #' @details To simulate the Threshold model the th argument need to be higher than zero. To simulate the Narrow Coexpansion Time model the th argument need to be higher than zero and the boundaries of coexp.time shoud be narrower than the time.prior values.
@@ -25,6 +26,7 @@ sim.coexp.ngs<-function(nsims,
                     NeA.prior,
                     time.prior,
                     gene.prior,
+                    mu.rates,
                     alpha=F,
                     append.sims=F,
                     path=getwd())
@@ -50,7 +52,7 @@ sim.coexp.ngs<-function(nsims,
     x <- coexp.sample.pars.msABC(nruns=1,var.zeta = var.zeta, coexp.prior = coexp.prior, th = th, Ne.prior = Ne.prior,
                          NeA.prior = NeA.prior, time.prior = time.prior, gene.prior = gene.prior)
 
-    y <- coexp.msABC(MS.par = x$MS.par, gene.prior = gene.prior, alpha = alpha, pop.par = x$pop.par)
+    y <- coexp.msABC(MS.par = x$MS.par, gene.prior = gene.prior, alpha = alpha, pop.par = x$pop.par, mu.rates = mu.rates)
 
     simulations <- c(x$coexp.par,y)
 
@@ -153,7 +155,7 @@ coexp.sample.pars.msABC<-function(nruns,
 # internal function
 # @description control ms simulations
 # @return ms simulations
-coexp.msABC<-function(MS.par, gene.prior, alpha, pop.par) {
+coexp.msABC<-function(MS.par, gene.prior, alpha, pop.par, mu.rates) {
 
   msABC <- PipeMaster:::get.msABC()
   nspecies <- length(MS.par)
@@ -166,7 +168,9 @@ coexp.msABC<-function(MS.par, gene.prior, alpha, pop.par) {
 
       locfile <- gene.prior[[xx]]
 
-      locfile[,5] <- runif(nrow(locfile),1e-10,5e-10)
+      mu.rates[[2]] <- nrow(locfile)
+
+      locfile[,5] <- do.call(mu.rates[[1]],args=mu.rates[2:length(mu.rates)])
 
       write.table(locfile,paste(".locfile.txt",sep=""),row.names = F,col.names = T,quote = F,sep=" ")
 

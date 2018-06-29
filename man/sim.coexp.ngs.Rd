@@ -5,7 +5,7 @@
 \title{Simulation of codemographic models with ngs data}
 \usage{
 sim.coexp.ngs(nsims, var.zeta, coexp.prior, th, Ne.prior, NeA.prior, time.prior,
-  gene.prior, alpha = F, append.sims = F, path = getwd())
+  gene.prior, mu.rates, alpha = F, append.sims = F, path = getwd())
 }
 \arguments{
 \item{nsims}{Total number of simulations}
@@ -23,6 +23,8 @@ sim.coexp.ngs(nsims, var.zeta, coexp.prior, th, Ne.prior, NeA.prior, time.prior,
 \item{time.prior}{Data frame with parameter values for the priors of the time of demographic change of each population.}
 
 \item{gene.prior}{Data frame with parameter values for the priors of the mutation rate of each species.}
+
+\item{mu.rates}{list. A list of parameters of mutation rate prior distribution. Fist parameter: the type of distribution. Secound element should be NA. Third and remainning elements are parameters of the distribution which should be givin in order. For instance if using the rnorm distribution the third parameter is the mean and the forth the SD.}
 
 \item{alpha}{logical. If TRUE all demographic chages are exponential. If FALSE sudden changes. Defaut is FALSE.}
 
