@@ -29,3 +29,4 @@ URL: http://www.marcelogehara.org/
 BugReports: https://github.com/gehara/PipeMaster
 LazyData: TRUE
 RoxygenNote: 6.1.0
+Encoding: UTF-8
