@@ -1,22 +1,25 @@
 #' Model Builder
 #' @description This function starts the menu for model building.
 #' @param  input A model object to be used as template. Can be left blank, defalt NULL.
+#' @param  ms.string a character string describing the model. This can be obtained by running
 #' @return An object representing a diversification model.
 #' @examples
 #' my.model<-main.menu()
 #' sim.sumstat(my.model)
 #
 #' @export
-main.menu<-function(input=NULL){
+main.menu<-function(input = NULL, ms.string = NULL){
 
-  if(is.null(input)==T){} else{
+  if(is.null(ms.string)==F){
+    read.ms.string(ms.string = ms.string)
+  } else {
+
+  if(is.null(input)==F){
     read.model.input(input)
   }
-  if(exists("tree", envir=.e)){
-  }else{join.par()}
-  if(exists("n", envir=.e)){
-  }else{cur.Ne.par()}
-
+  if(!(exists("tree", envir=.e))) join.par()
+  if(!(exists("n", envir=.e))) cur.Ne.par()
+}
   print.main.menu()
 
     letter<<-readline("Model Builder >>>>")
@@ -125,9 +128,14 @@ switch.main.menu<-function(){
 
          G = {time.menu()},
 
-         H = {condition.matrix()
-           sys.call(which = 0)
-           condition.menu()},
+         H = {if(exists("size.matrix", envir=.e)){
+                x<-readline("Would you like to overwrite the existing matrix?  ")
+                  if(x==T) condition.matrix()
+              } else {
+              condition.matrix()
+               }
+            sys.call(which = 0)
+            condition.menu()},
 
          I = {.e$data.type<-readline("What type of data to simulate (sanger or genomic)?:" )
 
@@ -300,7 +308,6 @@ remove.all.par<-function(){
   rm(list=c("loci","I","n","en","m","em","ej","conds","tree","npops"), envir=.e)
   options(warn=0)
 }
-
 # internal function of the Model Builder
 read.model.input<-function(input){
 
@@ -344,6 +351,212 @@ read.model.input<-function(input){
   .e$tree<-input$tree
 
 }
+### read ms string from popplanner
+read.ms.string<-function(ms.string){
+  .e<<-new.env()
+  ms.string <- strsplit(ms.string,"-")[[1]]
 
+  if(length(ms.string[grep("g", ms.string)])!=0) ms.string <- ms.string[-grep("ms", ms.string)]
+
+  if(length(ms.string[-grep("ms", ms.string)])!=0) ms.string <- ms.string[-grep("ms", ms.string)]
+
+  .e$npops <- ms.string[grep("I", ms.string)]
+  .e$npops <- as.numeric(strsplit(.e$npops," ")[[1]][2])
+
+  ## get -n parameters
+  list.Ne.pars<-NULL
+  for (i in 1:.e$npops){
+    Ne0.par<-paste("Ne0.pop",i,sep="")
+    list.Ne.pars<-c(list.Ne.pars,Ne0.par)
+  }
+  .e$n<-matrix(nrow=length(list.Ne.pars), ncol=6)
+  .e$n[,1]<-list.Ne.pars
+  .e$n[,2]<-'-n'
+  .e$n[,3]<-c(1:length(list.Ne.pars))
+  .e$n[,4]<-100000
+  .e$n[,5]<-500000
+  .e$n[,6]<-"uniform"
+
+
+
+  #### get -ej nodes
+  if(length(ms.string[grep("ej", ms.string)])>0){
+    nodes <- ms.string[grep("ej", ms.string)]
+    nodes <- sapply(nodes, strsplit," ")
+    .e$joints <- NULL
+    for(i in 1:length(nodes)){
+      .e$joints<-c(.e$joints, paste(nodes[[i]][3:4],collapse = " "))
+    }
+
+    .e$tree<-paste("ms string [",paste(.e$joints, collapse="]["),"]",sep="")
+
+    tot.join.par<-NULL
+    for (i in 1:length(.e$joints)){
+      join.par<-paste("join",paste(strsplit(.e$joints[i]," ")[[1]],collapse="_"),sep="")
+      tot.join.par<-c(tot.join.par,join.par)
+    }
+    .e$ej<-matrix(nrow=length(.e$joints),ncol=6)
+    .e$ej[,1]<-tot.join.par
+    .e$ej[,2]<-'-ej'
+    .e$ej[,3]<-.e$joints
+    .e$ej[,4]<-500000
+    .e$ej[,5]<-1500000
+    .e$ej[,6]<-"uniform"
+  }
+
+  # get ancestral pop sizes
+  if(length(ms.string[grep("en", ms.string)])>0){
+    .e$n<-ms.string[grep("en", ms.string)]
+
+    if(length(.e$n)!=0){
+      x<-NULL
+      for(i in 1:length(.e$n)){
+        x <- c(x,strsplit(.e$n[i]," ")[[1]][3])
+      }
+      .e$n<-x
+
+      anc.Ne.par<-NULL
+      time.anc.Ne.par<-NULL
+      pop<-NULL
+      for (i in 1:.e$npops){
+        n.anc.pop <- length(grep(i,.e$n))
+        if (n.anc.pop==0){
+        } else (
+          for (j in 1:n.anc.pop){
+            Ne.par<-paste("Ne",j,".pop",i,sep="")
+            anc.Ne.par<-c(anc.Ne.par,Ne.par)
+            time.Ne.par<-paste("t.Ne",j,".pop",i,sep="")
+            time.anc.Ne.par<-c(time.anc.Ne.par,time.Ne.par)
+            pop<-c(pop,i)
+          }
+        )
+      }
+
+      .e$en$size<-matrix(nrow=length(anc.Ne.par),ncol=6)
+      .e$en$size[,1]<-anc.Ne.par
+      .e$en$size[,2]<-'-en'
+      .e$en$size[,3]<-pop
+      .e$en$size[,4]<-1000
+      .e$en$size[,5]<-10000
+      .e$en$size[,6]<-'uniform'
+
+      .e$en$time<-matrix(nrow=length(anc.Ne.par),ncol=6)
+      .e$en$time[,1]<-time.anc.Ne.par
+      .e$en$time[,2]<-'-en'
+      .e$en$time[,3]<-pop
+      .e$en$time[,4]<-10000
+      .e$en$time[,5]<-100000
+      .e$en$time[,6]<-'uniform'
+    }
+  }
+
+  #### get -m string
+  if(length(ms.string[grep("m", ms.string)])>0){
+    .e$m <- ms.string[grep("m", ms.string)]
+
+    if(length(.e$m[grep("em", .e$m)])!=0) .e$m <-.e$m[-grep("em", .e$m)]
+
+    mig.par<-NULL
+    pops<-NULL
+    for(i in 1:length(.e$m)){
+      x <- strsplit(.e$m[i]," ")[[1]]
+      m0<-paste("mig0.",x[2],"_",x[3],sep="")
+      mig.par<-c(mig.par,m0)
+      pops<-c(pops,paste(x[2],x[3]))
+    }
+
+    .e$m<-matrix(nrow=length(mig.par),ncol=6)
+    .e$m[,1]<-mig.par
+    .e$m[,2]<-"-m"
+    .e$m[,3]<-pops
+    .e$m[,4]<-0.1
+    .e$m[,5]<-1
+    .e$m[,6]<-'uniform'
+  }
+  ### get -em string
+  if(length(ms.string[grep("em", ms.string)])>0){
+    .e$em <- ms.string[grep("em", ms.string)]
+
+    x<-NULL
+    for(i in 1:length(.e$em)){
+      x<-c(x,paste(strsplit(.e$em[i]," ")[[1]][3:4],collapse ="_"))
+    }
+    migs<-unique(x)
+
+    mig.par<-NULL
+    pops<-NULL
+    for(i in 1:length(migs)){
+      pop.migs<-grep(migs[i],x)
+
+      for(j in 1:length(pop.migs)){
+        mig.par<-c(mig.par,paste("mig",j,".",x[pop.migs[j]], sep=""))
+        pops<-c(pops,x[pop.migs[j]])
+      }
+
+    }
+    .e$em<-NULL
+    .e$em$size<-matrix(nrow=length(mig.par),ncol=6)
+    .e$em$size[,1]<-mig.par
+    .e$em$size[,2]<-"-em"
+    .e$em$size[,3]<-pops
+    .e$em$size[,4]<-0
+    .e$em$size[,5]<-0
+    .e$em$size[,6]<-'uniform'
+
+
+    t.mig.par<-mig.par
+    for(i in 1:length(t.mig.par)){
+      t.mig.par[i]<-paste("t.",mig.par[i],sep="")
+    }
+
+    .e$em$time<-matrix(nrow=length(t.mig.par),ncol=6)
+    .e$em$time[,1]<-t.mig.par
+    .e$em$time[,2]<-"-em"
+    .e$em$time[,3]<-pops
+    .e$em$time[,4]<-10000
+    .e$em$time[,5]<-20000
+    .e$em$time[,6]<-'uniform'
+
+  }
+  condition.matrix()
+  update.matrix(nodes=nodes)
+
+
+}
+# update join matrix conditions according to the ms string from popplanner
+update.matrix<-function(nodes){
+
+
+  joints <- NULL
+  for(i in 1:length(nodes)){
+    joints<-rbind(joints, c(nodes[[i]][3],nodes[[i]][4]))
+  }
+
+  x=NULL
+  for(i in 1:.e$npops) if(length(grep(i,joints))>1) x<-c(x,i)
+
+  y<-list()
+  for(i in 1:length(x)){
+    y<-which(joints == x[i], arr.ind=TRUE)
+    w<-nodes[y[,1]]
+    for(j in 1:length(w)){
+      w[[j]]<-as.numeric(w[[j]][2:4])
+    }
+    w <- matrix(unlist(w), ncol = 3, byrow = TRUE)
+    w <- w[match(sort(w[,1]),w[,1]),]
+    cb <- combn(1:nrow(w),2)
+    for(u in 1: ncol(cb)){
+      cond<-paste("join",w[cb[1,u],2],"_",w[cb[1,u],3]," < ","join",w[cb[2,u],2],"_",w[cb[2,u],3],sep="")
+      cond<-strsplit(cond," ")
+      yy<-grep(cond[[1]][1],rownames(.e$time.matrix))
+      xx<-grep(cond[[1]][3],colnames(.e$time.matrix))
+      .e$time.matrix[yy,xx]<-cond[[1]][2]
+      if(yy>xx) .e$time.matrix<-inv.mirror.upper(.e$time.matrix)
+      if(xx>yy) .e$time.matrix<-inv.mirror.lower(.e$time.matrix)
+    }
+  }
+
+
+}
 
 
