@@ -5,8 +5,9 @@
 \title{Simulate summary statistics using ms and PopGenome}
 \usage{
 sim.ms.sumstat(model, use.alpha = F, nsim.blocks = 1,
-  sim.block.size = 1000, path = getwd(), perpop.SS = T, overall.SS = T,
-  output.name = "model", get.moments = F, append.sims = F)
+  sim.block.size = 1000, path = getwd(), perpop.SS = T,
+  overall.SS = T, output.name = "model", get.moments = F,
+  append.sims = F)
 }
 \arguments{
 \item{model}{A model object bult by the main.menu function.}

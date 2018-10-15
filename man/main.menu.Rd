@@ -4,10 +4,12 @@
 \alias{main.menu}
 \title{Model Builder}
 \usage{
-main.menu(input = NULL)
+main.menu(input = NULL, ms.string = NULL)
 }
 \arguments{
 \item{input}{A model object to be used as template. Can be left blank, defalt NULL.}
+
+\item{ms.string}{a character string describing the model. This can be obtained by running}
 }
 \value{
 An object representing a diversification model.

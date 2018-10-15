@@ -4,9 +4,9 @@
 \alias{sim.sp.tree}
 \title{Simulation of phylogenetic networks under the coalescent}
 \usage{
-sim.sp.tree(tree, Ne.prior, bifurcating = T, migration = F, admixture = F,
-  mig, hib.clade, hib.priors, major.sister, minor.sister, bp, mi, nsims, nloci,
-  gen.time, time.modif, time.scalar = 1)
+sim.sp.tree(tree, Ne.prior, bifurcating = T, migration = F,
+  admixture = F, mig, hib.clade, hib.priors, major.sister, minor.sister,
+  bp, mi, nsims, nloci, gen.time, time.modif, time.scalar = 1)
 }
 \arguments{
 \item{tree}{The bifurcating tree topology in newick format.}
