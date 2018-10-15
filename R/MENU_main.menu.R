@@ -353,7 +353,7 @@ read.model.input<-function(input){
 }
 ### read ms string from popplanner
 read.ms.string<-function(ms.string){
-  .e<<-new.env()
+
   ms.string <- strsplit(ms.string,"-")[[1]]
 
   if(length(ms.string[grep("g", ms.string)])!=0) ms.string <- ms.string[-grep("ms", ms.string)]
