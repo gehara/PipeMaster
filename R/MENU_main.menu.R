@@ -356,7 +356,7 @@ read.ms.string<-function(ms.string){
 
   ms.string <- strsplit(ms.string,"-")[[1]]
 
-  if(length(ms.string[grep("g", ms.string)])!=0) ms.string <- ms.string[-grep("ms", ms.string)]
+  #if(length(ms.string[grep("g", ms.string)])!=0)]
 
   if(length(ms.string[-grep("ms", ms.string)])!=0) ms.string <- ms.string[-grep("ms", ms.string)]
 
@@ -519,8 +519,8 @@ read.ms.string<-function(ms.string){
 
   }
   condition.matrix()
-  update.matrix(nodes=nodes)
 
+  if(length(ms.string[grep("ej", ms.string)])>0) if(nrow(.e$ej)>1) update.matrix(nodes=nodes)
 
 }
 # update join matrix conditions according to the ms string from popplanner
@@ -535,7 +535,7 @@ update.matrix<-function(nodes){
   x=NULL
   for(i in 1:.e$npops) if(length(grep(i,joints))>1) x<-c(x,i)
 
-  y<-list()
+
   for(i in 1:length(x)){
     y<-which(joints == x[i], arr.ind=TRUE)
     w<-nodes[y[,1]]

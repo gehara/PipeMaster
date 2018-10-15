@@ -74,7 +74,7 @@ print.condition.menu<-function(){
 }
 # internal function of the Model Builder
 condition.matrix<-function(){
-  size<-.e$n[,1]
+  size <- .e$n[,1]
 
   if(exists("ej", envir=.e)){
     time<-.e$ej[,1]
