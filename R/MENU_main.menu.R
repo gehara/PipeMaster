@@ -356,7 +356,8 @@ read.ms.string<-function(ms.string){
 
   ms.string <- strsplit(ms.string,"-")[[1]]
 
-  #if(length(ms.string[grep("g", ms.string)])!=0)]
+  if(length(ms.string[grep("g", ms.string)])!=0)
+   stop("Exponential demographich change is not allowed in the ms.string. It be added in a letter stage in the simulation function.")
 
   if(length(ms.string[-grep("ms", ms.string)])!=0) ms.string <- ms.string[-grep("ms", ms.string)]
 
@@ -406,20 +407,20 @@ read.ms.string<-function(ms.string){
 
   # get ancestral pop sizes
   if(length(ms.string[grep("en", ms.string)])>0){
-    .e$n<-ms.string[grep("en", ms.string)]
+    .e$en<-ms.string[grep("en", ms.string)]
 
-    if(length(.e$n)!=0){
+    if(length(.e$en)!=0){
       x<-NULL
-      for(i in 1:length(.e$n)){
-        x <- c(x,strsplit(.e$n[i]," ")[[1]][3])
+      for(i in 1:length(.e$en)){
+        x <- c(x,strsplit(.e$en[i]," ")[[1]][3])
       }
-      .e$n<-x
+      .e$en<-x
 
       anc.Ne.par<-NULL
       time.anc.Ne.par<-NULL
       pop<-NULL
       for (i in 1:.e$npops){
-        n.anc.pop <- length(grep(i,.e$n))
+        n.anc.pop <- length(grep(i,.e$en))
         if (n.anc.pop==0){
         } else (
           for (j in 1:n.anc.pop){
