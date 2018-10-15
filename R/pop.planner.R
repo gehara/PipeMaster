@@ -4,6 +4,6 @@
 #' @export
 PopPlanner<-function(){
   pack <- find.package("PipeMaster")
-  Sys.chmod(paths=paste(pack,"/PopPlanner.jar"), mode = 7777, use_umask = TRUE)
-  system(paste(pack,"/PopPlanner.jar"))
+  Sys.chmod(paths = pack, mode = "7777", use_umask = T)
+  system(paste(pack,"/PopPlanner.jar", sep=""))
 }
