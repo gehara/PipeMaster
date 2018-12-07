@@ -8,7 +8,6 @@
 #' @param path Path to write the output. By default outputs will be saved in the working directory.
 #' @param output.name String. The prefix of the output names. Defalt is "model"
 #' @param append.sims Logical. If TRUE simulations will be appended in the last output. Default is FALSE.
-#' @param get.moments Logical. If TRUE computes the four moments (mean, variance, kurtosis, skewness) of each summary statistics across loci. If False only mean is computed. Defalt is FALSE.
 #' @param msABC.call String. Path to the msABC executable. msABC binaries for Mac and Linux are included in the package and should work cases for these operating systems.
 #'                   There is no need to change this unless you want to compile the program yourself and point the function to it.
 #' @return Writes simulations and parameters to the path directory.

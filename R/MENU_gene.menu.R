@@ -85,7 +85,7 @@ loci.par<-function(){
   }
   .e$loci<-matrix(nrow=.e$ngenes,ncol=6)
   .e$loci[,1]<-tot.gene.par
-  .e$loci[,2]<-NA
+  .e$loci[,2]<-1000
   .e$loci[,3]<-1
   .e$loci[,4]<-5e-9
   .e$loci[,5]<-1.5e-8
@@ -108,7 +108,7 @@ samples.par<-function(){
 
   for(j in 1:.e$ngenes){
     for(i in 1:.e$npops){
-      .e$I[j,i+3]<-NA
+      .e$I[j,i+3]<-10
     }
   }
 }

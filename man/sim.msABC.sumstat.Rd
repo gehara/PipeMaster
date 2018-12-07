@@ -27,8 +27,6 @@ There is no need to change this unless you want to compile the program yourself 
 
 \item{sim.block.size}{Simulations are performed in blocks. This argument defines the size of the block in number of simulations, i.e. how many simulations to run per block.
 A block of 1000 will work for most cases. Increse the total number of simulations with nsim.block argument.}
-
-\item{get.moments}{Logical. If TRUE computes the four moments (mean, variance, kurtosis, skewness) of each summary statistics across loci. If False only mean is computed. Defalt is FALSE.}
 }
 \value{
 Writes simulations and parameters to the path directory.
