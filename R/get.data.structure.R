@@ -1,8 +1,8 @@
 #' Read the observed data to get the simulation parameters; base pairs and number of individuals per population.
 #' @param model A model object generated with main.menu function.
-#' @param path.to.fasta path of the directory to the fatsa alignments
-#' @param pop.assign a two column data frame with assignemtent of individuals. First column must have the samples name, the secound column the population in numbers.
-#' @param sanger logical. If TRUE the inheritance scalar and mutation rates set up in the main.menu are kept. If FALSE the mutation rate is propagated to all loci. Defaut is TRUE.
+#' @param path.to.fasta path to the fasta alignments directory.
+#' @param pop.assign a two column data frame with poppulation assignemt of individuals. First column must have the samples name, the secound column the population in numbers, 1 for pop1, 2 for pop2 etc.
+#' @param sanger logical. If TRUE the inheritance scalar and mutation rates set up in the main.menu are kept. If FALSE the mutation rate is propagated to all loci. Defaut is FALSE.
 #' @author Marcelo Gehara
 #' @return Model object with updated gene parameters.
 #' @export
