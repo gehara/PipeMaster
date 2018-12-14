@@ -130,10 +130,10 @@ switch.main.menu<-function(){
 
          H = {if(exists("size.matrix", envir=.e)){
                 x<-readline("Would you like to overwrite the existing matrix?  ")
-                  if(x==T) condition.matrix()
-              } else {
-              condition.matrix()
-               }
+                if(x %in% .e$YES) condition.matrix()
+                } else {
+                condition.matrix()
+              }
             sys.call(which = 0)
             condition.menu()},
 
