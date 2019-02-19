@@ -50,7 +50,8 @@ sim.ms.sumstat<-function(model,use.alpha=F,nsim.blocks=1,sim.block.size=1000,pat
   write.table(t(ms.commander2(model,use.alpha = use.alpha)[[nrow(model$loci)+1]][1,]),file = paste(output.name, "_pars.txt",
                                                                                                         sep = ""),quote=F,row.names=F, col.names = F,sep="\t",append=F)
   }
-  # beggin simulations
+
+  # begin simulations
   thou<-0
   for(j in 1:nsim.blocks){
     # generate ms output vector

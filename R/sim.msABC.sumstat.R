@@ -108,7 +108,7 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
 
     l<-0
     TIM1<-system.time(
-      while(sum(as.numeric(l)) < ncores){
+      while(sum(as.numeric(unlist(strsplit(l, "")))) < ncores){
         Sys.sleep(1)
         l<-readLines(".log")
       })[3]
