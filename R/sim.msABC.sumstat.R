@@ -1,5 +1,9 @@
 #' Simulate summary statistics using msABC
-#' @param model A model object bult by the main.menu function. Both genomic and sanger type models are allowed.
+#' @description This function simulates summary statistics using msABC.
+#'              It is optimized for nextgen data, but it should also work for sanger.
+#'              This will simulate the entire loci, not a single SNP.
+#'              You should include all loci in the model object, including invariable ones. Use the get.data.structure function to set up the parameters of the loci - bp and number of individuals - to be simulated.
+#' @param model A model object bult by the main.menu function. Both genomic and sanger-type models are allowed.
 #' @param use.alpha Logical. If TRUE the most recent population size change will be exponential. If FALSE sudden demographic changes. Default is FALSE.
 #'                  This argument changes ONLY the MOST RECENT demographich change.
 #' @param nsim.blocks Number of blocks to simulate. The total number of simulations is: nsim.blocks x sim.block.size.

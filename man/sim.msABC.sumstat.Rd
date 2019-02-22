@@ -9,7 +9,7 @@ sim.msABC.sumstat(model, nsim.blocks, path = getwd(), use.alpha = F,
   msABC.call = get.msABC(), output.name, ncores)
 }
 \arguments{
-\item{model}{A model object bult by the main.menu function. Both genomic and sanger type models are allowed.}
+\item{model}{A model object bult by the main.menu function. Both genomic and sanger-type models are allowed.}
 
 \item{nsim.blocks}{Number of blocks to simulate. The total number of simulations is: nsim.blocks x sim.block.size.}
 
@@ -32,7 +32,10 @@ A block of 1000 will work for most cases. Increse the total number of simulation
 Writes simulations and parameters to the path directory.
 }
 \description{
-Simulate summary statistics using msABC
+This function simulates summary statistics using msABC.
+             It is optimized for nextgen data, but it should also work for sanger.
+             This will simulate the entire loci, not a single SNP.
+             You should include all loci in the model object, including invariable ones. Use the get.data.structure function to set up the parameters of the loci - bp and number of individuals - to be simulated.
 }
 \references{
 Hudson R.R. (2002) Generating samples under a Wright-Fisher neutral model of genetic variation. Bioinformatics, 18, 337–338.

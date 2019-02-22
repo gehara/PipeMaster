@@ -25,7 +25,9 @@ There is no need to change that unless you want to compile the program yourself 
 A list of vectors containing the observed summary stats.
 }
 \description{
-This function calculates the observed summary statistics from an empirical data. This summary statistics are the same as those simulated by the sim.sumstat function. It is optimized for sanger data.
+This function calculates the observed summary statistics from an empirical data.
+             This summary statistics are the same as those simulated by the sim.sumstat function.
+             It is optimized for sanger data.
 }
 \note{
 This function does not work on Windows systems.
