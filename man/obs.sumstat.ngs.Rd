@@ -10,7 +10,9 @@ obs.sumstat.ngs(model = NULL, path.to.fasta, pop.assign, moments = F,
 \arguments{
 \item{model}{A model object built by the main.menu function. Any model with the same number of populations of your empirical data will work. This is just to build the sumstats names correctly.}
 
-\item{path.to.fasta}{Path to the folder containing all fastas to be included in the calculation. Invariable sites must be included in the fasta alignments. Invariable loci must also be included.}
+\item{path.to.fasta}{Path to the folder containing all fastas to be included in the calculation.
+Invariable sites must be included in the fasta alignments.
+Invariable loci must also be included. Alignments must contain phased data.}
 
 \item{pop.assign}{A two-column data frame with sample names in the first column and the corresponding population membership preferably as numbers in the second column (If you have a single population the numbers wont matter). The numbers should match the population number in the model object.}
 

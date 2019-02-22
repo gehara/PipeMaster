@@ -3,7 +3,9 @@
 #'              This summary statistics are the same as those simulated by the sim.msABC.sumstat function.
 #'              It is optimized for nexgen data.
 #' @param model A model object built by the main.menu function. Any model with the same number of populations of your empirical data will work. This is just to build the sumstats names correctly.
-#' @param path.to.fasta Path to the folder containing all fastas to be included in the calculation. Invariable sites must be included in the fasta alignments. Invariable loci must also be included.
+#' @param path.to.fasta Path to the folder containing all fastas to be included in the calculation.
+#'                      Invariable sites must be included in the fasta alignments.
+#'                      Invariable loci must also be included. Alignments must contain phased data.
 #' @param pop.assign A two-column data frame with sample names in the first column and the corresponding population membership preferably as numbers in the second column (If you have a single population the numbers wont matter). The numbers should match the population number in the model object.
 #' @param msABC.call String. Path to the msABC executable. msABC binaries for Mac's and Linux are included in the package and should work in most computers.
 #'                   There is no need to change that unless you want to compile the program yourself and point the function to it.
