@@ -22,10 +22,13 @@ iPyrad.alleles.loci2fasta <- function(alleles.loci, output.dir){
         y <- c(y, fas[[j]][length(fas[[j]])])
         fas2 <- c(fas2,y)
       }
-
-      write(paste(fas2, sep="\n"), paste("locus_",i,".fas",sep=""))
+      nam <- strsplit(x[breaks[i]],"|")[[1]]
+      nam <- nam[grep("|",nam, fixed=T)[1]:grep("|",nam, fixed=T)[2]]
+      nam <- gsub("|","",nam, fixed=T)
+      nam <- paste(nam, collapse="")
+      write(paste(fas2, sep="\n"), paste("locus_",nam,".fas",sep=""))
       z <- 1+breaks[i]
-      print(paste("locus_",i,".fas",sep=""))
+      print(paste("locus_",nam,".fas",sep=""))
   }
 
 }
