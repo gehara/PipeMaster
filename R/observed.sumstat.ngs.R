@@ -14,7 +14,7 @@
 #' @note This function does not work on Windows systems.
 #' @export
 obs.sumstat.ngs<-function(model=NULL,path.to.fasta,pop.assign,moments=F,msABC.call=get.msABC()){
-
+   WD <- getwd()
   if(is.null(model)){
     print("You did not specify the model. Sumstat calculations will output a table with the specific stat of each locus.")
     x<-readline("Would you like to continue? (Yes or No)")
@@ -81,5 +81,6 @@ obs.sumstat.ngs<-function(model=NULL,path.to.fasta,pop.assign,moments=F,msABC.ca
   observed <- t(data.frame(observed))
   colnames(observed) <- c(nam,paste(nam[grep("pi",nam)],nam[grep("_w",nam)],sep="_"))
   }
-  return(observed)
+    return(observed)
+  setwd(WD)
 }
