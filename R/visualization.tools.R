@@ -54,7 +54,7 @@ plot.priors <- function(model, nsamples=1000, mu.rates=NULL){
 #' @return A data frame with 4 columns: parameter name, first parameter of prior distribution, secound parameter of prior distribution, prior distribution.
 #' @author Marcelo Gehara
 #' @export
-get.prior.table <- function(input){
+get.prior.table <- function(model){
 
   flags <- model$flags
 
