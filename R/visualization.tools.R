@@ -25,6 +25,7 @@ plot.sim.obs <- function(sim, obs)
 plot.priors <- function(model, nsamples=1000, mu.rates=NULL){
 
   param = NULL
+  pb = txtProgressBar(min = 1, max = nsamples, initial = 1)
   for(j in 1:nsamples){
     param.samples <- as.numeric(PipeMaster:::msABC.commander(model, use.alpha=F, arg=1)[[2]][2,])
     if(!(is.null(mu.rates))){
@@ -34,7 +35,7 @@ plot.priors <- function(model, nsamples=1000, mu.rates=NULL){
       rates <- PipeMaster:::sample.mu.rates(model)[[2]]
       param <- rbind(param,c(param.samples, rates))
     }
-    print(j)
+    setTxtProgressBar(pb,j)
   }
   if(!(is.null(mu.rates))){
     colnames(param) <- c(PipeMaster:::msABC.commander(model, use.alpha=F, arg=1)[[2]][1,],"mu")
