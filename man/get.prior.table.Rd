@@ -4,7 +4,7 @@
 \alias{get.prior.table}
 \title{Get a table with prior distributions.}
 \usage{
-get.prior.table(input)
+get.prior.table(model)
 }
 \arguments{
 \item{model}{A model object.}
