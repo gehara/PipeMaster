@@ -1,6 +1,4 @@
----
-output: html_document
----
+
 # Simulations and analyses with PipeMaster (nextgen example)
 
 This is a script showing how to simulate data, test model and estimate parameters using [PipeMaster](https://github/gehara/PipeMaster), abc and caret packages.
@@ -330,7 +328,7 @@ plotPCs(model, data)
 ![](PCs_mig_models.png)
 
 
-###9) Run a supervised machine learning analysis for model classification
+### 9) Run a supervised machine learning analysis for model classification
 ```{r}
 # combine all models for analysis
 models<-rbind(Is.sim[,colnames(Is.sim) %in% colnames(observed)],
@@ -399,7 +397,7 @@ t(c(pred,accu))
 write.table(c(pred,accu),"results.selection.txt")
 ```
 
-###10) estimate parameters using abc and neural networks
+### 10) estimate parameters using abc and neural networks
 ```{r}
 # read selected model
 IsBot2.sim <- read.table("SIMS_IsBot2.txt", header=T)
