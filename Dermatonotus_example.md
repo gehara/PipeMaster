@@ -7,77 +7,60 @@ The data set used is the same as the one used in Gehara et al (in prep), and rep
 ### 1) Install and load all necessary packages
 
 #### 1.1 instalation
-```
- install.packages(c("devtools","ggplot2","abc","caret","doMC"))
 
- library(devtools) # devtools: necessary for PipeMaster instalation
+> install.packages(c("devtools","ggplot2","abc","caret","doMC"))
 
- install_github("gehara/PipeMaster@developing")
-```
+> library(devtools) # devtools: necessary for PipeMaster instalation
+
+> install_github("gehara/PipeMaster@developing")
+
 #### 1.2 load packages
-```
-library(devtools)
 
-library(PipeMaster) # PipeMaster: used to simulate data and some additional tools
+> library(devtools)
 
-library(abc) # abc: used to perform approximate Bayesian computation (ABC)
+> library(PipeMaster) # PipeMaster: used to simulate data and some additional tools
 
-library(caret) # caret: used to perform the superevised machine-learning (SML)
+> library(abc) # abc: used to perform approximate Bayesian computation (ABC)
 
-library(doMC) # doMC: necessary to run the SML in parallel
+> library(caret) # caret: used to perform the superevised machine-learning (SML)
 
-library(ggplot2) # ggplot2: used to plot PCA
-```
+> library(doMC) # doMC: necessary to run the SML in parallel
+
+> library(ggplot2) # ggplot2: used to plot PCA
+
 ### 2) Create a working directory to save results
-```
-#get the working directory
-path <- getwd()
-#create a new directory to save outputs
-dir.create(paste(path,"/PM_example",sep=""))
-#set working directory
-setwd(paste(path,"/PM_example",sep=""))
-```
+
+##### get the working directory
+> path <- getwd()
+##### create a new directory to save outputs
+> dir.create(paste(path,"/PM_example",sep=""))
+##### set working directory
+> setwd(paste(path,"/PM_example",sep=""))
 
 ### 3) Load example data
-```
-# observed summary statistics
-data("observed_Dermatonotus", package = "PipeMaster")
-# models
-data("models", package="PipeMaster")
-```
-###4) Usefull tips and tools
+##### observed summary statistics
+> data("observed_Dermatonotus", package = "PipeMaster")
 
-#### 4.1 *dput* is usefull to save the loaded models in the working directory as .txt files
-```
-dput(Is,"Is.txt")
-dput(IsBot,"IsBot.txt")
-dput(IsBot2,"IsBot2.txt")
-dput(IsD,"IsD.txt")
-dput(IsD2,"IsD2.txt")
-dput(IM,"IM.txt")
-dput(IMBot2,"IMBot2.txt")
-dput(IMD2,"IMD2.txt")
-dput(IMD,"IMD.txt")
-dput(IMBot,"IMBot.txt")
-```
-#### 4.2 You can use *dget* to retrieve models from .txt files saved with *dput*
-```
-Is <- dget("Is.txt")
-IM <- dget("IM.txt")
-IsD <- dget("IsD.txt")
-IMD <- dget("IMD.txt")
-IsBot <- dget("IsBot.txt")
-IMBot <- dget("IMBot.txt")
-IsBot2 <- dget("IsBot2.txt")
-IMBot2 <- dget("IMBot2.txt")
-IsD2 <- dget("IsD.txt")
-IMD2 <- dget("IMD.txt")
-```
+##### models used in Gehara et al
+
+> data("models", package="PipeMaster")
+
+### 4) Usefull tips and tools
+
+##### *dput* is usefull to save the loaded models in the working directory as .txt files
+
+> dput(Is,"Is.txt")
+
+##### You can use *dget* to retrieve models from .txt files saved with *dput*
+
+> Is <- dget("Is.txt")
+
 ####4.3) with the function bellow you can see the parameters and priors of the models
-```
-tab <- get.prior.table(model=Is)
-tab
 
+> tab <- get.prior.table(model=Is)
+> tab
+
+```
    Parameter prior.1 prior.2 distribution
 1   Ne0.pop1  100000 5000000        runif
 2   Ne0.pop2  100000 5000000        runif
