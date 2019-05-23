@@ -82,7 +82,7 @@ This example data is based on Gehara et al.
 ```
 plot.priors(Is)
 ```
-![Prior distribution]https://github.com/gehara/PipeMaster/priors.png
+![Prior distribution](priors.png)
 
 ####4.5) it is possible to update the priors using the table
 
