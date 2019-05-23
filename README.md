@@ -8,6 +8,7 @@
   
   PipeMaster simulates summary statistics and coalescent trees. It calculates the same summary statistics on an empirical data. The user can use these sumary statistics to perform aproximate Bayesian computation (ABC) or supervized machine learning (SML) for model and parameter inference.
 
+
 #### Installing the package  
 
 > install.packages("devtools")  
