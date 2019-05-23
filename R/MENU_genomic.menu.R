@@ -4,7 +4,7 @@ genomic.menu<-function(){
 print.genomic.menu()
 
 letter<<-readline(">>>>")
-while(letter %in% c("M","P","1","2","3","B")==F){
+while(letter %in% c("M","P","1","B")==F){
   cat(paste("Choose a valid letter. You typed",letter))
   letter<<-readline(">>>>")
 }
@@ -24,13 +24,7 @@ print.genomic.menu<-function(){
       paste("P > priors                          ",dist.par),
       paste("                                 ",.e$loci[,4]," ",.e$loci[,5]),
       paste(" "),
-      paste("1 > percentage of missing data"),
-      paste("                              ",.e$loci[,1],"%"),
-      paste(" "),
-      paste("2 > number of base pairs"),
-      paste("                              ",.e$loci[,2]),
-      paste(" "),
-      paste("3 > number of loci"),
+      paste("1 > number of loci"),
       paste("                              ",.e$loci[,3]),
       paste(" "),
       paste("B > Back to main menu"),
@@ -66,26 +60,7 @@ switch.genomic.menu<-function(){
          sys.call(which = -1)
          genomic.menu()},
 
-         "1" = {.missdata<-readline("percentage of missing data:")
-         while(is.na(as.numeric(.missdata))){
-           .missdata<-readline("percentage of missing data:")
-         }
-         .e$loci[1,1]<-.missdata
-         sys.call(which = -1)
-         genomic.menu()},
-
-         "2" = {.bp<-readline("average number of base pairs:")
-         while(is.na(as.numeric(.bp))){
-           .bp<-readline("average number of base pairs:")
-         }
-         .e$loci[1,2]<-.bp
-         sys.call(which = -1)
-         genomic.menu()},
-
-         "3" = {.lo<-readline("number of loci to simulate:")
-         while(is.na(as.numeric(.lo))){
-           .lo<-readline("average number of base pairs:")
-         }
+        "1" = {.lo<-as.numeric(readline("how many loci to simulate? You should include all invariable locus: "))
          .e$loci[1,3]<-.lo
          sys.call(which = -1)
          genomic.menu()},
@@ -109,7 +84,7 @@ genomic.samples.par<-function(){
 
   for(j in 1:.e$ngenes){
     for(i in 1:.e$npops){
-      .e$I[j,i+3]<-readline(paste("number of samples for pop",i,":"))
+      .e$I[j,i+3]<-NA
     }
   }
 }
@@ -117,11 +92,10 @@ genomic.samples.par<-function(){
 genomic.par<-function(){
   ## get topology and number of nodes
   .e$ngenes<-1
-  .e$nloci<-as.numeric(readline("how many loci to simulate?: "))
-  bp<-as.numeric(readline("average number of base pairs: "))
+  .e$nloci<-as.numeric(readline("how many loci to simulate? You should include all invariable locus: "))
   .e$loci<-matrix(nrow=1,ncol=6)
-  .e$loci[,1]<-0
-  .e$loci[,2]<-bp
+  .e$loci[,1]<-"genomic"
+  .e$loci[,2]<-"bp"
   .e$loci[,3]<-.e$nloci
   .e$loci[,4]<-1e-11
   .e$loci[,5]<-1e-9

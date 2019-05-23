@@ -279,20 +279,17 @@ sim.sp.tree<-function(tree,
 
     ### simulate n-loci #################################################################################
     for(i in 1:nloci) {
-      master.theta<-0
-      while(master.theta<0.000001){
+
       # sample mutation rate per site per year
-      rate<-rnorm(1,mi.mean,mi.SD)
-      while(rate<=0){
-        rate<-rnorm(1,mi.mean,mi.SD)
-      }
+      rate <- rtnorm(1,mi.mean,mi.SD,mi[1])
+
       # sample sequence length
-      seq.length<-rnorm(1,bp[1],bp[2])
-      # generate theta
-      master.theta<-master.Ne*4*seq.length*(rate*gen.time)
-      }
+      seq.length <- rnorm(1,bp[1],bp[2])
+      # calculate theta
+      master.theta <- master.Ne*4*seq.length*rate*gen.time
+
       # theta string
-      ms.string[[1]]<-paste("-t",master.theta)
+      ms.string[[1]]<-paste("-t", master.theta)
       ### pop structure
       ms.string[[2]]<-paste(c("-I",(nrow(ej)+1),(rep(1,nrow(ej)+1))),collapse=" ")
       ### current popsize strings

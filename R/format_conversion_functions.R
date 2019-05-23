@@ -110,6 +110,12 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
                paste("has no match in the assignment file."),sep="\n"))
     }
 
+    if(length(unique(pops[pops[, 1] %in% rownames(fas),2])) != length(unique(pops[,2]))){
+      stop(paste("locus",fasta.files[u],"does not have samples for all",length(unique(pops[,2])),"populations"))
+    }
+
+
+
     fasta<-NULL
     p<-NULL
     for (j in 1:nrow(pops)) {
@@ -121,7 +127,9 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
       }
     }
     fas<-fasta
+    #ape:::write.dna(as.DNAbin(fas),fasta.files[u],format = "fasta", colw = 10000)
     pops<-p
+
     npops<-length(unique(pops[,2]))
     pop.list<-list()
     for(i in 1:npops){
@@ -204,7 +212,6 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
     ss<-0}
 
 
-
     if(write.file==T){
       write(file=paste(strsplit(fasta.files[u],".",fixed=T)[[1]][1],".ms",sep=""),paste("ms",nrow(fas),1,string))
       write(file=paste(strsplit(fasta.files[u],".",fixed=T)[[1]][1],".ms",sep=""),"//",append=T)
@@ -220,7 +227,7 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
     ms.out[[u]]<-c(ms.out[[u]],paste("positions:   ",paste(pos,collapse="    ")))
     ms.out[[u]]<-c(ms.out[[u]],paste(seqs,sep="\n"))
 
-
+ # print(u)
   }
   return(ms.out)
 }
