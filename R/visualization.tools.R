@@ -93,7 +93,7 @@ update.priors <- function(tab, model){
       x[grep(tab[i,1], x),4:6] <- as.matrix(tab[i, 2:4])
       model$flags[[grep(tab[i,1], model$flags)]] <- x
     }
-    print(i)
+
   }
   return(model)
 }
