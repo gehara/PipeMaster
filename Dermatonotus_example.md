@@ -1,4 +1,7 @@
-#Simulations and analyses with PipeMaster (nextgen example)
+---
+output: html_document
+---
+# Simulations and analyses with PipeMaster (nextgen example)
 
 This is a script showing how to simulate data, test model and estimate parameters using [PipeMaster](https://github/gehara/PipeMaster), abc and caret packages.
 The data set used is the same as the one used in Gehara et al (in prep), and represents 2177 UCE loci for the neotropical frog Dermatonotus muelleri. For more information about this species see Gehara et al (in prep). and [Oliveira et al. 2018](https://www.researchgate.net/profile/Adrian_Garda/publication/327624820_Phylogeography_of_Muller%27s_termite_frog_suggests_the_vicariant_role_of_the_Central_Brazilian_Plateau/links/5c40f99f92851c22a37d572c/Phylogeography-of-Mullers-termite-frog-suggests-the-vicariant-role-of-the-Central-Brazilian-Plateau.pdf)
@@ -32,15 +35,19 @@ The data set used is the same as the one used in Gehara et al (in prep), and rep
 
 ##### get the working directory
 > path <- getwd()
+
 ##### create a new directory to save outputs
 > dir.create(paste(path,"/PM_example",sep=""))
+
 ##### set working directory
 > setwd(paste(path,"/PM_example",sep=""))
 
 ### 3) Load example data
-##### observed summary statistics
-> data("observed_Dermatonotus", package = "PipeMaster")
+This example data is based on Gehara et al. 
 
+#### observed summary statistics
+> data("observed_Dermatonotus", package = "PipeMaster")
+  
 ##### models used in Gehara et al
 
 > data("models", package="PipeMaster")
@@ -55,9 +62,10 @@ The data set used is the same as the one used in Gehara et al (in prep), and rep
 
 > Is <- dget("Is.txt")
 
-####4.3) with the function bellow you can see the parameters and priors of the models
+#### With the function bellow you can see the parameters and priors of the models
 
 > tab <- get.prior.table(model=Is)
+
 > tab
 
 ```
@@ -69,11 +77,12 @@ The data set used is the same as the one used in Gehara et al (in prep), and rep
 5      join1 1500000 8000000        runif
 ```
 
-####4.4) Visualize prior distributions
+#### Visualize prior distributions
 
 ```
 plot.priors(Is)
 ```
+![Prior distribution]https://github.com/gehara/PipeMaster/priors.png
 
 ####4.5) it is possible to update the priors using the table
 
