@@ -1,7 +1,6 @@
-
 # Simulations and analyses with PipeMaster (nextgen example)
 
-This is a script showing how to simulate data, test model and estimate parameters using [PipeMaster](https://github/gehara/PipeMaster), abc and caret packages.
+This is an R script showing how to simulate data, test model and estimate parameters using [PipeMaster](https://github/gehara/PipeMaster), abc and caret packages.
 The data set used is the same as the one used in Gehara et al (in prep), and represents 2177 UCE loci for the neotropical frog Dermatonotus muelleri. For more information about this species see Gehara et al (in prep). and [Oliveira et al. 2018](https://www.researchgate.net/profile/Adrian_Garda/publication/327624820_Phylogeography_of_Muller%27s_termite_frog_suggests_the_vicariant_role_of_the_Central_Brazilian_Plateau/links/5c40f99f92851c22a37d572c/Phylogeography-of-Mullers-termite-frog-suggests-the-vicariant-role-of-the-Central-Brazilian-Plateau.pdf)
 
 
@@ -9,7 +8,7 @@ The data set used is the same as the one used in Gehara et al (in prep), and rep
 
 #### 1.1 instalation
 ```{r}
- install.packages(c("devtools","ggplot2","abc","caret","doMC"))
+ install.packages(c("devtools","ggplot2","abc","caret","doMC", "gridExtra"))
 
  library(devtools) # devtools: necessary for PipeMaster instalation
 
@@ -29,6 +28,8 @@ The data set used is the same as the one used in Gehara et al (in prep), and rep
  library(doMC) # doMC: necessary to run the SML in parallel
 
  library(ggplot2) # ggplot2: used to plot PCA
+ 
+ library(gridExtra) # to plot multiple plots in one figure
 ```
 
 ### 2) Create a working directory to save results
@@ -72,16 +73,16 @@ dput(IMBot,"IMBot.txt")
 ```
 ##### You can use *dget* to retrieve models from .txt files saved with *dput*
 ```{r}
-Is<-dget("Is.txt")
-IM<-dget("IM.txt")
-IsD<-dget("IsD.txt")
-IMD<-dget("IMD.txt")
-IsBot<-dget("IsBot.txt")
-IMBot<-dget("IMBot.txt")
-IsBot2<-dget("IsBot2.txt")
-IMBot2<-dget("IMBot2.txt")
-IsD2<-dget("IsD.txt")
-IMD2<-dget("IMD.txt")
+Is <- dget("Is.txt")
+IM <- dget("IM.txt")
+IsD <- dget("IsD.txt")
+IMD <- dget("IMD.txt")
+IsBot <- dget("IsBot.txt")
+IMBot <- dget("IMBot.txt")
+IsBot2 <- dget("IsBot2.txt")
+IMBot2 <- dget("IMBot2.txt")
+IsD2 <- dget("IsD2.txt")
+IMD2 <- dget("IMD2.txt")
 ```
 #### With the function bellow you can see the parameters and priors of the models
 
@@ -102,7 +103,11 @@ tab
 ```{r}
 plot.priors(Is)
 ```
+
 ![](priors.png)
+
+##### Figure 1: prior distributions for the Dermatonotus example dataset
+
 
 #### 4.5) it is possible to update the priors using the table
 

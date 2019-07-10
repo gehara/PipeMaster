@@ -1,5 +1,5 @@
 # hABC
-The hierarchical model implemented here simulates single locus data for a group of populations/species undergoing a demographic change.
+The hierarchical model implemented here simulates single-locus data for a group of populations/species undergoing a demographic change.
 
 ### 1) inputs
 
@@ -19,7 +19,6 @@ To see an example of the Ne.prior input that was used in Gehara et al 2017 run:
 > data("hABC.priors")
 
 > hABC.priors$Ne.prior
-
 
 ```
           species distribution   minNe   maxNe
