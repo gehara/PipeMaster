@@ -1,10 +1,3 @@
----
-output:
-  html_document: default
-  pdf_document: default
-  word_document: default
----
-  
 # Simulations and analyses with PipeMaster (sanger example)
   
   This is an R script showing how to simulate data, test model and estimate parameters using [PipeMaster](https://github/gehara/PipeMaster), abc and caret packages.
