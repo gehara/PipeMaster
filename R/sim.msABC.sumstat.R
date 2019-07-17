@@ -51,7 +51,7 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
 }
 
   write(paste('arg <- commandArgs(TRUE)',
-              'cat(paste("Core",arg),sep="\n")',
+              'cat(paste("Core",arg),sep="\\n")',
               "suppressMessages(library(PipeMaster))",
               #"suppressMessages(library(devtools))",
               #"load_all('~/Github/PipeMaster')",
@@ -62,7 +62,7 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
               "res<-sim.func(arg)",
               'write.table(res,file=paste(".",arg,"SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")',
               'write(1,".log",append=T,sep="\n")',
-              "quit(save='no')",sep="\n"),".script_parallel.R")
+              "quit(save='no')",sep="\\n"),".script_parallel.R")
 
   sim.func<-function(arg){
 
