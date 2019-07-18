@@ -55,9 +55,6 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
               "suppressMessages(library(PipeMaster))",
               #"suppressMessages(library(devtools))",
               #"load_all('~/Github/PipeMaster')",
-              "if('doMC' %in% rownames(installed.packages())){",
-              "suppressMessages(library(doMC))",
-              "registerDoMC(paste(arg))}",
               'load(file=".PM_objects.RData")',
               "res<-sim.func(arg)",
               'write.table(res,file=paste(".",arg,"SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")',
@@ -117,7 +114,7 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
         l<-readLines(".log")
       })[3]
 
-    file.remove(".log")
+    #file.remove(".log")
 
     simulations<-NULL
     TIM2<-system.time(
