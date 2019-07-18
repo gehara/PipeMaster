@@ -61,8 +61,8 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
               'load(file=".PM_objects.RData")',
               "res<-sim.func(arg)",
               'write.table(res,file=paste(".",arg,"SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")',
-              'write(1,".log",append=T,sep="\n")',
-              "quit(save='no')",sep="\\n"),".script_parallel.R")
+              'write(1,".log",append=T,sep="\\n")',
+              "quit(save='no')",sep="\n"),".script_parallel.R")
 
   sim.func<-function(arg){
 
