@@ -82,7 +82,7 @@ get.locfile<-function(model){
 sample.mu.rates<-function(model){
   MEAN <- runif(1, as.numeric(model$loci[1,4]), as.numeric(model$loci[1,5]))
   SD <- runif(1, as.numeric(model$loci[1,4]), as.numeric(model$loci[1,5]))
-  rates<-rtnorm(nrow(model$loci), MEAN, SD, 0, 1e-8)
+  rates<-rtnorm(nrow(model$loci), MEAN, SD, 1e-12)
   rates<-rep(rates, each=as.numeric(model$I[1,3]))
   return(list(rates,c(MEAN,SD)))
 }
