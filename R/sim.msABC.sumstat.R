@@ -125,8 +125,9 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
         simulations<-rbind(simulations, SIM)
         })[3]
     print("FINISHED -- Reading simulations from slave nodes")
+    print("writing simulations to file")
     TIM3<-system.time(
-      print("writing simulations to file"),
+
       write.table(simulations,file=paste("SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
     )[3]
 
