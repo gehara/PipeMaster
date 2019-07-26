@@ -118,13 +118,18 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
     #file.remove(".log")
 
     simulations<-NULL
+    print("Reading simulations from slave nodes")
     TIM2<-system.time(
       for(t in 1:ncores){
-        simulations<-rbind(simulations,read.table(paste(".",t,"SIMS_",output.name,".txt",sep=""), sep="\t"))
+        SIM <- read.table(paste(".",t,"SIMS_",output.name,".txt",sep=""), sep="\t")
+        simulations<-rbind(simulations, SIM)
         })[3]
+    print("FINISHED -- Reading simulations from slave nodes")
     TIM3<-system.time(
+      print("writing simulations to file"),
       write.table(simulations,file=paste("SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
     )[3]
+
 
     TIM4<-system.time(
       for(t in 1:ncores){
