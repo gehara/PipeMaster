@@ -60,7 +60,6 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
               'write.table(res,file=paste(".",arg,"SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")',
               'write(1,".log",append=T,sep="\\n")',
               'file.remove(paste(".",arg,"locfile.txt",sep=""))',
-              'return(res)'
               "quit(save='no')",sep="\n"),".script_parallel.R")
 
   sim.func<-function(arg){
@@ -120,9 +119,8 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
 
     simulations<-NULL
     print("Reading simulations from slave nodes")
-
-      for(t in 1:ncores){
-        SIM <- read.table(file = paste(".",t,"SIMS_",output.name,".txt",sep=""), sep="\t", colClasses = "numeric")
+    for(i in 1:ncores){
+        SIM <- read.table(file = paste(".",i,"SIMS_",output.name,".txt",sep=""), sep="\t", colClasses = "numeric")
         simulations <- rbind(simulations, SIM)
         }
 
