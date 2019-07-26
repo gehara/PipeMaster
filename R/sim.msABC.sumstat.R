@@ -110,6 +110,7 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
 
     l<-"0"
     TIM1<-Sys.time()
+
       while(sum(as.numeric(unlist(strsplit(l, "")))) < ncores){
         Sys.sleep(5)
         l<-readLines(".log")
@@ -136,7 +137,7 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
     TIM2 <- Sys.time()
     thou<-thou+block.size*ncores
     Total.time<-as.numeric(round(((((TIM2-TIM1)*nsim.blocks)-((TIM2-TIM1)*j))/60)/60,3))
-    cat(paste("PipeMaster:: ",thou," (",as.numeric(round(((block.size*ncores)/(TIM2-TIM1))*60*60))," sims/h) | ",Total.time," hours remaining",sep=""),"\n")
+    cat(paste("PipeMaster:: ",thou," (",round(((block.size*ncores)/as.numeric((TIM2-TIM1))*60*60))," sims/h) | ",Total.time," hours remaining",sep=""),"\n")
     #write.table(param,file=paste(output.name,"_par.txt",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
   }
 
