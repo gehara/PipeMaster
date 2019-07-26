@@ -122,16 +122,14 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
     TIM2<-system.time(
       for(t in 1:ncores){
         SIM <- read.table(paste(".",t,"SIMS_",output.name,".txt",sep=""), sep="\t")
-        simulations<-rbind(simulations, SIM)
+        simulations <- rbind(simulations, SIM)
         })[3]
-    print("FINISHED -- Reading simulations from slave nodes")
-    print("writing simulations to file")
+    print("Writing simulations to file")
     TIM3<-system.time(
-
       write.table(simulations,file=paste("SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
     )[3]
 
-
+    print("Removing old simulations")
     TIM4<-system.time(
       for(t in 1:ncores){
     file.remove(paste(".",t,"SIMS_",output.name,".txt",sep=""))
