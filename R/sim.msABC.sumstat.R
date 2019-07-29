@@ -57,7 +57,7 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
               #"load_all('~/Github/PipeMaster')",
               'load(file=".PM_objects.RData")',
               "res<-sim.func(arg)",
-              'save(res,file=paste(".",arg,"SIMS_",output.name,".txt",sep=""))',
+              'save(res,file=paste(".",arg,"SIMS_",output.name,sep=""))',
               'write(1,".log",append=T,sep="\\n")',
               'file.remove(paste(".",arg,"locfile.txt",sep=""))',
               "quit(save='no')",sep="\n"),".script_parallel.R")
@@ -99,19 +99,18 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
   parentls <- function()ls(envir=parent.frame())
   save(list=parentls(),file='.PM_objects.RData')
 
-  thou<-0
+  total.sims<-0
   for(j in 1:nsim.blocks) {
 
-    write(0,".log")
+    start.time <- Sys.time()
 
+    write(0,".log")
     for(c in 1:ncores){
       system(paste("Rscript .script_parallel.R",c), wait = F)
     }
 
     l<-"0"
-    TIM1<-Sys.time()
-
-      while(sum(as.numeric(unlist(strsplit(l, "")))) < ncores){
+    while(sum(as.numeric(unlist(strsplit(l, "")))) < ncores){
         Sys.sleep(5)
         l<-readLines(".log")
       }
@@ -121,7 +120,7 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
     simulations<-NULL
     print("Reading simulations from slave nodes")
     for(i in 1:ncores){
-        load(file = paste(".",i,"SIMS_",output.name,".txt",sep=""))
+        load(file = paste(".",i,"SIMS_",output.name,sep=""))
         simulations <- rbind(simulations, res)
         }
 
@@ -132,13 +131,16 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
     print("Removing old simulations")
 
     for(t in 1:ncores){
-    file.remove(paste(".",t,"SIMS_",output.name,".txt",sep=""))
+    file.remove(paste(".",t,"SIMS_",output.name,sep=""))
     }
-    TIM2 <- Sys.time()
-    thou<-thou+block.size*ncores
-    Total.time<-as.numeric(round(((((TIM2-TIM1)*nsim.blocks)-((TIM2-TIM1)*j))/60)/60,3))
-    cat(paste("PipeMaster:: ",thou," (",round(((block.size*ncores)/as.numeric((TIM2-TIM1))*60*60))," sims/h) | ",Total.time," hours remaining",sep=""),"\n")
-    #write.table(param,file=paste(output.name,"_par.txt",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
+
+    end.time <- Sys.time()
+    total.sims <- total.sims+(block.size*ncores)
+    cycle.time <- (as.numeric((end.time-start.time))/60)/60
+    total.time <- cycle.time*nsim.blocks
+    passed.time <- cycle.time*j
+    remaining.time <- round(total.time-passed.time,3)
+    cat(paste("PipeMaster:: ",total.sims," (",round(total.sims/cycle.time)," sims/h) | ",remaining.time," hours remaining",sep=""),"\n")
   }
 
 }
