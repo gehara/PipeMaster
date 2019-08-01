@@ -51,17 +51,15 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
 }
 
   write(paste('arg <- commandArgs(TRUE)',
-              'cat(paste("Core",arg),sep="\n")',
+              'cat(paste("Core",arg),sep="\\n")',
               "suppressMessages(library(PipeMaster))",
               #"suppressMessages(library(devtools))",
               #"load_all('~/Github/PipeMaster')",
-              "if('doMC' %in% rownames(installed.packages())){",
-              "suppressMessages(library(doMC))",
-              "registerDoMC(paste(arg))}",
               'load(file=".PM_objects.RData")',
               "res<-sim.func(arg)",
-              'write.table(res,file=paste(".",arg,"SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")',
-              'write(1,".log",append=T,sep="\n")',
+              'save(res,file=paste(".",arg,"SIMS_",output.name,sep=""))',
+              'write(1,".log",append=T,sep="\\n")',
+              'file.remove(paste(".",arg,"locfile.txt",sep=""))',
               "quit(save='no')",sep="\n"),".script_parallel.R")
 
   sim.func<-function(arg){
@@ -101,38 +99,48 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
   parentls <- function()ls(envir=parent.frame())
   save(list=parentls(),file='.PM_objects.RData')
 
-  thou<-0
+  total.sims<-0
   for(j in 1:nsim.blocks) {
 
-    write(0,".log")
+    start.time <- Sys.time()
 
+    write(0,".log")
     for(c in 1:ncores){
       system(paste("Rscript .script_parallel.R",c), wait = F)
     }
 
     l<-"0"
-    TIM1<-system.time(
-      while(sum(as.numeric(unlist(strsplit(l, "")))) < ncores){
-        Sys.sleep(1)
+    while(sum(as.numeric(unlist(strsplit(l, "")))) < ncores){
+        Sys.sleep(5)
         l<-readLines(".log")
-      })[3]
+      }
 
     file.remove(".log")
 
     simulations<-NULL
-    TIM2<-system.time(
-      for(t in 1:ncores){
-        simulations<-rbind(simulations,read.table(paste(".",t,"SIMS_",output.name,".txt",sep=""), sep="\t"))
-        file.remove(paste(".",t,"SIMS_",output.name,".txt",sep=""))
-      })[3]
-    TIM3<-system.time(
-      write.table(simulations,file=paste("SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
-    )[3]
+    print("Reading simulations from slave nodes")
+    for(i in 1:ncores){
+        load(file = paste(".",i,"SIMS_",output.name,sep=""))
+        simulations <- rbind(simulations, res)
+        }
 
-    thou<-thou+block.size*ncores
-    Total.time<-round(((((TIM1+TIM2+TIM3)*nsim.blocks)-((TIM1+TIM2+TIM3)*j))/60)/60,3)
-    cat(paste("PipeMaster:: ",thou," (",round(((block.size*ncores)/(TIM1+TIM2+TIM3))*60*60)," sims/h) | ",Total.time," hours remaining",sep=""),"\n")
-    #write.table(param,file=paste(output.name,"_par.txt",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
+    print("Writing simulations to file")
+
+    write.table(simulations,file=paste("SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
+
+    print("Removing old simulations")
+
+    for(t in 1:ncores){
+    file.remove(paste(".",t,"SIMS_",output.name,sep=""))
+    }
+
+    end.time <- Sys.time()
+    total.sims <- total.sims+(block.size*ncores)
+    cycle.time <- (as.numeric((end.time-start.time))/60)/60
+    total.time <- cycle.time*nsim.blocks
+    passed.time <- cycle.time*j
+    remaining.time <- round(total.time-passed.time,3)
+    cat(paste("PipeMaster:: ",total.sims," (",round(total.sims/cycle.time)," sims/h) | ",remaining.time," hours remaining",sep=""),"\n")
   }
 
 }
