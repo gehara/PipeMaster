@@ -7,7 +7,7 @@
 #' @note requires Pegas package
 #' @export
 H.div<-function(x){
-  h<-haplotype(x)
+  h<-pegas::haplotype(x)
   hap<-attr(h, "index")
   n.hap<-length(hap)
 

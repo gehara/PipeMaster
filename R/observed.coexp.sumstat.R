@@ -24,9 +24,9 @@ observed.coexp.sumstat<-function(path.to.fasta){
   for (j in 1:length(ms.output)){
     x<-ms.to.DNAbin(ms.output = ms.output[[j]],bp.length = bp.length[[j]])
 
-    pi<-nuc.div(x)
+    pi<-pegas::nuc.div(x)
     H<-H.div(x)[2]
-    TD<-tajima.test(x)$D
+    TD<-pegas::tajima.test(x)$D
 
     #sfs<-site.spectrum(x,folded=T)
     #sfs<-sfs/sum(na.omit(sfs))

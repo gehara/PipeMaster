@@ -57,7 +57,7 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
               #"load_all('~/Github/PipeMaster')",
               'load(file=".PM_objects.RData")',
               "res<-sim.func(arg)",
-              'save(res,file=paste(".",arg,"SIMS_",output.name,sep=""))',
+              'save(res,file=paste(".",arg,"_SIMS.rda",sep=""))',
               'write(1,".log",append=T,sep="\\n")',
               'file.remove(paste(".",arg,"locfile.txt",sep=""))',
               "quit(save='no')",sep="\n"),".script_parallel.R")
@@ -119,8 +119,8 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
 
     simulations<-NULL
     print("Reading simulations from slave nodes")
-    for(i in 1:ncores){
-        load(file = paste(".",i,"SIMS_",output.name,sep=""))
+    for(c in 1:ncores){
+        load(file = paste(".",c,"_SIMS.rda",sep=""))
         simulations <- rbind(simulations, res)
         }
 
