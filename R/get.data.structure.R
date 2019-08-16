@@ -8,7 +8,7 @@
 #' @export
 get.data.structure <- function(model, path.to.fasta, pop.assign, sanger=F)
   {
-
+  orig.path <- getwd()
   setwd(path.to.fasta)
   pops <- pop.assign
   pops <- pops[with(pops, order(pops[,2])), ]
@@ -66,5 +66,6 @@ get.data.structure <- function(model, path.to.fasta, pop.assign, sanger=F)
   model$loci <- LOCI
   model$I <- I
   }
+  setwd(orig.path)
   return(model)
 }

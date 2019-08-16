@@ -81,6 +81,6 @@ obs.sumstat.ngs<-function(model=NULL,path.to.fasta,pop.assign,moments=F,msABC.ca
   observed <- t(data.frame(observed))
   colnames(observed) <- c(nam,paste(nam[grep("pi",nam)],nam[grep("_w",nam)],sep="_"))
   }
-    return(observed)
   setwd(WD)
+  return(observed)
 }

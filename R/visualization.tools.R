@@ -108,8 +108,9 @@ update.priors <- function(tab, model){
 PlotModel<-function(model, use.alpha=F){
   model$loci <- model$loci[1:2,]
   model$I <- model$I[1:2,]
-  x <- PipeMaster:::ms.commander2(model, use.alpha = F)
-  POPdemog::PlotMS(x[[1]], type="ms")
+  x <- PipeMaster:::ms.commander2(model, use.alpha = use.alpha)
+  POPdemog::PlotMS(x[[1]], type="ms", col.pop = c(2:(as.numeric(model$I[1,3])+1)),
+                   lwd.arrow = 2)
 }
 
 
