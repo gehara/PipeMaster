@@ -9,7 +9,8 @@ PlotModel(model, use.alpha = F)
 \arguments{
 \item{model}{A model object generated in the main.menu.}
 
-\item{use.alpha}{logical. TRUE for exponential pop changes. FALSE fro sudden changes. Default is FALSE.}
+\item{use.alpha}{Logical. If TRUE the most recent population size change will be exponential. If FALSE sudden demographic changes. Default is FALSE.
+This argument changes ONLY the MOST RECENT demographich change.}
 }
 \value{
 Graphic

@@ -101,7 +101,8 @@ update.priors <- function(tab, model){
 #' Plot model
 #' @description This function plots a graphical representation of your model.
 #' @param model A model object generated in the main.menu.
-#' @param use.alpha logical. TRUE for exponential pop changes. FALSE fro sudden changes. Default is FALSE.
+#' @param use.alpha Logical. If TRUE the most recent population size change will be exponential. If FALSE sudden demographic changes. Default is FALSE.
+#'                  This argument changes ONLY the MOST RECENT demographich change.
 #' @return Graphic
 #' @author Marcelo Gehara. This function is a wrapper of the PlotMS function of the POPDemog package.
 #' @export
