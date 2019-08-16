@@ -131,7 +131,7 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
     print("Removing old simulations")
 
     for(t in 1:ncores){
-    file.remove(paste(".",t,"SIMS_",output.name,sep=""))
+    file.remove(paste(".",t,"_SIMS.rda",sep=""))
     }
 
     end.time <- Sys.time()

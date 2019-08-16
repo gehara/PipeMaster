@@ -98,6 +98,20 @@ update.priors <- function(tab, model){
   return(model)
 }
 
+#' Plot model
+#' @description This function plots a graphical representation of your model.
+#' @param model A model object generated in the main.menu.
+#' @param use.alpha logical. TRUE for exponential pop changes. FALSE fro sudden changes. Default is FALSE.
+#' @return Graphic
+#' @author Marcelo Gehara. This function is a wrapper of the PlotMS function of the POPDemog package.
+#' @export
+PlotModel<-function(model, use.alpha=F){
+  model$loci <- model$loci[1:2,]
+  model$I <- model$I[1:2,]
+  x <- PipeMaster:::ms.commander2(model, use.alpha = F)
+  POPdemog::PlotMS(x[[1]], type="ms")
+}
+
 
 
 
@@ -147,4 +161,9 @@ multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
     }
   }
 }
+
+
+
+
+
 

@@ -4,7 +4,7 @@
 \alias{plot.priors}
 \title{Plot prior distribution}
 \usage{
-plot.priors(model, nsamples = 1000, mu.rates = NULL)
+\method{plot}{priors}(model, nsamples = 1000, mu.rates = NULL)
 }
 \arguments{
 \item{model}{A model object.}

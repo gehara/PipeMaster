@@ -4,7 +4,7 @@
 \alias{plot.sim.obs}
 \title{Plot simulated data against observed}
 \usage{
-plot.sim.obs(sim, obs)
+\method{plot}{sim.obs}(sim, obs)
 }
 \arguments{
 \item{sim}{A data frame with simulated data.}
