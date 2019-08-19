@@ -187,9 +187,9 @@ multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
 #' @return graphic
 #' @author Marcelo Gehara
 #' @export
-plotPCs <- function (models, data, observed, subsample) {
+plotPCs <- function (models, index, observed, subsample) {
 
-  labels <- unique(data)
+  labels <- unique(index)
   labels <- sort(c(labels,"observed"))
   sizes <- rep(2,length(labels))
   sizes[which(labels=="observed")]<-10
@@ -198,7 +198,7 @@ plotPCs <- function (models, data, observed, subsample) {
   shapes[which(labels=="observed")]<-8
 
   # exclude missing data for pca plot
-  data.PCA <- data[complete.cases(models)]
+  data.PCA <- index[complete.cases(models)]
   models.PCA <- models[complete.cases(models),]
   # subsample for PCA
   x <- sample(1:length(data.PCA),length(data.PCA)*subsample)
