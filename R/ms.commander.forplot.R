@@ -19,6 +19,7 @@ ms.commander.forplot<-function(model,use.alpha=use.alpha){
   time.pars<-data.frame(rbind(model$flags$ej,model$flags$en$time,model$flags$em$time))
   if(nrow(time.pars)==0) time.pars<-NULL
 
+  options(warn=-1)
   size.pars[,4:5] <- t(apply(size.pars[,4:5],1,as.numeric))
   if(size.pars[,6]=="rnorm"){
     size.pars[,4:5] <- size.pars[,4]
@@ -37,12 +38,14 @@ ms.commander.forplot<-function(model,use.alpha=use.alpha){
 
   if(is.null(time.pars)==F){
   time.pars[,4:5] <- t(apply(time.pars[,4:5],1,as.numeric))
+  options(warn=-1)
   if(time.pars[,6]=="rnorm"){
     time.pars[,4:5] <- time.pars[,4]
     time.pars[,6] <- "runif"
   } else { time.pars[,4:5] <- apply(time.pars[,4:5],1,mean)}
   time.pars<-as.matrix(time.pars)
   }
+  options(warn=0)
   # sample Ne, div.time and mutation rate
   size.pars <- sample.w.cond(par.matrix=size.pars,cond.matrix=model$conds$size.matrix)
   # bind Ne sampled parameters
