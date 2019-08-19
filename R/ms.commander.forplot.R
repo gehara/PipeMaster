@@ -5,19 +5,46 @@
 # @return a list with msABC command and sampled parameters.
 # @note This function is used internally for the sim.snp.sumstat function. One my want to run this function to check the ms string.
 #
-ms.commander2<-function(model,use.alpha=use.alpha){
+ms.commander.forplot<-function(model,use.alpha=use.alpha){
 
   # empty parameter vector
   parameters<-vector()
 
   # bind Ne, mig and Time priors
-  size.pars<-rbind(model$flags$n,model$flags$en$size)
-  mig.pars<-rbind(model$flags$m,model$flags$em$size)
-  time.pars<-rbind(model$flags$ej,model$flags$en$time,model$flags$em$time)
+  size.pars<- data.frame(rbind(model$flags$n,model$flags$en$size))
 
+  mig.pars<-data.frame(rbind(model$flags$m,model$flags$em$size))
+  if(nrow(mig.pars)==0) mig.pars<-NULL
 
+  time.pars<-data.frame(rbind(model$flags$ej,model$flags$en$time,model$flags$em$time))
+  if(nrow(time.pars)==0) time.pars<-NULL
+
+  size.pars[,4:5] <- t(apply(size.pars[,4:5],1,as.numeric))
+  if(size.pars[,6]=="rnorm"){
+    size.pars[,4:5] <- size.pars[,4]
+    size.pars[,6] <- "runif"
+  } else {size.pars[,4:5] <- apply(size.pars[,4:5],1, mean)}
+  size.pars <- as.matrix(size.pars)
+
+  if(is.null(mig.pars)==F){
+  mig.pars[,4:5] <- t(apply(mig.pars[,4:5],1, as.numeric))
+  if(mig.pars[,6]=="rnorm"){
+    mig.pars[,4:5] <- mig.pars[,4]
+    mig.pars[,6] <- "runif"
+  } else {mig.pars[,4:5] <- apply(mig.pars[,4:5],1, mean)}
+  mig.pars<-as.matrix(mig.pars)
+  }
+
+  if(is.null(time.pars)==F){
+  time.pars[,4:5] <- t(apply(time.pars[,4:5],1,as.numeric))
+  if(time.pars[,6]=="rnorm"){
+    time.pars[,4:5] <- time.pars[,4]
+    time.pars[,6] <- "runif"
+  } else { time.pars[,4:5] <- apply(time.pars[,4:5],1,mean)}
+  time.pars<-as.matrix(time.pars)
+  }
   # sample Ne, div.time and mutation rate
-  size.pars<-sample.w.cond(par.matrix=size.pars,cond.matrix=model$conds$size.matrix)
+  size.pars <- sample.w.cond(par.matrix=size.pars,cond.matrix=model$conds$size.matrix)
   # bind Ne sampled parameters
   parameters<-rbind(parameters,size.pars[,c(1,4)])
 
@@ -48,13 +75,9 @@ ms.commander2<-function(model,use.alpha=use.alpha){
   # generate coalescent scalar. Arbitrary value
 
   #### if single population
-  if(model$I[1,3]=="1"){
-    Ne0<-as.numeric(size.pars[1,4])
+    Ne0<-1000000
     ms.scalar<-4*Ne0
-  } else {
-    Ne0<-mean(as.numeric(model$flags$n[,4:5]))
-    ms.scalar<-4*Ne0
-  }
+
 
   #### bind scaled theta per gene (4Ne0*m*pb)
   loci<-cbind(loci,ms.scalar*as.numeric(loci[,4])*as.numeric(loci[,2]))
@@ -80,6 +103,6 @@ ms.commander2<-function(model,use.alpha=use.alpha){
       commands[[u]]<-paste(y,string, collapse=" ")
       }
   #### attach sampled parameters
-  commands[[nrow(loci)+1]]<-t(rbind(parameters,c("scalar",ms.scalar)))
+  commands[[nrow(loci)+1]]<-t(parameters)
   return(commands)
   }

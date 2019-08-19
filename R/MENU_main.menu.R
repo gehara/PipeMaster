@@ -23,7 +23,7 @@ main.menu<-function(input = NULL, ms.string = NULL){
   print.main.menu()
 
     letter<<-readline("Model Builder >>>>")
-    while(letter %in% c("A","B","C","D","E","F","G","H","I","Q")==F){
+    while(letter %in% c("A","B","C","D","E","F","G","H","I","Q","P")==F){
      cat(paste("Choose a valid letter. You typed:",letter))
      letter<<-readline("Model Builder >>>>")
     }
@@ -52,6 +52,7 @@ print.main.menu<-function(){
        paste("    time of Migration change parameters   ",sum(nrow(.e$em$time))),
        paste("H > Conditions"),
        paste("I > Gene setup"),
+       paste("P > Plot Model"),
        paste("Q > Quit, my model is Ready!"),
        sep="\n")
   }
@@ -152,6 +153,33 @@ switch.main.menu<-function(){
          }
          },
 
+         P = {if(exists("size.matrix",envir=.e)){
+                 } else {condition.matrix()}
+
+           if(exists("m",envir=.e) & exists("mig.matrix",envir=.e)==F){
+             sys.call(which = 0)
+             condition.matrix()
+           }
+
+           if(exists("loci",envir=.e)){
+           } else {print("you need to go to gene menu first!")
+               sys.call(which = 0)
+               main.menu()
+           }
+
+           alpha <- as.logical(readline("exponential size change (TRUE or FALSE)? "))
+           if(alpha==T){
+             .e$exp.pops <- readline("Indicate pop numbers separated by comma for exponential change ")
+             .e$exp.pops <- as.numeric(strsplit(.e$exp.pops,",")[[1]])
+             alpha <- c(T,.e$exp.pops)
+           }
+           model <- get.model()
+
+          PipeMaster::PlotModel(model = model, use.alpha = alpha)
+
+          sys.call(which = 0)
+          main.menu(model)
+          },
 
 
          Q={if(exists("size.matrix",envir=.e)){

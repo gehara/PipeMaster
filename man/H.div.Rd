@@ -22,5 +22,5 @@ requires Pegas package
 Nei, M., & Tajima, F. (1981). DNA polymorphism detectable by restriction endonucleases. Genetics, 97, 145–163.
 }
 \author{
-Marcelo Gehara, according to Nei and Tajima (1981).
+Marcelo Gehara
 }

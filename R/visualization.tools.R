@@ -102,17 +102,30 @@ update.priors <- function(tab, model){
 #' @description This function plots a graphical representation of your model.
 #' @param model A model object generated in the main.menu.
 #' @param use.alpha Logical. If TRUE the most recent population size change will be exponential. If FALSE sudden demographic changes. Default is FALSE.
-#'                  This argument changes ONLY the MOST RECENT demographich change.
+#'                  This argument changes ONLY the MOST RECENT demographich change. You should indicate the population numbers for the exponential change
+#'                  toguether with the logical argument in a vector. Ex.c(T,1,2)
+#' @param average.of.priors logical. if TRUE parameters for the plot will be equal to the average of prior values.
 #' @return Graphic
 #' @author Marcelo Gehara. This function is a wrapper of the PlotMS function of the POPDemog package.
 #' @export
-PlotModel<-function(model, use.alpha=F){
-  model$loci <- model$loci[1:2,]
-  model$I <- model$I[1:2,]
-  x <- PipeMaster:::ms.commander2(model, use.alpha = use.alpha)
-  POPdemog::PlotMS(x[[1]], type="ms", col.pop = c(2:(as.numeric(model$I[1,3])+1)),
-                   lwd.arrow = 2)
+PlotModel<-function(model, use.alpha=F, average.of.priors=F){
+
+  model$loci <- t(data.frame(c("rate1" ,"1000", "1",  "1e-08", "1e-08", "runif")))
+
+  model$I <- t(data.frame(c(model$I[1,1:3],rep(10,as.numeric(model$I[1,3])))))
+
+  if(average.of.priors==T){
+    x <- PipeMaster:::ms.commander.forplot(model, use.alpha = use.alpha)
+    POPdemog::PlotMS(x[[1]], type="ms", col.pop = c(2:(as.numeric(model$I[1,3])+1)),
+                     lwd.arrow = 2, size.scale = "log",log.base = 10, time.scale = "generation",
+                     N4=4000000)
+  } else { x <- PipeMaster:::ms.commander2(model, use.alpha = use.alpha)
+            POPdemog::PlotMS(x[[1]], type="ms", col.pop = c(2:(as.numeric(model$I[1,3])+1)),
+                   lwd.arrow = 2, size.scale = "log", log.base = 10,time.scale = "generation",
+                   N4=as.numeric(x[[2]][length(x[[2]])]))
 }
+
+  }
 
 
 

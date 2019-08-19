@@ -4,13 +4,16 @@
 \alias{PlotModel}
 \title{Plot model}
 \usage{
-PlotModel(model, use.alpha = F)
+PlotModel(model, use.alpha = F, average.of.priors = F)
 }
 \arguments{
 \item{model}{A model object generated in the main.menu.}
 
 \item{use.alpha}{Logical. If TRUE the most recent population size change will be exponential. If FALSE sudden demographic changes. Default is FALSE.
-This argument changes ONLY the MOST RECENT demographich change.}
+This argument changes ONLY the MOST RECENT demographich change. You should indicate the population numbers for the exponential change
+toguether with the logical argument in a vector. Ex.c(T,1,2)}
+
+\item{average.of.priors}{logical. if TRUE parameters for the plot will be equal to the average of prior values.}
 }
 \value{
 Graphic
