@@ -178,7 +178,55 @@ multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
 }
 
 
+#' Principal Component Analysis plot
+#' @description plot first 10 PCs of simulated data against obseved.
+#' @param models A data.frame object with combined summary statistics.
+#' @param data A character vector indexing the models object.
+#' @param observed Observed summary statistics. Should be the same as in models.
+#' @param subsample A number between 0-1 indicating a fraction of rows in the models object to be included in the PCA calculation.
+#' @return graphic
+#' @author Marcelo Gehara
+#' @export
+plotPCs <- function (models, data, observed, subsample) {
 
+  labels <- unique(data)
+  labels <- sort(c(labels,"observed"))
+  sizes <- rep(2,length(labels))
+  sizes[which(labels=="observed")]<-10
+
+  shapes <- rep(16,length(labels))
+  shapes[which(labels=="observed")]<-8
+
+  # exclude missing data for pca plot
+  data.PCA <- data[complete.cases(models)]
+  models.PCA <- models[complete.cases(models),]
+  # subsample for PCA
+  x <- sample(1:length(data.PCA),length(data.PCA)*subsample)
+  data.PCA <- data.PCA[x]
+  models.PCA <- models.PCA[x,]
+  # run PCA
+  PCA <- prcomp(rbind(models.PCA, observed), center = T, scale. = T, retx=T)
+  # get scores
+  scores <- data.frame(PCA$x[,1:ncol(PCA$x)])
+  PC <- colnames(scores)[1:10]
+  plotPCA<-function(PCS){
+    PCS <- rlang::sym(PCS)
+    p <- ggplot2::ggplot(scores, ggplot2::aes(x = PC1, y = !! PCS )) +
+      ggplot2::theme(legend.position = "none")+
+      ggplot2::geom_point(ggplot2::aes(colour=c(data.PCA,"observed"), size=c(data.PCA,"observed"),
+                                       shape=c(data.PCA,"observed")))+
+      ggplot2::scale_shape_manual(values=shapes)+
+      ggplot2::scale_size_manual(values=sizes)+
+      ggplot2::scale_color_brewer(palette="Dark2")+
+      if(PCS=="PC2") ggplot2::theme(legend.position="top", legend.direction="horizontal", legend.title = ggplot2::element_blank())
+    return(p)
+  }
+  P<-NULL
+  for(i in 2:10){
+    P[[i]]  <- plotPCA(PC[i])
+  }
+  gridExtra::grid.arrange(P[[2]], P[[3]], P[[4]], P[[5]], P[[6]], P[[7]], P[[8]], P[[9]], P[[10]], nrow=3)
+}
 
 
 
