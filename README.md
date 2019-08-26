@@ -71,6 +71,8 @@ You must go to the "_H > Conditions_" and the "_I > Gene setup_" before quitting
 
 The links bellow show some examples of analysis with the package.
 
+[Tutorial](https://compphylo.github.io/Oslo2019/PM_files/Dermatonotus_example.html)
+
 [Example of analysis of nexgen data](Dermatonotus_example.md)
 
 [Example of analysis of sanger data](Agkistrodon_example.md)
