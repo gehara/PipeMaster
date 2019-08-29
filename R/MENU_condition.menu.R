@@ -139,40 +139,53 @@ inv.mirror.upper<-function(x) {
   x[upper.tri(x, diag=F)]<-x1
   return(x)
 }
+
+#internal function
+get.cond<-function() {
+  mes <- c(paste("Write the name of 2 parameters with a logic sign inbetween ( >  or < or = )"),
+             paste("separated by a space (Ex: Ne0.pop1 > Ne0.pop2)"),paste(">>>"))
+
+  cond<-readline(cat(mes,sep="\n"))
+  while(cond==""){
+    cond<-readline(cat(mes,sep="\n"))
+  }
+  return(cond)
+}
 # internal function of the Model Builder
-place.mig.condition<-function(){
+place.mig.condition <- function(){
   print(.e$mig.matrix)
-  cond<-readline("Write the name of 2 parameters with a logic sign inbetween ( >  or < or = ) separated by a space.
-                Ex: Ne0.pop1 > Ne0.pop2 :   ")
+  cond<-get.cond()
   cond<-strsplit(cond," ")
-  y<-grep(cond[[1]][1],rownames(.e$mig.matrix))
-  x<-grep(cond[[1]][3],colnames(.e$mig.matrix))
-  .e$mig.matrix[y,x]<-cond[[1]][2]
-  .e$mig.matrix<-inv.mirror.lower(.e$mig.matrix)
+  if(length(cond[[1]]) < 3) return(NULL)
+  y<-grep(cond[[1]][1], rownames(.e$mig.matrix))
+  x<-grep(cond[[1]][3], colnames(.e$mig.matrix))
+  .e$mig.matrix[y,x] <- cond[[1]][2]
+  .e$mig.matrix <- inv.mirror.lower(.e$mig.matrix)
 
 }
 # internal function of the Model Builder
-place.size.condition<-function(){
+place.size.condition <- function(){
   print(.e$size.matrix)
-  cond<-readline("Write the name of 2 parameters with a logic sign inbetween ( >  or < or = ) separated by a space.
-               Ex.: Ne0.pop1 < Ne0.pop2")
+  cond<-get.cond()
   cond<-strsplit(cond," ")
-  y<-grep(cond[[1]][1],rownames(.e$size.matrix))
-  x<-grep(cond[[1]][3],colnames(.e$size.matrix))
-  .e$size.matrix[y,x]<-cond[[1]][2]
-  .e$size.matrix<-inv.mirror.lower(.e$size.matrix)
-
+  if(length(cond[[1]]) < 3) return(NULL)
+  if(length(rownames(.e$size.matrix)) < 2) return(NULL)
+  y<-grep(cond[[1]][1], rownames(.e$size.matrix))
+  x<-grep(cond[[1]][3], colnames(.e$size.matrix))
+  .e$size.matrix[y,x] <- cond[[1]][2]
+  .e$size.matrix <- inv.mirror.lower(.e$size.matrix)
 }
 # internal function of the Model Builder
-place.time.condition<-function(){
+place.time.condition <- function(){
   print(.e$time.matrix)
-  cond<-readline("Write the name of 2 parameters with a logic sign inbetween ( >  or < or = ) separated by a space.
-                Ex: Ne0.pop1 > Ne0.pop2 :   ")
+  cond<-get.cond()
   cond<-strsplit(cond," ")
-  y<-grep(cond[[1]][1],rownames(.e$time.matrix))
-  x<-grep(cond[[1]][3],colnames(.e$time.matrix))
-  .e$time.matrix[y,x]<-cond[[1]][2]
-  .e$time.matrix<-inv.mirror.lower(.e$time.matrix)
+  if(length(cond[[1]]) < 3) return(NULL)
+  if(length(rownames(.e$time.matrix)) < 2) return(NULL)
+  y<-grep(cond[[1]][1], rownames(.e$time.matrix))
+  x<-grep(cond[[1]][3], colnames(.e$time.matrix))
+  .e$time.matrix[y,x] <- cond[[1]][2]
+  .e$time.matrix <- inv.mirror.lower(.e$time.matrix)
 
 }
 

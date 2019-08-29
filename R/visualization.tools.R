@@ -116,11 +116,11 @@ PlotModel<-function(model, use.alpha=F, average.of.priors=F){
 
   if(average.of.priors==T){
     x <- PipeMaster:::ms.commander.forplot(model, use.alpha = use.alpha)
-    POPdemog::PlotMS(x[[1]], type="ms", col.pop = c(2:(as.numeric(model$I[1,3])+1)),
+    POPdemog::PlotMS(x[[1]], type="ms", col.pop = c(3:(as.numeric(model$I[1,3])+2)),
                      lwd.arrow = 2, size.scale = "log",log.base = 10, time.scale = "generation",
                      N4=4000000)
   } else { x <- PipeMaster:::ms.commander2(model, use.alpha = use.alpha)
-            POPdemog::PlotMS(x[[1]], type="ms", col.pop = c(2:(as.numeric(model$I[1,3])+1)),
+            POPdemog::PlotMS(x[[1]], type="ms", col.pop = c(3:(as.numeric(model$I[1,3])+2)),
                    lwd.arrow = 2, size.scale = "log", log.base = 10,time.scale = "generation",
                    N4=as.numeric(x[[2]][length(x[[2]])]))
 }

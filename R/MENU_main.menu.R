@@ -10,6 +10,7 @@
 #' @export
 main.menu<-function(input = NULL, ms.string = NULL){
 
+
   if(is.null(ms.string)==F){
     read.ms.string(ms.string = ms.string)
   } else {
@@ -29,8 +30,10 @@ main.menu<-function(input = NULL, ms.string = NULL){
     }
   switch.main.menu()
   }
+
 ### hidden environment
 .e<-new.env()
+
 # internal function of the Model Builder
 print.main.menu<-function(){
 
@@ -154,7 +157,8 @@ switch.main.menu<-function(){
          },
 
          P = {if(exists("size.matrix",envir=.e)){
-                 } else {condition.matrix()}
+         } else {sys.call(which = 0)
+                   condition.matrix()}
 
            if(exists("m",envir=.e) & exists("mig.matrix",envir=.e)==F){
              sys.call(which = 0)
@@ -222,7 +226,10 @@ join.par<-function(){
   }
 
   ## get topology and number of nodes
-  .e$tree<-readline("write bifurcating topology in newick format or 1 for single population: ")
+  .e$tree<-readline("write bifurcating topology in newick format or 1 for a single population >>> ")
+  while(.e$tree==""){
+    .e$tree<-readline("write bifurcating topology in newick format or 1 for a single population >>> ")
+  }
   if (.e$tree=="1"){
     .e$npops<-1
     .e$ej<-NULL
@@ -385,7 +392,7 @@ read.ms.string<-function(ms.string){
   ms.string <- strsplit(ms.string,"-")[[1]]
 
   if(length(ms.string[grep("g", ms.string)])!=0)
-   stop("Exponential demographich change is not allowed in the ms.string. It be added in a letter stage in the simulation function.")
+   stop("Exponential demographich change is not allowed in the ms.string option. It will be added in a letter stage in the simulation function.")
 
   if(length(ms.string[-grep("ms", ms.string)])!=0) ms.string <- ms.string[-grep("ms", ms.string)]
 
