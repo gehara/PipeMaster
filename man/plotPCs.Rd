@@ -4,16 +4,16 @@
 \alias{plotPCs}
 \title{Principal Component Analysis plot}
 \usage{
-plotPCs(models, data, observed, subsample)
+plotPCs(models, index, observed, subsample)
 }
 \arguments{
 \item{models}{A data.frame object with combined summary statistics.}
 
-\item{data}{A character vector indexing the models object.}
-
 \item{observed}{Observed summary statistics. Should be the same as in models.}
 
 \item{subsample}{A number between 0-1 indicating a fraction of rows in the models object to be included in the PCA calculation.}
+
+\item{data}{A character vector indexing the models object.}
 }
 \value{
 graphic
