@@ -23,10 +23,10 @@ main.menu<-function(input = NULL, ms.string = NULL){
 }
   print.main.menu()
 
-    letter<<-readline("Model Builder >>>>")
+    letter<<-toupper(readline("Model Builder >>>>"))
     while(letter %in% c("A","B","C","D","E","F","G","H","I","Q","P")==F){
      cat(paste("Choose a valid letter. You typed:",letter))
-     letter<<-readline("Model Builder >>>>")
+     letter<<-toupper(readline("Model Builder >>>>"))
     }
   switch.main.menu()
   }
@@ -72,6 +72,7 @@ switch.main.menu<-function(){
            cur.Ne.par()
            sys.call(which = 0)
            main.menu()},
+
 
          B = {.e$island.presence<-readline("would you like to remove a node (YES or NO)?: ")
          if(.e$island.presence %in% .e$YES){

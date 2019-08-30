@@ -10,6 +10,7 @@ get.data.structure <- function(model, path.to.fasta, pop.assign, sanger=F)
   {
   orig.path <- getwd()
   setwd(path.to.fasta)
+  pop.assign <- data.frame(pop.assign)
   pops <- pop.assign
   pops <- pops[with(pops, order(pops[,2])), ]
   n_pops <- unique(pops[,2])

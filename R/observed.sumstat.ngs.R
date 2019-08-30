@@ -14,6 +14,7 @@
 #' @note This function does not work on Windows systems.
 #' @export
 obs.sumstat.ngs<-function(model=NULL,path.to.fasta,pop.assign,moments=F,msABC.call=get.msABC()){
+
    WD <- getwd()
   if(is.null(model)){
     print("You did not specify the model. Sumstat calculations will output a table with the specific stat of each locus.")
@@ -21,6 +22,10 @@ obs.sumstat.ngs<-function(model=NULL,path.to.fasta,pop.assign,moments=F,msABC.ca
     if(x %in% c("Y","y","Yes","YES","yes")){}else{stop()}
     }
 
+   if(ncol(pop.assign) < 2) stop ("Your pop.assign file has more than 2 columns")
+
+   pop.assign <- data.frame(pop.assign)
+   if(length(which(pop.assign[,2] %in% c(1:10) == F)) > 0) stop ("Your population names should be numbers")
 
   setwd(path.to.fasta)
   fasta.files<-list.files()
