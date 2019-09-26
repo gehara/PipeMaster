@@ -1,7 +1,7 @@
 ---
 output:
-  word_document: default
   pdf_document: default
+  word_document: default
   html_document: default
 ---
 # Simulation and analysis with PipeMaster
@@ -25,7 +25,7 @@ output:
 Go to the R console, install devtools and then PipeMaster:  
   
   ```
-  install.packages("devtools"")
+  install.packages("devtools")
   devtools::install_github("gehara/PipeMaster")
   ## install  POPdemog to be able to plot your models                
   install.packages("https://github.com/YingZhou001/POPdemog/raw/master/POPdemog_1.0.3.tar.gz",
@@ -79,22 +79,6 @@ We will download some real data to use as an example. We are going to walk throu
     setwd(paste(getwd(),"/PM_example",sep=""))
   ```
   
-* Download and unzip the data. The *system* function allows you to control the OS terminal in order to use bash inside R.
-
-  ```
-    system("wget https://www.dropbox.com/s/y6k9lthazmhea1k/fastas.tar.gz?dl=0")
-    
-    system("mv fastas.tar.gz?dl=0 fastas.tar.gz")
-    
-    system("tar -zxvf fastas.tar.gz")
-  ```
-
-* Run the code below to see how many files are present in the folder
-
-  ```
-    length(list.files("./fastas"))
-  ```
-
 * Set up a model by going into the Model Builder. You will be prompted to an interactive menu. Point this function to an object so your model is saved at the end. We are going to set up a 2 population model.
 
   ```
@@ -129,6 +113,44 @@ We start by writing a 2 pop newick: *(1,2)*. This will sep up a 2 pop isolation 
   Q > Quit, my model is Ready!
   Model Builder>>>>
 ```
+
+## **Gene Menu**
+
+Type **I** in the **main menu** to go to the gene menu. To get into the **gene menu** you will need to answer two questions. *What type of data you want to simulate (sanger or genomic)?* and *how many loci?*. We will simulate 200 UCE loci according to the downloaded data. Thus we answer **genomic** or **g** and **200**.
+
+```
+  Model Builder >>>>I
+  What type of data to simulate (sanger or genomic)?:genomic
+  how many loci to simulate? You should include all invariable locus: 200
+  M > Mutation rate prior distribution:   uniform
+  P > priors                           Min - Max
+                                    1e-11   1e-09
+
+  1 > number of loci
+                                200
+
+  B > Back to main menu
+  >>>>
+```
+
+## **Mutation rate prior**
+
+**In the case of genomic data the mutation rate works as a hyperparameter**. The defaut uniform distribution above indicates the *min* and *max* values to sample an average and SD of all mutation rates. That is, the actual mutation rate for each of the 200 loci will be sampled from a normal distribution with average and SD sampled from this uniform prior. In each simulation iteration a new average and SD are sampled and from these parameters the 200 mutation rates are sampled. This normal distribution is truncated at zero, so it doesn't not really always have a bell shape. You can set different distribution for the mutation rate. All distributions available in R are allowed, but this distribution is specified in the simulation function (*sim.msABC.sumstat*). We will see this further in the tutorial.
+
+
+
+
+## **Model Visualization**
+Now that we specifed the type of data we will simulate we can visualize the model by typing **P** or **p**. It will ask if you are plotting a model with an exponetial size change. Since our model has no size change we will choose FALSE.
+
+```
+  Model Builder >>>>P
+  exponential size change (TRUE or FALSE)? F
+  
+```
+
+![Model plot](model.png)
+
 
 ## **Ne Priors Menu** 
 
@@ -246,28 +268,7 @@ Now you can see the size matrix by typing **1** in the menu. You can see that th
   >>>>
 ```
 
-## **Gene Menu**
-
-Type **I** in the **main menu** to go to the gene menu. To get into the **gene menu** you will need to answer two questions. *What type of data you want to simulate (sanger or genomic)?* and *how many loci?*. We will simulate 200 UCE loci according to the downloaded data. Thus we answer **genomic** or **g** and **200**.
-
-```
-  Model Builder >>>>I
-  What type of data to simulate (sanger or genomic)?:genomic
-  how many loci to simulate? You should include all invariable locus: 200
-  M > Mutation rate prior distribution:   uniform
-  P > priors                           Min - Max
-                                    1e-11   1e-09
-
-  1 > number of loci
-                                200
-
-  B > Back to main menu
-  >>>>
-```
-
-## **Mutation rate prior**
-
-**In the case of genomic data the mutation rate works as a hyperparameter**. The defaut uniform distribution above indicates the *min* and *max* values to sample an average and SD of all mutation rates. That is, the actual mutation rate for each of the 200 loci will be sampled from a normal distribution with average and SD sampled from this uniform prior. In each simulation iteration a new average and SD are sampled and from these parameters the 200 mutation rates are sampled. This normal distribution is truncated at zero, so it doesn't not really always have a bell shape. You can set different distribution for the mutation rate. All distributions available in R are allowed, but this distribution is specified in the simulation function (*sim.msABC.sumstat*). We will see this further in the tutorial. Now go back to the **main menu** and hit **Q** to get out of the **Model Builder**.
+Now go back to the **main menu** and hit **Q** to get out of the **Model Builder**.
 
 
 ## **Generating a model from a template**
@@ -428,18 +429,47 @@ You can save the model as a text file using *dput*. To read the model back to R 
 
 ## **Replicating the empirical data structure to the model**
 
-To have the model ready for the simulation we need to replicate the data structure to the model. We need to setup the exact number of individuals per population and the length of each locus. To do this we use the **get.data.structure** function. This function needs: (i) an assignment file, a two column data frame with the name of the individuals and their respective population; and (ii) a model object where the structure will be replicated.
-  We will download an assignment file from my dropbox.
+To have the model ready for the simulation we need to replicate the data structure to the model. We need to setup the exact number of individuals per population and the length of each locus. To do this we use the **get.data.structure** function. This function needs: (i) an assignment file, a two column data frame with the name of the individuals and their respective population; and (ii) a model object where the structure will be replicated; (iii) the path to the empirical data set that should be replicated.
+  
+* Load and write some example sequences. 
+
+  ```
+  # load the data
+  data("seqs", package = "PipeMaster")
+
+  # create a directory to save the sequences
+  dir.create("fastas")
+  
+  # vavigate to the directory
+  setwd("./fastas")
+  
+  # write the fasta alignments
+  for(i in 1:length(seqs)){
+    write.dna(seqs[[i]], file = paste("seq",i,".fas",sep="_"), format = "fasta")
+  }
+  
+  # go back one dir
+  setwd("../")
+    
+  ```
+
+* Run the code below to see how many files are present in the folder
+
+  ```
+    length(list.files("./fastas"))
+  ```
+
   
 ```
-    system("wget https://www.dropbox.com/s/x46xjd85yznijdb/assignments.txt?dl=0")
-  
-    system("mv assignments.txt?dl=0 assignments.txt")
-  
-    popassign <- read.table("assignments.txt", header=T)
-  
+    # load the example assignment file.
+    data(popassign, package="PipeMaster")
+    
+    # load some available models
+    data(models, package="PipeMaster")
+
     Is <- get.data.structure(model = Is, path.to.fasta = "./fastas", pop.assign = popassign, sanger = F)
     IM <- get.data.structure(model = IM, path.to.fasta = "./fastas", pop.assign = popassign, sanger = F)
+    IsBot2 <- get.data.structure(model = IsBot2, path.to.fasta = "./fastas", pop.assign = popassign, sanger = F) 
   
     ## !!! save the models!! ##
     dput(Is, "Is.txt")
@@ -559,41 +589,13 @@ sim.msABC.sumstat(IM, nsim.blocks = 1, use.alpha = F, output.name = "IM", append
 
 # **Second part: visualizations and plotting functions**
 
-In this part of the tutorial we will go through some of the visualization functions of PipeMaster. We are going to use the notebook tab of Jupyter notebook to visualize the plots in an interactive way.
-
-* Open a new notebook by going to *New* in the upper right corner of the main Jupyter Notebook tab. 
-
-* To run R in jupyter notebook we need to load rpy2
-  
-  ```
-  %load_ext rpy2.ipython
-  ```
-
-* From now on every chunk of R code you want to run should start with *%%R*.
-
-* Load PipeMaster, check the working directory and list the files.
-  ```
-  %%R
-  suppressMessages(library(PipeMaster))
-  suppressMessages(library(POPdemog))
-  list.files()
-  ```
-* change working directory to PM_example, if needed, and list files
-  ```
-  %%R
-  setwd("./PM_example")
-  list.files()
-  ```
+In this part of the tutorial we will go through some of the visualization functions of PipeMaster.
 
 ## **Plotting a Model**
 
 There is now a new function in PipeMaster to plot your model. This function is a wrapper of the PlotMS function from the POPdemog r-package. I have not tested it extensively yet, if you find bugs please send me an email (marcelo.gehara@gmail.com). 
 
 ```
-%%R
-Is <- dget("Is.txt")
-IM <- dget("IM.txt")
-
 PlotModel(model=Is, use.alpha = F, average.of.priors=F)
 PlotModel(model=Is, use.alpha = F, average.of.priors=T)
 
@@ -610,7 +612,6 @@ PlotModel(model=IM, use.alpha = F, average.of.priors=T)
 We can use the *plot.prior* function to visualize the prior distributions. 
   
 ```
-%%R
 PipeMaster:::plot.priors(Is, nsamples = 10000)
 ```
 ![Prior distributions](priors.png)
@@ -620,10 +621,8 @@ PipeMaster:::plot.priors(Is, nsamples = 10000)
 Let's visualize the simulations. Read the simulations back into R. If your simulation file is very big (you have many simulations, like 5E5 or more) you should use the bigmemory r-package to handle the data. We will also match the simulations sumstats to the observed so that we keep the same set of sumstats in the simulated. 
 
 ```
-%%R
 Is.sim <- read.table("SIMS_Is.txt", header=T)
 IM.sim <- read.table("SIMS_IM.txt", header=T)
-obs <- read.table("observed.txt", header=T)
 
 Is.sim <- Is.sim[,colnames(Is.sim) %in% colnames(obs)]
 IM.sim <- IM.sim[,colnames(IM.sim) %in% colnames(obs)]
@@ -632,8 +631,8 @@ IM.sim <- IM.sim[,colnames(IM.sim) %in% colnames(obs)]
 Now we can plot the observed againt the simulated. This helps you evaluate your model and have a visual idea of how the simulations fit the empirical data. 
 
 ```
-%%R
 PipeMaster:::plot.sim.obs(Is.sim, obs)
+
 ```
 ![Simulated (histogram) and observed (red line) summary statistics](sim.obs.png)
 
@@ -642,7 +641,6 @@ PipeMaster:::plot.sim.obs(Is.sim, obs)
 We can also plot a Principal Component Analysis of the simulations against the empirical data. This also helps evaluating the fit of your models. First we will combine the models in a single data frame and we will generate an index. 
 
 ```
-%%R
 models <- rbind(Is.sim, IM.sim)
 index <- c(rep("Is", nrow(Is.sim)), rep("IM", nrow(IM.sim)))
 plotPCs(model = models, index = index, observed = obs, subsample = 1)
