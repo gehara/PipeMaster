@@ -11,17 +11,66 @@ output:
   
 # Overview
 
-* Installation
-* First Part:  building a model, calculating sumstats and simulating data
-* Second Part: visualization and plotting functions
-* Third Part: data analysis, approximate Bayesian computation (ABC) & supervised machine-learning (SML)
+## 1. [Installation](#installation)
+    
+## 2. [First Part](#first-part): building a model, calculating sumstats and simulating 
 
+  2.1 [Main Menu](#main-menu)
+
+  2.1.2 [Gene Menu](#gene-menu)
+
+  2.1.2.1 [Mutation rate prior](#mutation-rate-prior)
+
+  2.1.3 [Model Visualization](#model-visualization)
+
+  2.1.4 [Ne Priors Menu](#ne-priors-menu)
+
+  2.1.5 [Time Priors Menu](#time-priors-menu)
+
+  2.1.6 [Conditions Menu](#condistions-menu)
+
+  2.1.6.1 [Matrix of parameter conditions](#matrix-of-parameter-conditions)
+
+  2.1.7 [Migration prior menu](#migration-prior-menu)
+
+  2.2 [Generating a model from a template](#generating-a-model-from-a-template)
+
+  2.3 [Model Object](#model-object)
+
+  2.4 [Checking model parameters and manipulating prior values](#checking-model-parameters-and-manipulating-prior-values)
+  
+  2.5 [Saving and reloading a model](#saving-and-reloading-a-model)
+  
+  2.6 [Replicating the empirical data structure to the model](#replicating-the-empirical-data-structure-to-the-model)
+  
+  2.7 [Summary statistics calculation](#summary-statistics-calculation)
+  
+  2.8 [Simulating Data](#simulating-data)
+  
+## 3. [Second Part](#second-part): visualization and plotting functions
+  
+  3.1 [Plotting a Model](#plotting-a-model)
+  
+  3.2 [Visualize prior distributions](#visualize-prior-distributions)
+  
+  3.3 [Plotting simulations against empirical data](#plotting-simulations-against-empirical-data)
+  
+  3.4 [Plotting a PCA](#plotting-a-pca)
+
+## 4. [Third Part](#third-part): data analysis, approximate Bayesian computation (ABC) & supervised machine-learning (SML)
+  
+  4.1 [Approximate Bayesian computation for model inference](#approximate-bayesian-computation-for-model-inference)
+  
+  4.2 [Approximate Bayesian computation for parameter inference](#approximate-bayesian-computation-for-parameter-inference)
+
+  4.3 [Supervised machine-learning analysis for model classification](#supervised machine-learning-analysis-for-model-classification)
+  
 ------------------------------------------------------------------------------------------------------
   
 # **Installation** 
-  PipeMaster can be installed from github using *devtools* (to get the latest version with the most recent updates), or you can download and install the latest release from my [github](github.com/gehara/PipeMaster) repository.
+PipeMaster can be installed from github using *devtools* (to get the latest version with the most recent updates), or you can download and install the latest release from my [github](github.com/gehara/PipeMaster) repository.
 
-* **Installation with devtools** 
+**Installation with devtools** 
 Go to the R console, install devtools and then PipeMaster:  
   
   ```
@@ -33,7 +82,7 @@ Go to the R console, install devtools and then PipeMaster:
   
   ```
 
-* **Installation without devtools** 
+**Installation without devtools** 
 Install all dependencies, install *PipeMaster* latest release from my github. You can do all of this inside the R console using the code below. You may need to check for the latest version and change it in the appropriate line <PipeMaster-0.2.1.tar.gz>.
 
   ```
@@ -49,19 +98,14 @@ Install all dependencies, install *PipeMaster* latest release from my github. Yo
                  repos=NULL)
 
   ```
+  
+-------
 
-------------------------------------------------------------------------------------------------------
-
-  ```
-    
-  ```
-------------------------------------------------------------------------------------------------------
-
-
-# **First Part**: building a model, calculating sumstats and simulating data
+# **First Part** 
+## building a model, calculating sumstats and simulating data
 We will download some real data to use as an example. We are going to walk through the basics of the *Model Builder (main.menu function)* and set up a couple of models. We will run some simulations and calculate summary statistics for the downloaded data. *PipeMaster cannot simulate missing data or gaps, so sites with "?", "N" or "-" are not allowed. Each locus can have different number of individuals per population as long as there are more than 4.*
 
-* Create a new directory to save the examples
+Create a new directory to save the examples
   
   ```
     ## install PipeMaster (see above).
@@ -79,7 +123,7 @@ We will download some real data to use as an example. We are going to walk throu
     setwd(paste(getwd(),"/PM_example",sep=""))
   ```
   
-* Set up a model by going into the Model Builder. You will be prompted to an interactive menu. Point this function to an object so your model is saved at the end. We are going to set up a 2 population model.
+Set up a model by going into the Model Builder. You will be prompted to an interactive menu. Point this function to an object so your model is saved at the end. We are going to set up a 2 population model.
 
   ```
     Is <- main.menu()
@@ -88,7 +132,7 @@ We will download some real data to use as an example. We are going to walk throu
 
 ## **Main Menu**
 
-We start by writing a 2 pop newick: *(1,2)*. This will sep up a 2 pop isolation model with constant population size, no migration. You can follow the description in the menu to add parameters and priors to the model. The numbers on the right indicate the parameters of the model. This model has 2 population size parameters and 1 divergence parameter, or 1 junction in the coalescent direction. We are going to stick with a 3 parameter model for now. 
+We start by writing a 2 pop newick: *(1,2)*. This will sep up a 2 pop isolation model with constant population size, no migration. You can follow the description in the menu to add parameters and priors to the model. The numbers on the right indicate the parameters of the model. This model has 2 population size parameters and 1 divergence parameter, or 1 junction in the coalescent direction. We are going to stick with a 3 parameter model for now. To visulize the model we need to specify the data to be simulated first. We nee to go to **Gene Menu** for that.
 
 ```
   A > Number of populations to simulate      2
@@ -138,8 +182,6 @@ Type **I** in the **main menu** to go to the gene menu. To get into the **gene m
 **In the case of genomic data the mutation rate works as a hyperparameter**. The defaut uniform distribution above indicates the *min* and *max* values to sample an average and SD of all mutation rates. That is, the actual mutation rate for each of the 200 loci will be sampled from a normal distribution with average and SD sampled from this uniform prior. In each simulation iteration a new average and SD are sampled and from these parameters the 200 mutation rates are sampled. This normal distribution is truncated at zero, so it doesn't not really always have a bell shape. You can set different distribution for the mutation rate. All distributions available in R are allowed, but this distribution is specified in the simulation function (*sim.msABC.sumstat*). We will see this further in the tutorial.
 
 
-
-
 ## **Model Visualization**
 Now that we specifed the type of data we will simulate we can visualize the model by typing **P** or **p**. It will ask if you are plotting a model with an exponetial size change. Since our model has no size change we will choose FALSE.
 
@@ -148,7 +190,6 @@ Now that we specifed the type of data we will simulate we can visualize the mode
   exponential size change (TRUE or FALSE)? F
   
 ```
-
 ![Model plot](model.png)
 
 
@@ -431,7 +472,7 @@ You can save the model as a text file using *dput*. To read the model back to R 
 
 To have the model ready for the simulation we need to replicate the data structure to the model. We need to setup the exact number of individuals per population and the length of each locus. To do this we use the **get.data.structure** function. This function needs: (i) an assignment file, a two column data frame with the name of the individuals and their respective population; and (ii) a model object where the structure will be replicated; (iii) the path to the empirical data set that should be replicated.
   
-* Load and write some example sequences. 
+Load and write some empirical data (dna sequences). 
 
   ```
   # load the data
@@ -451,14 +492,11 @@ To have the model ready for the simulation we need to replicate the data structu
   # go back one dir
   setwd("../")
     
+  # check how any files are inside the fastas folder
+  length(list.files("./fastas"))
   ```
-
-* Run the code below to see how many files are present in the folder
-
-  ```
-    length(list.files("./fastas"))
-  ```
-
+  
+Instead of simulating the models we created we are going to simulate three models available as example in the package. The example data available in *PipeMaster* is based on [Gehara et al. *in review*](PipeMaster.pdf) which is the paper that describes the package. [**Here**](https://docs.google.com/spreadsheets/d/1FZonOF27VgGKiAgWQS56zZ4G5bbtz5t_-302LJQFlQA/edit?usp=sharing) you can access a spread sheet with all 10 models with respective parameters and priors. Remeber, you can use them as templates for your own analysis. You will just need to update the priors as above, and replicate your data structure to the model using the *get.data.structue* as explaned above. Among the available models there is also an *Is* and an *IM* model - just like the ones we built but with different prior values - so we will simulate these. The third model is the *IsBot2*, which is the same as *Is* but with a bottleneck for one of the populations. We will also load the example assignment file for this empirical data.
   
 ```
     # load the example assignment file.
@@ -467,13 +505,21 @@ To have the model ready for the simulation we need to replicate the data structu
     # load some available models
     data(models, package="PipeMaster")
 
-    Is <- get.data.structure(model = Is, path.to.fasta = "./fastas", pop.assign = popassign, sanger = F)
-    IM <- get.data.structure(model = IM, path.to.fasta = "./fastas", pop.assign = popassign, sanger = F)
-    IsBot2 <- get.data.structure(model = IsBot2, path.to.fasta = "./fastas", pop.assign = popassign, sanger = F) 
+    # replicate the data structure
+    Is <- get.data.structure(model = Is, 
+    path.to.fasta = "./fastas", pop.assign = popassign, sanger = F)
+
+    IM <- get.data.structure(model = IM,
+    path.to.fasta = "./fastas", pop.assign = popassign, sanger = F)
+
+    IsBot2 <- get.data.structure(model = IsBot2, 
+    path.to.fasta = "./fastas", pop.assign = popassign, sanger = F) 
   
     ## !!! save the models!! ##
     dput(Is, "Is.txt")
     dput(IM, "IM.txt")
+    dput(IsBot2, "IsBot2.txt")
+
 ```
   
 ## **Summary statistics calculation**
@@ -483,8 +529,8 @@ To calculate the summary statistics for the empirical data we will use the **obs
 ```
   obs <- obs.sumstat.ngs(model = Is, path.to.fasta = "./fastas", pop.assign = popassign)
 ```
-  To see the observed summary stats just type **obs**.
-  To see the name of the summary stats **colnames(obs)**
+To see the observed summary stats just type **obs**.
+To see the name of the summary stats **colnames(obs)**
   
 ```
  > colnames(obs)
@@ -579,28 +625,30 @@ Now that we have two models, **Is** and **IM** we are going to simulate summary 
 
 
 ```
-sim.msABC.sumstat(Is, nsim.blocks = 1, use.alpha = F, output.name = "Is", append.sims = F,
-                    block.size =   500, ncores = 2)
+  sim.msABC.sumstat(Is, nsim.blocks = 1, use.alpha = F, 
+  output.name = "Is", append.sims = F, block.size =   500, ncores = 2)
 
-sim.msABC.sumstat(IM, nsim.blocks = 1, use.alpha = F, output.name = "IM", append.sims = F,
-                    block.size =   500, ncores = 2)
+  sim.msABC.sumstat(IM, nsim.blocks = 1, use.alpha = F, 
+  output.name = "IM", append.sims = F, block.size =   500, ncores = 2)
+                    
+  sim.msABC.sumstat(IsBot2, nsim.blocks = 1, use.alpha = F, 
+  output.name = "IsBot2", append.sims = F, block.size =   500, ncores = 2)
+
 ```
 -------------------------------------------------------------------------------------------------------
 
-# **Second part: visualizations and plotting functions**
+# **Second part**
+# visualizations and plotting functions
 
 In this part of the tutorial we will go through some of the visualization functions of PipeMaster.
 
 ## **Plotting a Model**
 
 There is now a new function in PipeMaster to plot your model. This function is a wrapper of the PlotMS function from the POPdemog r-package. I have not tested it extensively yet, if you find bugs please send me an email (marcelo.gehara@gmail.com). 
-
 ```
 PlotModel(model=Is, use.alpha = F, average.of.priors=F)
-PlotModel(model=Is, use.alpha = F, average.of.priors=T)
-
 PlotModel(model=IM, use.alpha = F, average.of.priors=F)
-PlotModel(model=IM, use.alpha = F, average.of.priors=T)
+PlotModel(model=IsBot2, use.alpha = c(T,1), average.of.priors=F)
 ```
 
 ![Is model plot](model_plot_Is.png)
@@ -612,7 +660,7 @@ PlotModel(model=IM, use.alpha = F, average.of.priors=T)
 We can use the *plot.prior* function to visualize the prior distributions. 
   
 ```
-PipeMaster:::plot.priors(Is, nsamples = 10000)
+PipeMaster:::plot.priors(Is, nsamples = 1000)
 ```
 ![Prior distributions](priors.png)
 
@@ -623,16 +671,18 @@ Let's visualize the simulations. Read the simulations back into R. If your simul
 ```
 Is.sim <- read.table("SIMS_Is.txt", header=T)
 IM.sim <- read.table("SIMS_IM.txt", header=T)
+IsBot2.sim <- read.table("SIMS_IsBot2.txt", header=T)
 
 Is.sim <- Is.sim[,colnames(Is.sim) %in% colnames(obs)]
 IM.sim <- IM.sim[,colnames(IM.sim) %in% colnames(obs)]
+IsBot2.sim <- IsBot2.sim[,colnames(IsBot2.sim) %in% colnames(obs)]
 ```
 
 Now we can plot the observed againt the simulated. This helps you evaluate your model and have a visual idea of how the simulations fit the empirical data. 
 
 ```
 PipeMaster:::plot.sim.obs(Is.sim, obs)
-
+PipeMaster:::plot.sim.obs(IsBot2.sim, obs)
 ```
 ![Simulated (histogram) and observed (red line) summary statistics](sim.obs.png)
 
@@ -641,14 +691,16 @@ PipeMaster:::plot.sim.obs(Is.sim, obs)
 We can also plot a Principal Component Analysis of the simulations against the empirical data. This also helps evaluating the fit of your models. First we will combine the models in a single data frame and we will generate an index. 
 
 ```
-models <- rbind(Is.sim, IM.sim)
-index <- c(rep("Is", nrow(Is.sim)), rep("IM", nrow(IM.sim)))
+models <- rbind(Is.sim, IM.sim, IsBot2.sim)
+index <- c(rep("Is", nrow(Is.sim)), rep("IM", nrow(IM.sim)), rep("IsBot2", nrow(IsBot2.sim)))
 plotPCs(model = models, index = index, observed = obs, subsample = 1)
 ```
 ![Principal Components of simulated and observed data](pca.png)
------------------------------------------------------------------------------------------------------
 
-## **Third part: approximate Bayesian computation (ABC) & supervised machine-learning (SML)**
+-------------------------------------------------------------------------------------
+
+# **Third part**
+# approximate Bayesian computation (ABC) & supervised machine-learning (SML)**
 
 In the last part of the tutorial we are going to perform the data analysis using *PipeMaster*, *abc* and *caret* r-packages.
 
@@ -664,116 +716,110 @@ In the last part of the tutorial we are going to perform the data analysis using
 
 ---
 
-*abc* is already a dependency of *PipeMaster* but we need to load *caret*. To run *caret* in parallel we need to load a r-package that manages nodes to run loops in parallel using MPI. There are several r-packages for this, we are going to use *doMC*.
+## **Approximate Bayesian computation for model inference**
 
-``` 
-%%R
-library(caret) # caret: used to perform the superevised machine-learning (SML)
-  
-library(doMC) # doMC: necessary to run the SML in parallel
-```
-  
-Load the example data available in *PipeMaster*. This example data is based on [Gehara et al. *in review*](PipeMaster.pdf) which is the paper that describes the package. [**Here**](https://docs.google.com/spreadsheets/d/1FZonOF27VgGKiAgWQS56zZ4G5bbtz5t_-302LJQFlQA/edit?usp=sharing) you can access a spread sheet with all model parameters and priors. 
-  
-```
-%%R 
-# observed summary statistics
-data("observed_Dermatonotus", package = "PipeMaster")
-  
-# models used in Gehara et al
-data("models", package="PipeMaster")
-```
-There are 10 models. Let's plot one of these models. Remmeber, you can use them as templates for your own analysis. You will just need to update the priors as above, and replicate your data structure to the model using the *get.data.structue* as explaned above. To see all the model objects type *ls()* in the R console.
+*abc* is the package used for the *Approximate Bayesian Computation* and it is already a dependency of *PipeMaster* so we don't nee to load it. We already have the models combined in a single table, the index and the observed which is what we need to run ans ABC analysis. We will run the function *postpr* with *rejection* algorithm to calculate the probability of each model.
 
 ```
-  %%R
-  PlotModel(model=IsBot2, use.alpha=c(T,1), average.of.priors=T)
-```
- 
-Simulate data for 4 of the 10 models. We are not going to simulate all models since it would take too much time. I simulated all of these models for the frog *Dermatonotus muelleri* in the paper that describes the package.
-  
-```
-  %%R
-  sim.msABC.sumstat(Is, nsim.blocks = 2, use.alpha = F, output.name = "Is", append.sims = F,
-                   block.size = 100, ncores = 10)
-  
-  sim.msABC.sumstat(IM, nsim.blocks = 2, use.alpha = F, output.name = "IM", append.sims = F,                             block.size = 100, ncores = 10)
-  
-  sim.msABC.sumstat(IsBot2, nsim.blocks = 2, use.alpha = c(T,1), output.name = "IsBot2", 
-                   append.sims = F, block.size = 100, ncores = 10)
-  
-  sim.msABC.sumstat(IMBot2, nsim.blocks = 2, use.alpha = c(T,1), output.name = "IMBot2", 
-                   append.sims = F, block.size = 100, ncores = 10)
+  prob <- postpr(target = obs, sumstat = models, index = index, method = "rejection",   tol=0.1)
+
+  summary(prob)
 ```
 
-Now that the simulations are done we can read them back into R and select the summary statistics we are going to use.
+**Cross-validation** 
+
+It is important to perform a cross-validation to evaluate if the models are identifiable and how confident can we be regarding our estimates. We use the function *cv4postpr* to run the cross-validation.
+
+```
+  CV <- cv4postpr(sumstat = models, index = index, method = "rejection", tol=0.1, nval = 20)
+
+  summary(CV)
+
+  plot(CV)
+  
+  # overall accuracy
+  acc <- summary(CV)
+  sum(diag(acc$conf.matrix$tol0.1))/60
   
 ```
-  %%R
-  Is.sim <- read.table("SIMS_Is.txt", header=T)
-  IM.sim <- read.table("SIMS_IM.txt", header=T)
-  IsBot2.sim <- read.table("SIMS_IsBot2.txt", header=T)
-  IMBot2.sim <- read.table("SIMS_IMBot2.txt", header=T)
-```
-  
-Select sumstats
+
+## **Approximate Bayesian computation for parameter inference**. 
+
+The *abc* performs a rejection step for parameter estoimates as well. For this we will use just the best model.
   
 ```
-  %%R
-  cols <- c(grep("thomson", names(observed)),
-            grep("pairwise_fst", names(observed)),
-            grep("Fay", names(observed)),
-            grep("fwh", names(observed)),
-            grep("_dv", names(observed)),
-            grep("_s_", names(observed)),
-            grep("_ZnS", names(observed)))
+# read selected model
+IsBot2.sim <- read.table("SIMS_IsBot2.txt", header=T)
   
-  observed <- observed[-cols]
+# separate summary statistics from parameters
+sims <- IsBot2.sim[,colnames(IsBot2.sim) %in% colnames(observed)]
+param <- IsBot2.sim[,1:11]
   
-  colnames(observed)
+# estimate posterior distribution of parameters
   
-   [1] "s_average_segs_1"         "s_variance_segs_1"        "s_average_segs_2"        
-   [4] "s_variance_segs_2"        "s_average_segs"           "s_variance_segs"         
-   [7] "s_average_pi_1"           "s_variance_pi_1"          "s_average_pi_2"          
-  [10] "s_variance_pi_2"          "s_average_pi"             "s_variance_pi"           
-  [13] "s_average_w_1"            "s_variance_w_1"           "s_average_w_2"           
-  [16] "s_variance_w_2"           "s_average_w"              "s_variance_w"            
-  [19] "s_average_tajd_1"         "s_variance_tajd_1"        "s_average_tajd_2"        
-  [22] "s_variance_tajd_2"        "s_average_tajd"           "s_variance_tajd"         
-  [25] "s_average_ZnS"            "s_variance_ZnS"           "s_average_Fst"           
-  [28] "s_variance_Fst"           "s_average_shared_1_2"     "s_variance_shared_1_2"   
-  [31] "s_average_private_1_2"    "s_variance_private_1_2"   "s_average_fixed_dif_1_2" 
-  [34] "s_variance_fixed_dif_1_2"
+posterior <- abc(target = observed,
+            param = param,
+            sumstat = sims,
+            method = "rejection",
+            tol=0.1) 
+            
+            summary(posterior)
+            
+# write results to file
+write.table(summary(posterior), "parameters_est.txt")
+```  
+
+Plot posterior distribution
+
+```
+# plot posterior probabilities against prior
+  for(i in 1:ncol(param)){
+    plot(density(posterior$unadj.values[,i]), col=2, main = colnames(param)[i])
+    lines(density(param[,i]))
+  }
+```
+
+**Cross-validation** 
+
+It is important to perform a cross-validation to evaluate if the models are identifiable and how confident can we be regarding our estimates. The function *cv4abc* performs a leave-one-out experiment to evaluate the performance of the method. To correctly do this we have to use the same tolerace value and *method* with the same parameters as used above. 
+
+```
+# cross-validation for parameter estimates
+cv <- cv4abc(param = param,
+              sumstat = sims,
+              nval = 20,
+              method = "rejection",
+              tol = 0.1)
+  
+plot(cv)
+  
+```
+Check the error of the estimate
+
+```
+summary(cv)
 ```
   
-Combine simulations in a single matrix matching the summary stats names in the observed and run a Principal Components Analyses to visualize model-fit
-  
-```
-  %%R
-  models <- rbind(Is.sim[,colnames(Is.sim) %in% names(observed)],
-                  IM.sim[,colnames(IM.sim) %in% names(observed)],
-                  IsBot2.sim[,colnames(IsBot2.sim) %in% names(observed)],
-                  IMBot2.sim[,colnames(IMBot2.sim) %in% names(observed)])
-  
- 
-  data <- c(rep("Is", nrow(Is.sim)),
-           rep("IM", nrow(IM.sim)),
-           rep("IsBot2", nrow(IsBot2.sim)),
-           rep("IMBot2", nrow(IMBot2.sim)))
-           
-  plotPCs(model = models, index = data, observed = observed, subsample = 0.5)
-```
-   
+
 ## **Supervised machine-learning analysis for model classification**. 
 
-We are going to train a neural network algorithm and then use it to classify our empirical data. In the paper that describes the package, [Gehara et al. *in review*](PipeMaster.pdf), I ran a simulation experiment to compare ABC rejection with SML with neural network and I found that the SML is much more efficient and accurate. 
+We are going to train a neural network algorithm and then use it to classify our empirical data. In the paper that describes the package, [Gehara et al. *in review*](PipeMaster.pdf), I ran a simulation experiment to compare ABC rejection with SML with neural network and I found that the SML is much more efficient and accurate.
+
+We need to install and load *caret* package. To run *caret* in parallel we need to load a r-package that manages nodes to run loops in parallel using MPI. There are several r-packages for this, we are going to use *doMC*.
+
+``` 
+install.packages("caret")
+library(caret) # caret: used to perform the superevised machine-learning (SML)
+
+install.packages("doMC")  
+library(doMC) # doMC: necessary to run the SML in parallel
+``` 
 
 To train the algorithm we need to split the data into training and testing, usually 75% is used for training and 25% for testing. We can do that with *createDataPartition*. We also need to specify our predictors and our outcome. In our case, the predictors are the summary statistics and the outcome is the model label or index. 
 
 It can be very time consuming to set up the parameters of the neural network, and there is no objective way to decide which parameters values to use. To help deciding the parameter values, *caret* runs the training multiple times with different parameters values to see which combination gets the highest accuracy in model selection. And it does this using different resampling methods. You can set up the number of replicates and the resampling method used in the *trainControl* function.
  
 ```
-  %%R
   # set up number of cores for SML
   registerDoMC(1)
   
@@ -820,75 +866,12 @@ It can be very time consuming to set up the parameters of the neural network, an
 Visualize and write results to file
 
 ```
-%%R
 # visualize results
 t(c(pred,accu))
   
 # write results to file
 write.table(c(pred,accu),"results.selection.txt")
 ```
-
-## **Approximate Bayesian computation with neural network for parameter estimate**. 
-
-The *abc* performs a rejection step and then uses the retained data to train a neural network to estimate parameters
-  
-```
-%%R
-# read selected model
-IsBot2.sim <- read.table("SIMS_IsBot2.txt", header=T)
-  
-# separate summary statistics from parameters
-sims <- IsBot2.sim[,colnames(IsBot2.sim) %in% colnames(observed)]
-param <- IsBot2.sim[,1:11]
-  
-# estimate posterior distribution of parameters
-  
-post <- abc(target = observed,
-            param = param,
-            sumstat = sims,
-            sizenet = 20,
-            method = "neuralnet",
-            MaxNWts = 5000,
-            tol=0.1) 
-            # adjust tolerance level according to the total number of simulations.
-  
-# write results to file
-write.table(summary(post), "parameters_est.txt")
-```  
-
-Plot posterior distribution
-
-```
-%%R
-# plot posterior probabilities
-plot(post, param = param)
-```
-
-**Cross-validation** 
-
-It is important to perform a cross-validation to evaluate if we can estimate the parameters with confidence. The function *cv4abc* performs a leave-one-out experiment to evaluate the performance of the method. To correctly do this we have to use the same tolerace value and *method* with the same parameters as used above. 
-
-```
-%%R
-# cross-validation for parameter estimates
-cv <- cv4abc(param = param,
-              sumstat = sims,
-              nval = 20,
-              sizenet = 20,
-              method = "neuralnet",
-              MaxNWts = 5000,
-              tol = 0.1)
-  
-plot(cv)
-  
-```
-Check the error of the estimate
-
-```
-%%R
-summary(cv)
-```
-
 
 **Codemographics**
 

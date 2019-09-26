@@ -173,6 +173,9 @@ switch.main.menu<-function(){
            }
 
            alpha <- as.logical(readline("exponential size change (TRUE or FALSE)? "))
+           while(is.logical(alpha)==F){
+             alpha <- as.logical(readline("exponential size change (TRUE or FALSE)? "))
+           }
            if(alpha==T){
              .e$exp.pops <- readline("Indicate pop numbers separated by comma for exponential change ")
              .e$exp.pops <- as.numeric(strsplit(.e$exp.pops,",")[[1]])

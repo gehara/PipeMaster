@@ -3,10 +3,10 @@ genomic.menu<-function(){
 
 print.genomic.menu()
 
-letter<<-readline(">>>>")
+letter<<-toupper(readline(">>>>"))
 while(letter %in% c("M","P","1","B")==F){
   cat(paste("Choose a valid letter. You typed",letter))
-  letter<<-readline(">>>>")
+  letter<<-toupper(readline(">>>>"))
 }
 
 switch.genomic.menu()

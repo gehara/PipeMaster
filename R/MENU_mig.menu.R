@@ -3,10 +3,10 @@ mig.menu<-function(){
 
   print.mig.menu()
 
-  letter<<-readline(">>>>")
+  letter<<-toupper(readline(">>>>"))
   while(letter %in% c("M","D","P","A","B")==F){
     cat(paste("Choose a valid letter. You typed",letter))
-    letter<<-readline(">>>>")
+    letter<<-toupper(readline(">>>>"))
   }
 
   switch.mig.menu()
