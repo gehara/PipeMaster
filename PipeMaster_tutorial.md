@@ -6,10 +6,10 @@ output:
 ---
 # Simulation and analysis with PipeMaster
   
-  This is an R tutorial showing how to simulate data, test models, and estimate parameters using [*PipeMaster*](https://github.com/gehara/PipeMaster), *abc* and *caret* r-packages.
+  This is an R tutorial showing how to simulate data, test models, and estimate parameters using [*PipeMaster-0.2.2*](https://github.com/gehara/PipeMaster), *abc* and *caret* r-packages.
   The dataset in this tutorial is the same as in Gehara et al *in review*, and represents 2,177 UCE loci for the neotropical frog *Dermatonotus muelleri*. We will start working with a subset of the data (200 loci) in the first and second sections of this tutorial, and then use the entire dataset in the third part. For more information about *Dermatonotus muelleri* see [Gehara et al. *in review*](PipeMaster.pdf) and [Oliveira et al. 2018](https://www.researchgate.net/profile/Adrian_Garda/publication/327624820_Phylogeography_of_Muller%27s_termite_frog_suggests_the_vicariant_role_of_the_Central_Brazilian_Plateau/links/5c40f99f92851c22a37d572c/Phylogeography-of-Mullers-termite-frog-suggests-the-vicariant-role-of-the-Central-Brazilian-Plateau.pdf)
   
-# Overview
+# Contents
 
 ## 1. [Installation](#installation)
     
@@ -83,14 +83,14 @@ Go to the R console, install devtools and then PipeMaster:
   ```
 
 **Installation without devtools** 
-Install all dependencies, install *PipeMaster* latest release from my github. You can do all of this inside the R console using the code below. You may need to check for the latest version and change it in the appropriate line <PipeMaster-0.2.1.tar.gz>.
+Install all dependencies, install *PipeMaster* latest release from my github. You can do all of this inside the R console using the code below. You may need to check for the latest version and change it in the appropriate line <PipeMaster-0.2.2.tar.gz>.
 
   ```
 
   install.packages(c("ape","abc","e1071","phyclust","PopGenome","msm","ggplot2","foreach"),
                  repos="http://cran.us.r-project.org")
 
-  install.packages("http://github.com/gehara/PipeMaster/archive/PipeMaster-0.2.1.tar.gz",
+  install.packages("http://github.com/gehara/PipeMaster/archive/PipeMaster-0.2.2.tar.gz",
                  repos=NULL)
   
   ## install  POPdemog to be able to plot your models                
