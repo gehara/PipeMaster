@@ -71,7 +71,7 @@ You must go to the "_H > Conditions_" and the "_I > Gene setup_" before quitting
 
 The links bellow show some examples of analysis with the package.
 
-[Main Tutorial](PipeMaster_tutorial.md), [(pdf)](PipeMaster_tutorial.pdf)
+[Main Tutorial](PipeMaster_tutorial.md)
 
 [CompPhylo Workshop Tutorial](https://compphylo.github.io/Oslo2019/PM_files/Dermatonotus_example.html)
 
