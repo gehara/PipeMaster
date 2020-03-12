@@ -39,7 +39,8 @@ sim.msABC <- function(model,use.alpha=F,nsim.blocks=1,path=getwd(),append.sims=F
 
 
   for(i in 1:block.size){
-    com<-msABC.commander(model,use.alpha=use.alpha)
+
+    com <- PipeMaster:::ms.commander2(model,use.alpha=use.alpha)
 
     SS<-list()
     options(warn=-1)

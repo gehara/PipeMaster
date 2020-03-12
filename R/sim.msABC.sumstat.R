@@ -37,17 +37,17 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
   msABC.path <- find.package("PipeMaster")
 
   if(append.sims==F){
-    com<-msABC.commander(model,use.alpha=use.alpha,arg=1)
+    com <- msABC.commander(model,use.alpha=use.alpha,arg=1)
     write.table(locfile,paste(".",1,"locfile.txt",sep=""),row.names = F,col.names = T,quote = F,sep=" ")
     options(warn=-1)
-    x<-strsplit(system2(msABC.call, args=com[[1]], stdout = T,stderr=T,wait=T),"\t")
+    x <- strsplit(system2(msABC.call, args=com[[1]], stdout = T,stderr=T,wait=T),"\t")
     options(warn=0)
     nam<-x[1][[1]]
-    TD_denom<-paste(nam[grep("pi",nam)],nam[grep("_w",nam)],sep="_")
+    TD_denom <- paste(nam[grep("pi",nam)],nam[grep("_w",nam)],sep="_")
     #nam<-nam[-grep("ZnS",nam)]
     #nam<-nam[-grep("thomson",nam)]
-    nam<-c(nam, TD_denom)
-    nam<-c(com[[2]][1,],"mean.rate","sd.rate",nam)
+    nam <- c(nam, TD_denom)
+    nam <- c(com[[2]][1,],"mean.rate","sd.rate",nam)
     #t(paste(nam,"_skew",sep="")),t(paste(nam,"_var",sep="")))
     write.table(t(nam),file=paste("SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")
 }

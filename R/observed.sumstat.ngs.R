@@ -22,6 +22,10 @@ obs.sumstat.ngs<-function(model=NULL,path.to.fasta,pop.assign,moments=F,msABC.ca
     if(x %in% c("Y","y","Yes","YES","yes")){}else{stop()}
     }
 
+   if(is.null(nrow(model$loci))) stop("Your model is incomplete. Go through the gene menu first (main.menu function) and then get the data structure (get.data.structure function).")
+
+   if(model$loci[,1]=="genomic") stop("Your model is incomplete. You need to get the data structure first (get.data.structure function)")
+
    if(ncol(pop.assign) < 2) stop ("Your pop.assign file has more than 2 columns")
 
    pop.assign <- data.frame(pop.assign)

@@ -47,24 +47,26 @@ msABC.commander<-function(model,use.alpha=use.alpha,arg){
   # generate coalescent scalar. Arbitrary value.
 
   #### if single population
-  if(model$I[1,3]=="1"){
-    Ne0<-as.numeric(size.pars[1,4])
-    ms.scalar<-4*Ne0
-  } else {
-    Ne0<-mean(as.numeric(model$flags$n[,4:5]))
-    ms.scalar<-4*Ne0
-  }
+  # if(model$I[1,3]=="1"){
+  #   Ne0<-as.numeric(size.pars[1,4])
+  #   ms.scalar<-4*Ne0
+  #  } else {
+  #  Ne0<-mean(as.numeric(model$flags$n[,4:5]))
+  #  ms.scalar<-4*Ne0
+  # }
+  Ne0 <- 100000
+  ms.scalar <- 4*Ne0
 
   # rescale to inheritance scalar and transform size parameters to relative to Ne0
-  size.pars[,4:5]<-as.numeric(size.pars[,4])/Ne0
+  size.pars[,4:5] <- as.numeric(size.pars[,4])/Ne0
 
   #### bind scaled theta per gene (4Ne0*m*pb)
   # loci<-cbind(loci,ms.scalar*as.numeric(loci[,4])*as.numeric(loci[,2]))
 
   #### convertion of time to coalescent scale
-  time.pars[,4:5]<-as.numeric(time.pars[,4])/ms.scalar
+  time.pars[,4:5] <- as.numeric(time.pars[,4])/ms.scalar
 
-  commands<-list(NULL,NULL)
+  commands <- list(NULL,NULL)
   #### ms string command
   string <- PipeMaster:::ms.string.generator(model,size.pars,mig.pars,time.pars,use.alpha=use.alpha,scalar=as.numeric(loci[1,3]))
   #################################### theta and structure ###########################
