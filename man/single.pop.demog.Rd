@@ -34,7 +34,7 @@ single.pop.demog(nsims, Ne.prior, time.prior, gene.prior, observed,
 \item{path}{Path to the directory to write the simulations. Defaut is the working directory.}
 }
 \description{
-Test for constante size, population expation and bottleneck for single population.
+Test for constant size, population expantion and bottleneck for single population (non hiersrchical).
 }
 \details{
 This function will take the same inputs used in the codemographic simulations and test for demographic change for each

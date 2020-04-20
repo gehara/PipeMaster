@@ -1,5 +1,5 @@
 #' Simulation of demographic models for single populations.
-#' @description Test for constante size, population expation and bottleneck for single population.
+#' @description Test for constant size, population expantion and bottleneck for single population (non hiersrchical).
 #' @param nsims Total number of simulations per model.
 #' @param Ne.prior Data frame with the prior values for the Ne of each population.
 #' @param time.prior Data frame with parameter values for the priors of the time of demographic change of each population.

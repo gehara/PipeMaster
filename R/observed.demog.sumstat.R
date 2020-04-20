@@ -1,5 +1,5 @@
 #' Observed summary statistics calculation for single pop demography
-#' @description This function calculates the summary statistics for each fasta files present in a partivular folder. It is instended to be used with the single.pop.demog function.
+#' @description This function calculates the summary statistics for each fasta file present in a particular folder. This calculates the observed for simulations with the single.pop.demog function.
 #' @param path.to.fasta The path to the directory containing the fasta files for all species/populations.
 #' @author Marcelo Gehara
 #' @return A table of summary statistics.

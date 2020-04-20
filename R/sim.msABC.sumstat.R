@@ -82,15 +82,21 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
         sumstat <- read.table(text=system2(msABC.call, args=com[[1]], stdout = T,stderr=T,wait=T),header=T,sep="\t")
         options(warn=0)
         sumstat <- subset(sumstat, select=-c(X))
-        TD_denom <- data.frame(sumstat[,grep("pi",colnames(sumstat))]-sumstat[,grep("_w",colnames(sumstat))])
-        colnames(TD_denom) <- paste(colnames(sumstat)[grep("pi",colnames(sumstat))],sumstat[,grep("_w",colnames(sumstat))])
+        #TD_denom <- data.frame(sumstat[,grep("pi",colnames(sumstat))]-sumstat[,grep("_w",colnames(sumstat))])
+        #colnames(TD_denom) <- paste(colnames(sumstat)[grep("pi",colnames(sumstat))],sumstat[,grep("_w",colnames(sumstat))])
         #sumstat<-sumstat[,-grep("ZnS",colnames(sumstat))]
         #sumstat<-sumstat[,-grep("thomson",colnames(sumstat))]
-        sumstat <- cbind(sumstat, TD_denom)
+        #sumstat <- cbind(sumstat, TD_denom)
         #Mean<-apply(sumstat,2,mean, na.rm = T)
         #var<-apply(sumstat,2,var, na.rm=T)
         #kur<-apply(sumstat,2,kurtosis, na.rm=T)
         #skew<-apply(sumstat,2,skewness, na.rm=T)
+        cols <- grep("fwh",colnames(sumstat))
+        cols <- c(cols,grep("thomson",colnames(sumstat)))
+        cols <- c(cols,grep("ZnS",colnames(sumstat)))
+        cols <- c(cols,grep("_FayWuH",colnames(sumstat)))
+        if(length(cols)!=0) sumstat <- sumstat[,-cols]
+
         param <- c(com[[2]][2,],rates[[2]])
         names(param) <- c(com[[2]][1,],"mean.rate","sd.rate")
       simulations <- rbind(simulations,c(param,sumstat))
