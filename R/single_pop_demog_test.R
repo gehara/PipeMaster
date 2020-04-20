@@ -12,6 +12,7 @@
 #' @param do.PCA logical. If TRUE PCA of the observed against the simulated data is performed. Default is FALSE.
 #' @param observed Observed summary statistics calculated for the empirical data.
 #' @param CV logical. If TRUE cros-validation is performed. Defaut is FALSE
+#' @param mod 3 x 2 matrix of multiplyer priors (unif: min, max) for ancestral population sizes for each model. Default: cbind(c(1,0.001,2),c(1,0.1,20)). First row: constant size; min 1, max 1. Secound row: expansion; min 0.001, max 0.1. Third row: bottleneck; min 2, max 20.
 #' @details This function will take the same inputs used in the codemographic simulations and test for demographic change for each
 #' population separatelly. This test could be usefull to select which populations will be included in the codemographic model and to optimize the prior distributions.
 #' @export
