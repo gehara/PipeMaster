@@ -131,7 +131,7 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
     file.remove(".log")
 
     simulations<-NULL
-    cat("Reading simulations from slave nodes", sep="\n")
+    cat("Reading simulations from worker nodes", sep="\n")
     for(c in 1:ncores){
         load(file = paste(".",c,"_SIMS.rda",sep=""))
         simulations <- rbind(simulations, res)

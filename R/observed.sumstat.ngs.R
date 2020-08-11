@@ -24,7 +24,7 @@ obs.sumstat.ngs<-function(model=NULL,path.to.fasta,pop.assign,moments=F,msABC.ca
 
    if(is.null(nrow(model$loci))) stop("Your model is incomplete. Go through the gene menu first (main.menu function) and then get the data structure (get.data.structure function).")
 
-   if(model$loci[,1]=="genomic") stop("Your model is incomplete. You need to get the data structure first (get.data.structure function)")
+   if(model$loci[1,1]=="genomic") stop("Your model is incomplete. You need to get the data structure first (get.data.structure function)")
 
    if(ncol(pop.assign) < 2) stop ("Your pop.assign file has more than 2 columns")
 
@@ -47,13 +47,13 @@ obs.sumstat.ngs<-function(model=NULL,path.to.fasta,pop.assign,moments=F,msABC.ca
     snps<-grep("segs",names(observed[[i]]))
     print(paste(i,"   ",observed[[i]][snps[(length(snps))]],"SNPs"))
   }
-  observed<-matrix(unlist(observed), ncol = length(observed[[1]]), byrow = TRUE)
+  observed <- matrix(unlist(observed), ncol = length(observed[[1]]), byrow = TRUE)
 
-  com<-PipeMaster:::ms.commander2(model,use.alpha=F)
+  com <- PipeMaster:::ms.commander2(model,use.alpha=F)
   options(warn=-1)
   x<-strsplit(system2(msABC.call, args=paste(sum(as.numeric(model$I[1,4:ncol(model$I)])),1,com[[1]]), stdout = T,stderr=T,wait=T),"\t")
   options(warn=0)
-  nam<-x[1][[1]]
+  nam <- x[1][[1]]
 
   #if(ncol(observed)!=length(nam)){
   #stop(cat("your model pop structure does not match your assignment file pop structure.",
@@ -77,15 +77,18 @@ obs.sumstat.ngs<-function(model=NULL,path.to.fasta,pop.assign,moments=F,msABC.ca
 
   observed<-as.vector(t(observed))
 
-  com<-PipeMaster:::msABC.commander(model,use.alpha=F,arg=1)
+  model$I <- model$I[1:10, ]
+  model$loci <- model$loci[1:10, ]
+  model$I[,4:ncol(model$I)] <- round(runif(10*as.numeric(model$I[1,3]), 6, 10))
+  com <- PipeMaster:::msABC.commander(model,use.alpha=F,arg=1)
   locfile <- PipeMaster:::get.locfile(model)
   msABC.path <- find.package("PipeMaster")
   write.table(locfile,paste(".",1,"locfile.txt",sep=""),row.names = F,col.names = T,quote = F,sep=" ")
 
   options(warn=-1)
-  x<-strsplit(system2(msABC.call, args=com[[1]], stdout = T,stderr=T,wait=T),"\t")
+  x <- strsplit(system2(msABC.call, args=com[[1]], stdout = T,stderr=T,wait=T),"\t")
   options(warn=0)
-  nam<-x[1][[1]]
+  nam <- x[1][[1]]
 
   observed <- t(data.frame(observed))
   colnames(observed) <- c(nam,paste(nam[grep("pi",nam)],nam[grep("_w",nam)],sep="_"))

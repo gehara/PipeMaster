@@ -272,7 +272,7 @@ ms.to.DNAbin<-function(ms.output, bp.length){
   se$nam<-c(1:length(x)) # sequence names, just numbers
   se$com<-NA
   class(se)<-"alignment" # this is alignment
-  x<-as.DNAbin(se) # convert to DNAbin
+  x<-ape::as.DNAbin(se) # convert to DNAbin
   return(x)
 }
 
