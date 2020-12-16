@@ -110,7 +110,10 @@ update.priors <- function(tab, model){
 #' @return Graphic
 #' @author Marcelo Gehara. This function is a wrapper of the PlotMS function of the POPDemog package.
 #' @export
-PlotModel<-function(model, use.alpha=F, average.of.priors=F, axes = T){
+PlotModel<-function(model, use.alpha=F, average.of.priors=F,
+                    xlab = "Population",
+                    ylab = "Time before present (generations)",
+                    axes = T){
 
   model$loci <- t(data.frame(c("rate1" ,"1000", "1",  "1e-08", "1e-08", "runif")))
 
@@ -120,11 +123,11 @@ PlotModel<-function(model, use.alpha=F, average.of.priors=F, axes = T){
     x <- PipeMaster:::ms.commander.forplot(model, use.alpha = use.alpha)
     POPdemog::PlotMS(x[[1]], type="ms", col.pop = c(3:(as.numeric(model$I[1,3])+2)),
                      lwd.arrow = 2, size.scale = "log",log.base = 10, time.scale = "generation",
-                     N4=4000000, axes = axes)
+                     N4=4000000, axes = axes, xlab = xlab, ylab = ylab)
   } else { x <- PipeMaster:::ms.commander2(model, use.alpha = use.alpha)
             POPdemog::PlotMS(x[[1]], type="ms", col.pop = c(3:(as.numeric(model$I[1,3])+2)),
                    lwd.arrow = 2, size.scale = "log", log.base = 10,time.scale = "generation",
-                   N4=as.numeric(x[[2]][length(x[[2]])]), axes = axes)
+                   N4=as.numeric(x[[2]][length(x[[2]])]), axes = axes, xlab = xlab, ylab = ylab)
 }
 
   }
