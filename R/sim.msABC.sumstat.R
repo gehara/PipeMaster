@@ -14,12 +14,18 @@
 #' @param append.sims Logical. If TRUE simulations will be appended in the last output. Default is FALSE.
 #' @param msABC.call String. Path to the msABC executable. msABC binaries for Mac and Linux are included in the package and should work cases for these operating systems.
 #'                   There is no need to change this unless you want to compile the program yourself and point the function to it.
+#' @param mu.rates List. Distribution to sample the mutation rates. The first element of the list should be the name of the distribution as a character string. All distributions available in r-base and r-package e1071 are allowed.
+#'                   The second element of the list must be the number of loci. The following elements are the parameters of the distribution to be passed on to the r-distribution function.
+#'                    Ex.: mu.rates = list("rtnorm", 1000, 1e-9, 1e-9, 0). i.e sample 1000 values using the rtnorm function with mean 1e-9 and SD 1e-9, with lower tail limit at zero.
+#' @param rec.rates List. Distribution to sample the recombination rates. The first element of the list should be the name of the distribution as a character string. All distributions available in r-base and r-package e1071 are allowed.
+#'                   The second element of the list must be the number of loci. The following elements are the parameters of the distribution to be passed on to the r-distribution function.
+#'                    Ex.: rec.rates = list("rtnorm", 1000, 1e-9, 1e-9, 0). i.e sample 1000 values using the rtnorm function with mean 1e-9 and SD 1e-9, with lower tail limit at zero.
 #' @return Writes simulations and parameters to the path directory.
 #' @references Hudson R.R. (2002) Generating samples under a Wright-Fisher neutral model of genetic variation. Bioinformatics, 18, 337–338.
 #' @references Pavlidis P., Laurent S., & Stephan W. (2010) msABC: A modification of Hudson’s ms to facilitate multi-locus ABC analysis. Molecular Ecology Resources, 10, 723–727.
 #' @author Marcelo Gehara
 #' @export
-sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.rates=NULL,
+sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.rates=NULL, rec.rates = NULL,
                             append.sims=F,block.size=10, msABC.call=get.msABC(),output.name,ncores){
 
   WD<-getwd()
@@ -80,7 +86,15 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
         } else {
         rates <- sample.mu.rates(model)
         }
+        if(!(is.null(rec.rates))){
+          r.rates <- do.call(rec.rates[[1]],args=rec.rates[2:length(rec.rates)])
+          r.rates <- rep(r.rates, each = as.numeric(model$I[1,3]))
+        } else {
+        rates <- 0
+        }
         locfile[,5] <- rates[[1]]
+        locfile[,6] <- r.rates
+
         write.table(locfile,paste(".",arg,"locfile.txt",sep=""),row.names = F,col.names = T,quote = F,sep=" ")
         com <- msABC.commander(model, use.alpha=use.alpha,arg=arg)
         options(warn=-1)
