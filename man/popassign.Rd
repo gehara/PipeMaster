@@ -4,7 +4,9 @@
 \name{popassign}
 \alias{popassign}
 \title{assignment file example for the Dermatonotus muelleri sequences}
-\format{An object of class \code{"cross"}; see \code{\link[qtl]{read.cross}}.}
+\format{
+An object of class \code{"cross"}; see \code{\link[qtl]{read.cross}}.
+}
 \usage{
 data(popassign, package = "PipeMaster")
 }

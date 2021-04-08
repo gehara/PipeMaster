@@ -4,9 +4,19 @@
 \alias{sim.msABC.sumstat}
 \title{Simulate summary statistics using msABC}
 \usage{
-sim.msABC.sumstat(model, nsim.blocks, path = getwd(), use.alpha = F,
-  mu.rates = NULL, append.sims = F, block.size = 10,
-  msABC.call = get.msABC(), output.name, ncores)
+sim.msABC.sumstat(
+  model,
+  nsim.blocks,
+  path = getwd(),
+  use.alpha = F,
+  mu.rates = NULL,
+  rec.rates = NULL,
+  append.sims = F,
+  block.size = 10,
+  msABC.call = get.msABC(),
+  output.name,
+  ncores
+)
 }
 \arguments{
 \item{model}{A model object bult by the main.menu function. Both genomic and sanger-type models are allowed.}
@@ -17,6 +27,14 @@ sim.msABC.sumstat(model, nsim.blocks, path = getwd(), use.alpha = F,
 
 \item{use.alpha}{Logical. If TRUE the most recent population size change will be exponential. If FALSE sudden demographic changes. Default is FALSE.
 This argument changes ONLY the MOST RECENT demographich change.}
+
+\item{mu.rates}{List. Distribution to sample the mutation rates. The first element of the list should be the name of the distribution as a character string. All distributions available in r-base and r-package e1071 are allowed.
+The second element of the list must be the number of loci. The following elements are the parameters of the distribution to be passed on to the r-distribution function.
+ Ex.: mu.rates = list("rtnorm", 1000, 1e-9, 1e-9, 0). i.e sample 1000 values using the rtnorm function with mean 1e-9 and SD 1e-9, with lower tail limit at zero.}
+
+\item{rec.rates}{List. Distribution to sample the recombination rates. The first element of the list should be the name of the distribution as a character string. All distributions available in r-base and r-package e1071 are allowed.
+The second element of the list must be the number of loci. The following elements are the parameters of the distribution to be passed on to the r-distribution function.
+ Ex.: rec.rates = list("rtnorm", 1000, 1e-9, 1e-9, 0). i.e sample 1000 values using the rtnorm function with mean 1e-9 and SD 1e-9, with lower tail limit at zero.}
 
 \item{append.sims}{Logical. If TRUE simulations will be appended in the last output. Default is FALSE.}
 

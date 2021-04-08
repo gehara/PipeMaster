@@ -4,8 +4,13 @@
 \alias{obs.sumstat.ngs}
 \title{Observed summary statistics for nexgen data}
 \usage{
-obs.sumstat.ngs(model = NULL, path.to.fasta, pop.assign, moments = F,
-  msABC.call = get.msABC())
+obs.sumstat.ngs(
+  model = NULL,
+  path.to.fasta,
+  pop.assign,
+  moments = F,
+  msABC.call = get.msABC()
+)
 }
 \arguments{
 \item{model}{A model object built by the main.menu function. Any model with the same number of populations of your empirical data will work. This is just to build the sumstats names correctly.}

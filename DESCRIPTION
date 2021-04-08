@@ -23,5 +23,5 @@ License: GPL (>= 2)
 URL: http://www.marcelogehara.org/
 BugReports: https://github.com/gehara/PipeMaster
 LazyData: TRUE
-RoxygenNote: 6.1.1
+RoxygenNote: 7.1.1
 Encoding: UTF-8

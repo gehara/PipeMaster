@@ -4,9 +4,20 @@
 \alias{sim.coexp.ngs}
 \title{Simulation of codemographic models with ngs data}
 \usage{
-sim.coexp.ngs(nsims, var.zeta, coexp.prior, th, Ne.prior, NeA.prior,
-  time.prior, gene.prior, mu.rates, alpha = F, append.sims = F,
-  path = getwd())
+sim.coexp.ngs(
+  nsims,
+  var.zeta,
+  coexp.prior,
+  th,
+  Ne.prior,
+  NeA.prior,
+  time.prior,
+  gene.prior,
+  mu.rates,
+  alpha = F,
+  append.sims = F,
+  path = getwd()
+)
 }
 \arguments{
 \item{nsims}{Total number of simulations}

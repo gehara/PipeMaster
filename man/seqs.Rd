@@ -4,7 +4,9 @@
 \name{seqs}
 \alias{seqs}
 \title{200 sequences of the Dermatonotus muelleri frog}
-\format{An object of class \code{"cross"}; see \code{\link[qtl]{read.cross}}.}
+\format{
+An object of class \code{"cross"}; see \code{\link[qtl]{read.cross}}.
+}
 \usage{
 data(200seqs)
 }

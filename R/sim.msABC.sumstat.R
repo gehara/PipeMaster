@@ -26,7 +26,7 @@
 #' @author Marcelo Gehara
 #' @export
 sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.rates=NULL, rec.rates = NULL,
-                            append.sims=F,block.size=10, msABC.call=get.msABC(),output.name,ncores){
+                            append.sims=F,block.size=10, msABC.call = get.msABC(),output.name,ncores){
 
   WD<-getwd()
 
@@ -52,10 +52,10 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
     #TD_denom <- paste(nam[grep("pi",nam)],nam[grep("_w",nam)],sep="_")
     #nam<-nam[-grep("ZnS",nam)]
     #nam<-nam[-grep("thomson",nam)]
-    cols <- grep("fwh",nam)
-    cols <- c(cols,grep("thomson",nam))
-    cols <- c(cols,grep("ZnS",nam))
-    cols <- c(cols,grep("_FayWuH",nam))
+    #cols <- grep("fwh",nam)
+    cols <- grep("thomson",nam)
+    cols <- c(cols, grep("ZnS",nam))
+    #cols <- c(cols,grep("_FayWuH",nam))
     if(length(cols)!=0) nam <- nam[-cols]
     #nam <- c(nam, TD_denom)
     nam <- c(com[[2]][1,],"mean.rate","sd.rate",nam)
@@ -110,10 +110,12 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
         #var<-apply(sumstat,2,var, na.rm=T)
         #kur<-apply(sumstat,2,kurtosis, na.rm=T)
         #skew<-apply(sumstat,2,skewness, na.rm=T)
-        cols <- grep("fwh",colnames(sumstat))
-        cols <- c(cols,grep("thomson",colnames(sumstat)))
+
+        #cols <- grep("fwh",colnames(sumstat))
+        cols <- grep("thomson",colnames(sumstat))
         cols <- c(cols,grep("ZnS",colnames(sumstat)))
-        cols <- c(cols,grep("_FayWuH",colnames(sumstat)))
+        #cols <- c(cols,grep("_FayWuH",colnames(sumstat)))
+
         if(length(cols)!=0) sumstat <- sumstat[,-cols]
 
         param <- c(com[[2]][2,],rates[[2]])

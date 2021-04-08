@@ -4,9 +4,21 @@
 \alias{single.pop.demog}
 \title{Simulation of demographic models for single populations.}
 \usage{
-single.pop.demog(nsims, Ne.prior, time.prior, gene.prior, observed,
-  alpha = F, tol = 0.01, nval = 100, do.ABC = F, do.PCA = F,
-  CV = F, mod = cbind(c(1, 0.001, 2), c(1, 0.1, 20)), path = path)
+single.pop.demog(
+  nsims,
+  Ne.prior,
+  time.prior,
+  gene.prior,
+  observed,
+  alpha = F,
+  tol = 0.01,
+  nval = 100,
+  do.ABC = F,
+  do.PCA = F,
+  CV = F,
+  mod = cbind(c(1, 0.001, 2), c(1, 0.1, 20)),
+  path = path
+)
 }
 \arguments{
 \item{nsims}{Total number of simulations per model.}

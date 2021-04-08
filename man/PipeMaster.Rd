@@ -3,11 +3,7 @@
 \docType{package}
 \name{PipeMaster}
 \alias{PipeMaster}
-\alias{PipeMaster-package}
 \title{PipeMaster: A package to build and simulate coalescent models}
-\description{
-PipeMaster: A package to build and simulate coalescent models
-}
 \section{PipeMaster functions}{
 
 observed.snp.sumstat

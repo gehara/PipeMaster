@@ -4,8 +4,14 @@
 \alias{observed.sumstat}
 \title{Observed summary statistics}
 \usage{
-observed.sumstat(model, path.to.fasta, fasta.files = list.files(),
-  overall.SS = T, perpop.SS = T, get.moments = T)
+observed.sumstat(
+  model,
+  path.to.fasta,
+  fasta.files = list.files(),
+  overall.SS = T,
+  perpop.SS = T,
+  get.moments = T
+)
 }
 \arguments{
 \item{model}{A model object bult by the main.menu function.}

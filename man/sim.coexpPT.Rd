@@ -4,8 +4,18 @@
 \alias{sim.coexpPT}
 \title{Simulation of codemographic models}
 \usage{
-sim.coexpPT(nsims, var.zeta, coexp.prior, Ne.prior, NeA.prior, time.prior,
-  gene.prior, alpha = F, append.sims = F, path = getwd())
+sim.coexpPT(
+  nsims,
+  var.zeta,
+  coexp.prior,
+  Ne.prior,
+  NeA.prior,
+  time.prior,
+  gene.prior,
+  alpha = F,
+  append.sims = F,
+  path = getwd()
+)
 }
 \arguments{
 \item{nsims}{Total number of simulations}

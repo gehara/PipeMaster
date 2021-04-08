@@ -4,7 +4,14 @@
 \alias{PlotModel}
 \title{Plot model}
 \usage{
-PlotModel(model, use.alpha = F, average.of.priors = F)
+PlotModel(
+  model,
+  use.alpha = F,
+  average.of.priors = F,
+  xlab = "Population",
+  ylab = "Time before present (generations)",
+  axes = T
+)
 }
 \arguments{
 \item{model}{A model object generated in the main.menu.}
@@ -14,6 +21,8 @@ This argument changes ONLY the MOST RECENT demographich change. You should indic
 toguether with the logical argument in a vector. Ex.c(T,1,2)}
 
 \item{average.of.priors}{logical. if TRUE parameters for the plot will be equal to the average of prior values.}
+
+\item{axes}{logical. if TRUE plot axes with models. Default is TRUE.}
 }
 \value{
 Graphic

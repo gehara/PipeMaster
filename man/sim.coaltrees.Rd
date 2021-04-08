@@ -4,8 +4,14 @@
 \alias{sim.coaltrees}
 \title{Simulate coalescent trees using ms}
 \usage{
-sim.coaltrees(model, nsim.blocks, use.alpha = F, path = getwd(),
-  append.sims = F, sim.block.size = 1000)
+sim.coaltrees(
+  model,
+  nsim.blocks,
+  use.alpha = F,
+  path = getwd(),
+  append.sims = F,
+  sim.block.size = 1000
+)
 }
 \arguments{
 \item{model}{A model object bult by the main.menu function.}
