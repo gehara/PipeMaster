@@ -19,7 +19,7 @@ plotPCs(models, index, observed, subsample)
 graphic
 }
 \description{
-plot first 10 PCs of simulated data against obseved.
+plot first 10 PCs of simulated data against observed.
 }
 \author{
 Marcelo Gehara
