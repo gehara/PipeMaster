@@ -123,7 +123,7 @@ Create a new directory to save the examples
     setwd(paste(getwd(),"/PM_example",sep=""))
   ```
   
-Set up a model by going into the Model Builder. You will be prompted to an interactive menu. Point this function to an object so your model is saved at the end. We are going to set up a 2 population model.
+Set up a model by going into the Model Builder. You will be prompted to an interactive menu. Assign this function to an object (*Is* in the case bellow) so your model is saved at the end. We are going to set up a 2 population model.
 
   ```
     Is <- main.menu()
@@ -132,7 +132,7 @@ Set up a model by going into the Model Builder. You will be prompted to an inter
 
 ## **Main Menu**
 
-We start by writing a 2 pop newick: *(1,2)*. This will sep up a 2 pop isolation model with constant population size, no migration. You can follow the description in the menu to add parameters and priors to the model. The numbers on the right indicate the parameters of the model. This model has 2 population size parameters and 1 divergence parameter, or 1 junction in the coalescent direction. We are going to stick with a 3 parameter model for now. To visulize the model we need to specify the data to be simulated first. We nee to go to **Gene Menu** for that.
+We start by writing a 2 pop newick topology: *(1,2)*. This will set up a 2 pop isolation model with constant population size and no migration. You can follow the description in the menu to add parameters and priors to the model. The numbers on the right indicate the parameters of the model. This model has 2 population size parameters and 1 divergence parameter, or 1 junction in the coalescent direction. We are going to stick with a 3 parameter model for now. To visulize the model we need to specify the data to be simulated first. We nee to go to **Gene Menu** for that.
 
 ```
   A > Number of populations to simulate      2
@@ -179,11 +179,11 @@ Type **I** in the **main menu** to go to the gene menu. To get into the **gene m
 
 ## **Mutation rate prior**
 
-**In the case of genomic data the mutation rate works as a hyperparameter**. The defaut uniform distribution above indicates the *min* and *max* values to sample an average and SD of all mutation rates. That is, the actual mutation rate for each of the 200 loci will be sampled from a normal distribution with average and SD sampled from this uniform prior. In each simulation iteration a new average and SD are sampled and from these parameters the 200 mutation rates are sampled. This normal distribution is truncated at zero, so it doesn't not really always have a bell shape. You can set different distribution for the mutation rate. All distributions available in R are allowed, but this distribution is specified in the simulation function (*sim.msABC.sumstat*). We will see this further in the tutorial.
+**In the case of genomic data the mutation rate works as a hyperparameter**. The default uniform distribution above indicates the *min* and *max* values to sample an average and SD of all mutation rates. That is, the actual mutation rate for each of the 200 loci will be sampled from a normal distribution with average and SD sampled from this uniform prior. In each simulation iteration a new average and SD are sampled and from these parameters the 200 mutation rates are sampled. This normal distribution is truncated at zero, so it doesn't not really always have a bell shape. You can set other distributions to sample the mutation rate from. All distributions available in R are allowed, but this distribution is specified in the simulation function (*sim.msABC.sumstat*). We will see this further in the tutorial.
 
 
 ## **Model Visualization**
-Now that we specifed the type of data we will simulate we can visualize the model by typing **P** or **p**. It will ask if you are plotting a model with an exponetial size change. Since our model has no size change we will choose FALSE.
+Now that we specified the type of data we will simulate we can visualize the model by typing **P** or **p**. It will ask if you are plotting a model with an exponential size change. Since our model has no size change we will choose FALSE.
 
 ```
   Model Builder >>>>P
@@ -195,7 +195,7 @@ Now that we specifed the type of data we will simulate we can visualize the mode
 
 ## **Ne Priors Menu** 
 
-Let's check the Ne priors by typing *E* in the *main menu*. In this menu you can see the parameter names and their distribution. PipeMaster has as defaut uniform distributions with min and max values of 100,000 and 500,000 individuals respectively. The name Ne0.pop1 indicates that the parameter is contemporary, hence Ne0. Ancestral parameters will have acending numbers going to the past. For instance, Ne1.pop1 is the ancestral Ne after Ne0, Ne2 is the ancestral Ne after Ne1 and so on. Let's change one of the priors. Type **C** and then follow the instructions of the menu.  
+Let's check the Ne priors by typing *E* in the *main menu*. In this menu you can see the parameter names and their distribution. PipeMaster has as default uniform distributions with min and max values of 100,000 and 500,000 individuals respectively. The name Ne0.pop1 indicates that the parameter is contemporary, hence Ne0. Ancestral parameters will have ascending numbers going to the past. For instance, *Ne1.pop1* is the ancestral Ne after *Ne0*, *Ne2* is the ancestral Ne after *Ne1* and so on. Let's change one of the priors. Type **C** and then follow the instructions of the menu.  
 
 ```
   N > Ne prior distribution:               uniform
@@ -225,7 +225,7 @@ B > Back to main menu
 ```
 ## **Time Priors Menu**
 
-Type **G** in the **main menu** to go to **time priors**. In the **time prior** menu you can see all parameters relative to time. In this model we have a single parameter, *join1_2*, which represents the junction (or divergence in real life direction) of population 1 and 2. The default of PipeMaster is a uniform distribution with *min* and *max* of *500,000* and *1,500,000* generations. **Time is measured in generations**. If your organism has a generation time different than 1, you will need to convert the time from years to generations in order to set up your prior. For example, if you want to setup a divergence between 100,000 and 1,000,000 years and your organism has a generation time of 4 years, you will need to divide the time by 4. Your min and max values will be 25,000 ans 250,000. Type **B** to go back to the main menu.
+Type **G** in the **main menu** to go to **time priors**. In the **time prior** menu you can see all parameters relative to time. In this model we have a single parameter, *join1_2*, which represents the junction (or divergence in real life direction) of population 1 and 2. The default of PipeMaster is a uniform distribution with *min* and *max* of *500,000* and *1,500,000* generations. **Time is measured in generations**. If your organism has a generation time different than 1 year, you will need to convert the time from years to generations in order to set up your prior. For example, if you want to setup a divergence between 100,000 and 1,000,000 years and your organism has a generation time of 4 years, you will need to divide the time by 4. Your min and max values will be 25,000 ans 250,000. Type **B** to go back to the main menu.
 
 ```
   P > Time prior distribution:     uniform

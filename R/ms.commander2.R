@@ -17,33 +17,33 @@ ms.commander2<-function(model,use.alpha=use.alpha){
 
 
   # sample Ne, div.time and mutation rate
-  size.pars<-sample.w.cond(par.matrix=size.pars,cond.matrix=model$conds$size.matrix)
+  size.pars <- PipeMaster:::sample.w.cond(par.matrix=size.pars,cond.matrix=model$conds$size.matrix)
   # bind Ne sampled parameters
-  parameters<-rbind(parameters,size.pars[,c(1,4)])
+  parameters <- rbind(parameters, size.pars[,c(1,4)])
 
   if(is.null(time.pars)==F){
-    time.pars<-sample.w.cond(par.matrix=time.pars,cond.matrix=model$conds$time.matrix)
+    time.pars <- PipeMaster:::sample.w.cond(par.matrix=time.pars,cond.matrix=model$conds$time.matrix)
     # bind sampled time parameters
-    parameters<-rbind(parameters,time.pars[,c(1,4)])
+    parameters <- rbind(parameters,time.pars[,c(1,4)])
   }
 
-  loci<-sample.pars(model$loci)
+  loci <- PipeMaster:::sample.pars(model$loci)
 
   # sample migrations if present and bind sampled parameters
   if(is.null(mig.pars)==F){
-    mig.pars<-sample.w.cond(par.matrix=mig.pars,cond.matrix=model$conds$mig.matrix)
+    mig.pars <- PipeMaster:::sample.w.cond(par.matrix=mig.pars,cond.matrix=model$conds$mig.matrix)
     #bind sampled migration parameters
     parameters<-rbind(parameters,mig.pars[,c(1,4)])
   }
 
   #### bind sampled mutation rate
-  parameters<-rbind(parameters,loci[,c(1,4)])
+  parameters <- rbind(parameters,loci[,c(1,4)])
 
   ####### End of parameter sampling #######################################
   #########################################################################
 
   ####### Generate ms string ##############################################
-  ####### Convertion to coalescent scale #####################################
+  ####### Conversion to coalescent scale #####################################
 
   # generate coalescent scalar. Arbitrary value
 
@@ -57,18 +57,18 @@ ms.commander2<-function(model,use.alpha=use.alpha){
   }
 
   #### bind scaled theta per gene (4Ne0*m*pb)
-  loci<-cbind(loci,ms.scalar*as.numeric(loci[,4])*as.numeric(loci[,2]))
+  loci <- cbind(loci, ms.scalar * as.numeric(loci[,4]) * as.numeric(loci[,2]))
 
   #### convertion of time to coalescent scale
-  time.pars[,4:5]<-as.numeric(time.pars[,4])/ms.scalar
+  time.pars[,4:5] <- as.numeric(time.pars[,4])/ms.scalar
 
   # rescale to inheritance scalar and transform size parameters to relative to Ne0
-  size.pars[,4:5]<-as.numeric(size.pars[,4])/Ne0
+  size.pars[,4:5] <- as.numeric(size.pars[,4])/Ne0
 
   commands<-list(NULL)
   for(u in 1:nrow(loci)){
 
-      string<-ms.string.generator(model,size.pars,mig.pars,time.pars,use.alpha=use.alpha,scalar=as.numeric(loci[u,3]))
+      string <- PipeMaster:::ms.string.generator(model,size.pars,mig.pars,time.pars,use.alpha=use.alpha, scalar = as.numeric(loci[u,3]))
 
       #################################### theta and structure ###########################
       ######### generate -t and -I part of the command

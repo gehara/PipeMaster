@@ -1,9 +1,9 @@
 ms.string.generator<-function(model,size.pars,mig.pars,time.pars,use.alpha,scalar=1){
 
   # rescale to inheritance scalar and transform size parameters to relative to Ne0
-  size.pars[,4:5]<-as.numeric(size.pars[,4])*scalar
+  size.pars[,4:5] <- as.numeric(size.pars[,4]) * scalar
   # rescale migration to inheritance scalar
-  mig.pars[,4:5]<-as.numeric(mig.pars[,4])*scalar
+  mig.pars[,4:5] <- as.numeric(mig.pars[,4]) * scalar
 
   # empty string for ms flags
   string<-list()
@@ -11,9 +11,9 @@ ms.string.generator<-function(model,size.pars,mig.pars,time.pars,use.alpha,scala
 ################### size parameters ############################
 ################################################################
 
-  curr.Ne<-subset(size.pars, size.pars[,2]=="-n")
-  ent<-subset(time.pars, time.pars[,2]=="-en")
-  en<-subset(size.pars, size.pars[,2]=="-en")
+  curr.Ne <- subset(size.pars, size.pars[,2]=="-n")
+  ent <- subset(time.pars, time.pars[,2]=="-en")
+  en <- subset(size.pars, size.pars[,2]=="-en")
 
 
   # generate Ne string
@@ -54,8 +54,8 @@ ms.string.generator<-function(model,size.pars,mig.pars,time.pars,use.alpha,scala
     for(i in 1:nrow(curr.mig)){
       curr.mig[i,3]<-strsplit(curr.mig[i,3]," ")[[1]][1]
       }
-    curr.mig[,4]<-as.numeric(curr.mig[,4])/as.numeric(curr.Ne[match(curr.mig[,3],curr.Ne[,3]),4])
-    curr.mig[,3]<-mig.pars[1:nrow(curr.mig),3]
+    curr.mig[,4] <- as.numeric(curr.mig[,4]) / as.numeric(curr.Ne[match(curr.mig[,3],curr.Ne[,3]),4])
+    curr.mig[,3] <- mig.pars[1:nrow(curr.mig),3]
 
   ###### generate current migration string
     m<-apply(curr.mig[,c(2:4)],1,paste,collapse=" ")

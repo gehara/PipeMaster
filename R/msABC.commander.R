@@ -68,7 +68,7 @@ msABC.commander<-function(model,use.alpha=use.alpha,arg){
 
   commands <- list(NULL,NULL)
   #### ms string command
-  string <- PipeMaster:::ms.string.generator(model,size.pars,mig.pars,time.pars,use.alpha=use.alpha,scalar=as.numeric(loci[1,3]))
+  string <- PipeMaster:::ms.string.generator(model, size.pars, mig.pars,time.pars, use.alpha=use.alpha, scalar = as.numeric(loci[1,3]))
   #################################### theta and structure ###########################
   ######### generate -t and -I part of the command
   y <- paste(sum(as.numeric(model$I[1,4:ncol(model$I)])),1,paste(model$I[1,2:ncol(model$I)],collapse=" "),collapse=" ")
