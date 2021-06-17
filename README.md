@@ -11,6 +11,8 @@
 
 [Main Tutorial](PipeMaster_tutorial.md)
 
+[Tutorial em Português](PipeMaster_tutorial_PT.md)
+
 [CompPhylo Workshop Tutorial](https://compphylo.github.io/Oslo2019/PM_files/Dermatonotus_example.html)
 
 [Example of analysis of nexgen data](Dermatonotus_example.md)
