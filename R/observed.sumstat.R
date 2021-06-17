@@ -15,9 +15,13 @@
 #' @export
 observed.sumstat<-function(model,path.to.fasta,fasta.files=list.files(),overall.SS=T,perpop.SS=T,get.moments=T){
 
-  fasta.files<-fasta.files[grep(".fas",fasta.files)]
+  wd.path <- getwd()
 
-  fasta2ms(path.to.fasta,fasta.files,write.file=T)
+  setwd(path.to.fasta)
+
+  fasta.files <- list.files(pattern = ".fas")
+
+  fasta2ms(path.to.fasta, fasta.files, write.file=T)
   # get population structure
   if(perpop.SS==T){
     pops<-get.pops(model)
@@ -50,7 +54,7 @@ observed.sumstat<-function(model,path.to.fasta,fasta.files=list.files(),overall.
   ss<-list(NULL)
   OA.ss<-list(NULL)
   for(u in 1:length(fasta.files)){
-    ss[[u]]<-readMS(paste(fasta.files[u],".ms",sep=""), big.data = F)
+    ss[[u]]<-readMS(paste(strsplit(fasta.files[u],".fas")[[1]],".ms",sep=""), big.data = F)
 
     if(overall.SS==T){
       ss[[u]]<-neutrality.stats(ss[[u]],FAST=T)
@@ -149,4 +153,5 @@ observed.sumstat<-function(model,path.to.fasta,fasta.files=list.files(),overall.
                   quote=F,row.names=F, col.names = F, append=T,sep="\t")
     }
   }
+  setwd(wd.path)
 }

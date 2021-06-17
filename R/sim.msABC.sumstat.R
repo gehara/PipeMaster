@@ -90,7 +90,7 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
           r.rates <- do.call(rec.rates[[1]],args=rec.rates[2:length(rec.rates)])
           r.rates <- rep(r.rates, each = as.numeric(model$I[1,3]))
         } else {
-        rates <- 0
+        r.rates <- 0
         }
         locfile[,5] <- rates[[1]]
         locfile[,6] <- r.rates

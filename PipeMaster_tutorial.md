@@ -450,7 +450,7 @@ There is an easier way to check the model parameters and priors. You can also up
     3      join1    1000    1000        runif
   
   
-  > Is2 <- PipeMaster:::update.priors(tab = Is.tab, model = Is)
+  > Is2 <- update.priors(tab = Is.tab, model = Is)
   > get.prior.table(model=Is2)
   
        Parameter prior.1 prior.2 distribution
@@ -635,6 +635,30 @@ Now that we have two models, **Is** and **IM** we are going to simulate summary 
   output.name = "IsBot2", append.sims = F, block.size =   500, ncores = 2)
 
 ```
+
+
+## **Mutation rate**
+
+In PipeMaster the mutation rate can be parameterized in different ways. The default option is to use a uniform distribution to sample a *mean* and and *standard deviation* for the mutation rate across all the loci (mutation rate per locus per generation). So, PipeMaster will take that *mean* and *SD* and generate a uniform distribution to sample one mutation rate per loci. However a specific distribution to sample mutation rates from can be specified as an argument of the simulation function. All distributions available in r-base and r-package e1071 are allowed. The argument should be a list. The first element of the list is the name of the distribution function. The second element of the list must be the number of loci. The following elements are the parameters of the distribution to be passed on to the r-distribution function.
+
+```
+sim.msABC.sumstat(Is, nsim.blocks = 1, use.alpha = F, 
+                  output.name = "Is", append.sims = F, block.size = 500, ncores = 20,
+                  mu.rates = list("rtnorm",30, 1e-9, 0, 0))
+```
+
+## **Recombination rate**                  
+
+It is also possible to specify a distribution for the recombination rate in the same way. The recombination rate is specified as the probability of recombination per base pair.
+
+```
+sim.msABC.sumstat(Is, nsim.blocks = 1, use.alpha = F, 
+                  output.name = "Is", append.sims = F, block.size = 500, ncores = 2,
+                  rec.rates = list("runif", 30, 1e-9, 0),
+                  mu.rates = list("rtnorm",30, 1e-9, 0, 0))
+                  
+```                  
+                  
 -------------------------------------------------------------------------------------------------------
 
 # **Second part**
@@ -660,7 +684,7 @@ PlotModel(model=IsBot2, use.alpha = c(T,1), average.of.priors=F)
 We can use the *plot.prior* function to visualize the prior distributions. 
   
 ```
-PipeMaster:::plot.priors(Is, nsamples = 1000)
+plot.priors(Is, nsamples = 1000)
 ```
 ![Prior distributions](priors.png)
 
@@ -678,11 +702,11 @@ IM.sim <- IM.sim[,colnames(IM.sim) %in% colnames(obs)]
 IsBot2.sim <- IsBot2.sim[,colnames(IsBot2.sim) %in% colnames(obs)]
 ```
 
-Now we can plot the observed againt the simulated. This helps you evaluate your model and have a visual idea of how the simulations fit the empirical data. 
+Now we can plot the observed against the simulated. This helps you evaluate your model and have a visual idea of how the simulations fit the empirical data. 
 
 ```
-PipeMaster:::plot.sim.obs(Is.sim, obs)
-PipeMaster:::plot.sim.obs(IsBot2.sim, obs)
+plot.sim.obs(Is.sim, obs)
+plot.sim.obs(IsBot2.sim, obs)
 ```
 ![Simulated (histogram) and observed (red line) summary statistics](sim.obs.png)
 
@@ -752,12 +776,12 @@ The *abc* performs a rejection step for parameter estoimates as well. For this w
 IsBot2.sim <- read.table("SIMS_IsBot2.txt", header=T)
   
 # separate summary statistics from parameters
-sims <- IsBot2.sim[,colnames(IsBot2.sim) %in% colnames(observed)]
+sims <- IsBot2.sim[,colnames(IsBot2.sim) %in% colnames(obs)]
 param <- IsBot2.sim[,1:11]
   
 # estimate posterior distribution of parameters
   
-posterior <- abc(target = observed,
+posterior <- abc(target = obs,
             param = param,
             sumstat = sims,
             method = "rejection",
@@ -824,10 +848,10 @@ It can be very time consuming to set up the parameters of the neural network, an
   registerDoMC(1)
   
   ## combine simulations and index
-  models <- cbind(models,data)
+  models <- cbind(models, index)
   
   ## setup the outcome (name of the models, cathegories)
-  outcomeName <- 'data'
+  outcomeName <- 'index'
   
   ## set up predictors (summary statistics)
   predictorsNames <- names(models)[names(models) != outcomeName]

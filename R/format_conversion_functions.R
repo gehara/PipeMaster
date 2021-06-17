@@ -32,10 +32,10 @@ fasta2ms<-function(path.to.fasta,fasta.files,write.file=T){
 
     if(is.null(pos)){
       if(write.file==T){
-        write(file=paste(fasta.files[u],".ms",sep=""),paste("ms",nrow(fas),1))
-        write(file=paste(fasta.files[u],".ms",sep=""),"//",append=T)
-        write(file=paste(fasta.files[u],".ms",sep=""),paste("segsites:",0),append=T)
-        write(file=paste(fasta.files[u],".ms",sep=""),paste("positions:"),append=T)
+        write(file=paste(strsplit(fasta.files[u],".fas")[[1]],".ms",sep=""),paste("ms",nrow(fas),1))
+        write(file=paste(strsplit(fasta.files[u],".fas")[[1]],".ms",sep=""),"//",append=T)
+        write(file=paste(strsplit(fasta.files[u],".fas")[[1]],".ms",sep=""),paste("segsites:",0),append=T)
+        write(file=paste(strsplit(fasta.files[u],".fas")[[1]],".ms",sep=""),paste("positions:"),append=T)
       }
       next
     }
@@ -62,11 +62,11 @@ fasta2ms<-function(path.to.fasta,fasta.files,write.file=T){
     }
 
     if(write.file==T){
-      write(file=paste(fasta.files[u],".ms",sep=""),paste("ms",nrow(fas),1))
-      write(file=paste(fasta.files[u],".ms",sep=""),"//",append=T)
-      write(file=paste(fasta.files[u],".ms",sep=""),paste("segsites:",ncol(bin)),append=T)
-      write(file=paste(fasta.files[u],".ms",sep=""),paste("positions:   ",paste(pos,collapse="    ")),append=T)
-      write(file=paste(fasta.files[u],".ms",sep=""),seqs,sep="\n",append=T)
+      write(file=paste(strsplit(fasta.files[u],".fas")[[1]],".ms",sep=""),paste("ms",nrow(fas),1))
+      write(file=paste(strsplit(fasta.files[u],".fas")[[1]],".ms",sep=""),"//",append=T)
+      write(file=paste(strsplit(fasta.files[u],".fas")[[1]],".ms",sep=""),paste("segsites:",ncol(bin)),append=T)
+      write(file=paste(strsplit(fasta.files[u],".fas")[[1]],".ms",sep=""),paste("positions:   ",paste(pos,collapse="    ")),append=T)
+      write(file=paste(strsplit(fasta.files[u],".fas")[[1]],".ms",sep=""),seqs,sep="\n",append=T)
     }
 
     if(write.file==F){
