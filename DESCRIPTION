@@ -1,8 +1,8 @@
 Package: PipeMaster
 Type: Package
 Title: Building and Simulating Coalescent models.
-Version: 0.0.9
-Date: 2017-03-22
+Version: 0.2.3
+Date: 2021-09-01
 Authors@R: c(person("Marcelo", "Gehara", email = "marcelo.gehara@gmail.com", role = c("aut", "cre")),
              person("Guilherme","Mazzocchini", role="aut"),
              person("Frank","Burbrink", role="aut"))
