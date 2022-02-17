@@ -62,7 +62,10 @@ single.pop.demog<-function(nsims,
       prob<-summary(prob)
       tabela<-rbind(tabela,prob$neuralnet$Prob)
       }
+      write.table(tabela, "partial_results.txt")
     }
+
+
 
     if(CV==T){
       cv<-cv4postpr(index,models,nval=nval,tols=tol,method=method)
