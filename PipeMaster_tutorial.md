@@ -76,9 +76,6 @@ Go to the R console, install devtools and then PipeMaster:
   ```
   install.packages("devtools")
   devtools::install_github("gehara/PipeMaster")
-  ## install  POPdemog to be able to plot your models                
-  install.packages("https://github.com/YingZhou001/POPdemog/raw/master/POPdemog_1.0.3.tar.gz",
-                 repos=NULL)
   
   ```
 
