@@ -76,8 +76,8 @@ sim.msABC.sanger <- function(model,use.alpha=F, nsim.blocks=5, path=getwd(), app
     file.remove(paste(".",t,"_param",sep=""))
   }
 
-  write.table(ss,file=paste(output.name,"_stats.txt",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
-  write.table(param,file=paste(output.name,"_param.txt",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
+  write.table(simulations, file = paste(output.name, "_stats.txt", sep=""), quote=F, row.names = F, col.names = F, append=T, sep="\t")
+  write.table(parameters, file = paste(output.name, "_param.txt", sep=""), quote=F, row.names = F, col.names = F, append=T, sep="\t")
 
   end.time <- Sys.time()
   total.sims <- total.sims+(block.size*ncores)
