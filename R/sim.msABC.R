@@ -21,15 +21,27 @@ sim.msABC.sanger <- function(model,use.alpha=F, nsim.blocks=5, path=getwd(), app
 
   # set working directory
   setwd(path)
-
+  locfile <- PipeMaster:::get.locfile(model)
   if(append.sims==F){
+    com <- PipeMaster:::msABC.commander(model,use.alpha=use.alpha,arg=1)
+    write.table(locfile,paste(".",1,"locfile.txt",sep=""),row.names = F,col.names = T,quote = F,sep=" ")
     options(warn=-1)
-  com <- ms.commander2(model, use.alpha = use.alpha)
-  nam <- strsplit(system(paste(msABC.call,sum(as.numeric(model$I[1,4:5])),1,com[[1]]), intern=T)[1],"\t")
-  write.table(t(nam[[1]]),file=paste(output.name,"_stats.txt",sep=""),quote=F,row.names = F, col.names = F, append=F,sep="\t")
-  write.table(t(com[[nrow(model$loci)+1]][1,]),file=paste(output.name,"_param.txt",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
-  options(warn=0)
-   }
+    x <- strsplit(system2(msABC.call, args=com[[1]], stdout = T,stderr=T,wait=T),"\t")
+    options(warn=0)
+    nam<-x[1][[1]]
+    #TD_denom <- paste(nam[grep("pi",nam)],nam[grep("_w",nam)],sep="_")
+    #nam<-nam[-grep("ZnS",nam)]
+    #nam<-nam[-grep("thomson",nam)]
+    #cols <- grep("fwh",nam)
+    #cols <- grep("thomson",nam)
+    #cols <- c(cols, grep("ZnS",nam))
+    #cols <- c(cols,grep("_FayWuH",nam))
+    #if(length(cols)!=0) nam <- nam[-cols]
+    #nam <- c(nam, TD_denom)
+    nam <- c(com[[2]][1,], model$loci[,1], nam)
+    #t(paste(nam,"_skew",sep="")),t(paste(nam,"_var",sep="")))
+    write.table(t(nam),file=paste("SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")
+  }
 
   dput(model, ".model")
   dput(list(msABC.call, block.size, use.alpha), ".objects")
@@ -61,12 +73,6 @@ sim.msABC.sanger <- function(model,use.alpha=F, nsim.blocks=5, path=getwd(), app
     simulations <- rbind(simulations, res)
   }
 
-  parameters <- NULL
-  for(h in 1:ncores){
-    res <- read.table(file = paste(".",  h,"_param",sep=""))
-    parameters <- rbind(parameters, res)
-  }
-
   cat("Writing simulations to file", sep="\n")
 
 
@@ -74,11 +80,9 @@ sim.msABC.sanger <- function(model,use.alpha=F, nsim.blocks=5, path=getwd(), app
 
   for(t in 1:ncores){
     file.remove(paste(".",t,"_stats",sep=""))
-    file.remove(paste(".",t,"_param",sep=""))
-  }
+   }
 
-  write.table(simulations, file = paste(output.name, "_stats.txt", sep=""), quote=F, row.names = F, col.names = F, append=T, sep="\t")
-  write.table(parameters, file = paste(output.name, "_param.txt", sep=""), quote=F, row.names = F, col.names = F, append=T, sep="\t")
+  write.table(simulations, file = paste("SIMS_",output.name,".txt",sep=""), quote=F, row.names = F, col.names = F, append=T, sep="\t")
 
   end.time <- Sys.time()
   total.sims <- total.sims+(block.size*ncores)

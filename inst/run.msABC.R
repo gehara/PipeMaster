@@ -24,6 +24,11 @@ use.alpha <- obj[[3]]
     #ss<-Reduce("+",SS)/nrow(model$loci)
     SS <- do.call("rbind", SS)
 
+    SS.means <- colMeans(SS, na.rm=T)
+    SS.vars <- diag(var(SS, na.rm = T))
+
+    SS <- as.vector(rbind(SS.means,SS.vars))
+
     #while(sum(as.numeric(is.na(colMeans(SS,na.rm = T))))>=1){
     # com<-msABC.commander(model,use.alpha=use.alpha)
     #  SS<-list()
@@ -34,13 +39,13 @@ use.alpha <- obj[[3]]
     #  options(warn=0)
     #  SS<-do.call("rbind", SS)
     #}
-    ss<-rbind(ss,colMeans(SS,na.rm = T))
-    param<-rbind(param,com[[nrow(model$loci)+1]][2,])
+    ss <- rbind(ss, SS)
+    par <- com[[nrow(model$loci)+1]][2,]
+    param <- rbind(param, par[-length(par)])
 
   }
 
-  write.table(ss,file=paste(".",args,"_stats",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
-  write.table(param,file=paste(".",args,"_param",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
+  write.table(data.frame(cbind(param,ss)), file=paste(".",args,"_stats",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
 
   write(1, file=".log", append = T)
 
