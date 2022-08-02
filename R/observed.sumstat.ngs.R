@@ -77,9 +77,6 @@ obs.sumstat.ngs<-function(model=NULL,path.to.fasta,pop.assign,moments=F,msABC.ca
 
   observed<-as.vector(t(observed))
 
-  model$I <- model$I[1:10, ]
-  model$loci <- model$loci[1:10, ]
-  model$I[,4:ncol(model$I)] <- round(runif(10*as.numeric(model$I[1,3]), 6, 10))
   com <- PipeMaster:::msABC.commander(model,use.alpha=F,arg=1)
   locfile <- PipeMaster:::get.locfile(model)
   msABC.path <- find.package("PipeMaster")
