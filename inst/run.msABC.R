@@ -2,6 +2,7 @@ args = commandArgs(trailingOnly=TRUE)
 
 print(paste("core",args,"running"))
 
+library(msm)
 model <- dget(".model")
 obj <- dget(".objects")
 block.size <- obj[[2]]
