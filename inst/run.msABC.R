@@ -18,7 +18,7 @@ use.alpha <- obj[[3]]
     SS<-list()
     options(warn=-1)
     for(u in 1:nrow(model$loci)){
-      SS[[u]] <- as.numeric(strsplit(system(paste(msABC.call,sum(as.numeric(model$I[u,4:5])),1,com[[u]]), intern=T)[2],"\t")[[1]])
+      SS[[u]] <- as.numeric(strsplit(system(paste(msABC.call,sum(as.numeric(model$I[u,4:ncol(model$I)])),1,com[[u]]), intern=T)[2],"\t")[[1]])
     }
     options(warn=0)
 
