@@ -16,7 +16,7 @@
 #' @author Marcelo Gehara
 #' @note This function does not work on Windows systems.
 #' @export
-sim.msABC.sanger <- function(model,use.alpha=F, nsim.blocks=5, path=getwd(), append.sims=F, block.size=1000,
+sim.msABC.sanger <- function(model, use.alpha=F, nsim.blocks=5, path=getwd(), append.sims=F, block.size=1000,
                     msABC.call = get.msABC(), output.name="model", ncores=1) {
 
   # set working directory
@@ -74,15 +74,14 @@ sim.msABC.sanger <- function(model,use.alpha=F, nsim.blocks=5, path=getwd(), app
   }
 
   cat("Writing simulations to file", sep="\n")
+  write.table(simulations, file = paste("SIMS_",output.name,".txt",sep=""), quote=F, row.names = F, col.names = F, append=T, sep="\t")
 
 
   cat("Removing old simulations", sep="\n")
-
   for(t in 1:ncores){
     file.remove(paste(".",t,"_stats",sep=""))
    }
 
-  write.table(simulations, file = paste("SIMS_",output.name,".txt",sep=""), quote=F, row.names = F, col.names = F, append=T, sep="\t")
 
   end.time <- Sys.time()
   total.sims <- total.sims+(block.size*ncores)
