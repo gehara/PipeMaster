@@ -69,7 +69,7 @@ sim.msABC.sanger <- function(model,use.alpha=F, nsim.blocks=5, path=getwd(), app
   simulations <- NULL
   cat("Reading simulations from worker nodes", sep="\n")
   for(h in 1:ncores){
-    res <- read.table(file = paste(".",h,"_stats",sep="\t"))
+    res <- read.table(file = paste(".",h,"_stats",sep=""), sep="\t")
     simulations <- rbind(simulations, res)
   }
 
