@@ -45,8 +45,8 @@ sim.msABC.sanger <- function(model,use.alpha=F, nsim.blocks=5, path=getwd(), app
 
   dput(model, ".model")
   dput(list(msABC.call, block.size, use.alpha), ".objects")
-  file.copy(paste(system.file(package="PipeMaster"),"/run.msABC.R", sep=""), paste(path,"/.msABC.R", sep=""), overwrite = T)
-  Sys.chmod(paths = paste(path,"/.msABC.R", sep=""), mode = 777, use_umask = TRUE)
+  file.copy(paste(system.file(package="PipeMaster"),"/run.msABC.R", sep=""), paste(path,"/.msABC.R", sep=""), overwrite = T, copy.mode=T)
+  Sys.chmod(paths = paste(path,"/.msABC.R", sep=""), mode = "777", use_umask = T)
 
   total.sims<-0
   for(k in 1:nsim.blocks){
@@ -69,7 +69,7 @@ sim.msABC.sanger <- function(model,use.alpha=F, nsim.blocks=5, path=getwd(), app
   simulations <- NULL
   cat("Reading simulations from worker nodes", sep="\n")
   for(h in 1:ncores){
-    res <- read.table(file = paste(".",h,"_stats",sep=""))
+    res <- read.table(file = paste(".",h,"_stats",sep="\t"))
     simulations <- rbind(simulations, res)
   }
 
