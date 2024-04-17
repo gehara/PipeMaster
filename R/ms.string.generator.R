@@ -17,14 +17,14 @@ ms.string.generator<-function(model,size.pars,mig.pars,time.pars,use.alpha,scala
 
 
   # generate Ne string
-  if(model$I[1,3]!="1"){
+
     if(nrow(curr.Ne)==1){
       string[[1]]<-paste(curr.Ne[2:4],collapse = " ")
       } else {
         l<-apply(curr.Ne[,c(2:4)],1,paste,collapse=" ")
         string[[1]]<-paste(l,collapse = " ")
       }
-    }
+
 
   # generate alpha string
   if(use.alpha[1]==T){
