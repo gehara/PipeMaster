@@ -74,11 +74,17 @@ msABC.commander<-function(model,use.alpha=use.alpha,arg){
   y <- paste(sum(as.numeric(model$I[1,4:ncol(model$I)])),1,paste(model$I[1,2:ncol(model$I)],collapse=" "),collapse=" ")
   ######### generate locfile part of the command
   loc.string <- paste("--frag-begin --finp .",arg,"locfile.txt --N ",Ne0," --frag-end",sep="")
+
+  if(model$I[1, 3]=="1"){
+    y <- paste(strsplit(y," ")[[1]][1:2], collapse = " ")
+    string <- gsub("-n 1","-t", string)
+  }
+
   #### final command
-  commands[[1]]<-paste(y,string,loc.string, collapse=" ")
+  commands[[1]] <- paste(y,string,loc.string, collapse=" ")
 
   #### attach sampled parameters
-  commands[[2]]<-t(parameters)
+  commands[[2]] <- t(parameters)
   return(commands)
   }
 
