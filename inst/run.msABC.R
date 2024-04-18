@@ -25,7 +25,7 @@ use.alpha <- obj[[3]]
     #ss<-Reduce("+",SS)/nrow(model$loci)
     SS <- do.call("rbind", SS)
 
-    SS.means <- colMeans(SS, na.rm=T)
+    SS.means <- colMeans(SS, na.rm = T)
     SS.vars <- diag(var(SS, na.rm = T))
 
     SS <- as.vector(rbind(SS.means,SS.vars))

@@ -76,8 +76,7 @@ msABC.commander<-function(model,use.alpha=use.alpha,arg){
   loc.string <- paste("--frag-begin --finp .",arg,"locfile.txt --N ",Ne0," --frag-end",sep="")
 
   if(model$I[1, 3]=="1"){
-    y <- paste(strsplit(y," ")[[1]][1:2], collapse = " ")
-    string <- gsub("-n 1","-t", string)
+    string <- gsub("-n 1","-en 0 1", string)
   }
 
   #### final command
