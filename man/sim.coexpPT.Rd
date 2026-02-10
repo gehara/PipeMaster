@@ -22,7 +22,7 @@ sim.coexpPT(
 
 \item{var.zeta}{Variation on zeta parameter. Can be "FREE" to vary or be set to a specific value (between 0-1).}
 
-\item{coexp.prior}{Uniform prior for the coespansion time. Vector of two numbers with the lower and upper boudary of the prior.}
+\item{coexp.prior}{Uniform prior for the coexpansion time. Vector of two numbers with the lower and upper boundary of the prior.}
 
 \item{Ne.prior}{Data frame with the prior values for the Ne of each population.}
 
@@ -32,11 +32,11 @@ sim.coexpPT(
 
 \item{gene.prior}{Data frame with parameter values for the priors of the mutation rate of each species.}
 
-\item{alpha}{logical. If TRUE all demographic chages are exponential. If FALSE sudden changes. Defaut is FALSE.}
+\item{alpha}{logical. If TRUE all demographic changes are exponential. If FALSE sudden changes. Default is FALSE.}
 
-\item{append.sims}{logical. If TRUE simulations are appended to the simulations file.  Defaut is FALSE.}
+\item{append.sims}{logical. If TRUE simulations are appended to the simulations file. Default is FALSE.}
 
-\item{path}{Path to the directiry to write the simulations. Defaut is the working directory.}
+\item{path}{Path to the directory to write the simulations. Default is the working directory.}
 }
 \description{
 Simulation of the PT model of Gehara et al. (2017)

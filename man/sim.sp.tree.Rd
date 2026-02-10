@@ -31,7 +31,7 @@ sim.sp.tree(
 
 \item{bifurcating}{Logical. If TRUE the bifurcating topology is simulated.}
 
-\item{migration}{Logical. If TRUE gene flow between two branches is allowed. Migrarion prior need to be specified in the 'mig' argument. hib.clade, hib.priors, major.sister and minor.sister need to be specified.}
+\item{migration}{Logical. If TRUE gene flow between two branches is allowed. Migration prior need to be specified in the 'mig' argument. hib.clade, hib.priors, major.sister and minor.sister need to be specified.}
 
 \item{admixture}{Logical. If TRUE an admixture event between two branches is allowed. hib.clade, hib.priors, major.sister and minor.sister need to be specified.}
 

@@ -10,7 +10,7 @@ get.prior.table(model)
 \item{model}{A model object.}
 }
 \value{
-A data frame with 4 columns: parameter name, first parameter of prior distribution, secound parameter of prior distribution, prior distribution.
+A data frame with 4 columns: parameter name, first parameter of prior distribution, second parameter of prior distribution, prior distribution.
 }
 \description{
 This function makes a table with the parameters of the model and respective prior distribution.

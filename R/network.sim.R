@@ -122,7 +122,7 @@ taxons.to.numbers<-function(tree,namelist=F){
 #'  Get tree information
 #' @description Get information of tip names, associated numbers and node heights.
 #' @param tree The bifurcating tree topology in newick format.
-#' @return A list containing the tip names, the newick tree with numbers and a matrix with the node hwighs.
+#' @return A list containing the tip names, the newick tree with numbers and a matrix with the node heights.
 #' @export
 get.tree.info<-function(tree){
 
@@ -158,7 +158,7 @@ get.tree.info<-function(tree){
 #' @param tree The bifurcating tree topology in newick format.
 #' @param Ne.prior A vector of two values representing the min and max boundaries of a uniform prior for Ne.
 #' @param bifurcating Logical. If TRUE the bifurcating topology is simulated.
-#' @param migration Logical. If TRUE gene flow between two branches is allowed. Migrarion prior need to be specified in the 'mig' argument. hib.clade, hib.priors, major.sister and minor.sister need to be specified.
+#' @param migration Logical. If TRUE gene flow between two branches is allowed. Migration prior need to be specified in the 'mig' argument. hib.clade, hib.priors, major.sister and minor.sister need to be specified.
 #' @param admixture Logical. If TRUE an admixture event between two branches is allowed. hib.clade, hib.priors, major.sister and minor.sister need to be specified.
 #' @param mig A vector of two values representing the min and max boundaries of a uniform prior for gene flow in number of migrant copies (4Nm).
 #' @param hib.clade a vector of numbers indicating the hybrid clade. Number associated with terminals can be checked with the get.tree.info function.
@@ -377,7 +377,7 @@ sim.sp.tree<-function(tree,
 #' @description Calculation of paiwise distance between the tips of the tree.
 #' @param tree The species tree topology in newick format.
 #' @param path path to the directory containing fasta files to be included in the calculation.
-#' @return Pairwise distances betwen tips of species tree.
+#' @return Pairwise distances between tips of species tree.
 #' @export
 observed.pw.distances<-function(tree, path){
   tree<-get.tree.info(tree)

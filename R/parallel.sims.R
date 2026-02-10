@@ -1,6 +1,7 @@
 
 parallel.sims<-function(ncores,code,model)
 {
+  .Deprecated(msg = "parallel.sims() is deprecated. sim.msABC.sumstat() and sim.msABC.sanger() now support parallel execution natively via the 'ncores' parameter.")
 
   model.name<-strsplit(code,",")[[1]]
   model.name<-model.name[grep("output.name",model.name)]

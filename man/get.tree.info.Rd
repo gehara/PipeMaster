@@ -10,7 +10,7 @@ get.tree.info(tree)
 \item{tree}{The bifurcating tree topology in newick format.}
 }
 \value{
-A list containing the tip names, the newick tree with numbers and a matrix with the node hwighs.
+A list containing the tip names, the newick tree with numbers and a matrix with the node heights.
 }
 \description{
 Get information of tip names, associated numbers and node heights.

@@ -31,9 +31,9 @@ single.pop.demog(
 
 \item{observed}{Observed summary statistics calculated for the empirical data.}
 
-\item{alpha}{logical. If TRUE all demographic chages are exponential. If FALSE sudden changes. Defaut is FALSE.}
+\item{alpha}{logical. If TRUE all demographic changes are exponential. If FALSE sudden changes. Default is FALSE.}
 
-\item{tol}{Tolerance level of the ABC analysis. Ignored if do.ABC = FALSE. Defaut is 0.01.}
+\item{tol}{Tolerance level of the ABC analysis. Ignored if do.ABC = FALSE. Default is 0.01.}
 
 \item{nval}{Number of validations for the cross-validation of the ABC. Ignored if do.ABC = FALSE. Default is 100.}
 
@@ -41,16 +41,16 @@ single.pop.demog(
 
 \item{do.PCA}{logical. If TRUE PCA of the observed against the simulated data is performed. Default is FALSE.}
 
-\item{CV}{logical. If TRUE cros-validation is performed. Defaut is FALSE}
+\item{CV}{logical. If TRUE cross-validation is performed. Default is FALSE.}
 
-\item{mod}{3 x 2 matrix of multiplyer priors (unif: min, max) for ancestral population sizes for each model. Default: cbind(c(1,0.001,2),c(1,0.1,20)). First row: constant size; min 1, max 1. Secound row: expansion; min 0.001, max 0.1. Third row: bottleneck; min 2, max 20.}
+\item{mod}{3 x 2 matrix of multiplier priors (unif: min, max) for ancestral population sizes for each model. Default: cbind(c(1,0.001,2),c(1,0.1,20)). First row: constant size; min 1, max 1. Second row: expansion; min 0.001, max 0.1. Third row: bottleneck; min 2, max 20.}
 
-\item{path}{Path to the directory to write the simulations. Defaut is the working directory.}
+\item{path}{Path to the directory to write the simulations. Default is the working directory.}
 }
 \description{
-Test for constant size, population expantion and bottleneck for single population (non hiersrchical).
+Test for constant size, population expansion and bottleneck for single population (non hierarchical).
 }
 \details{
 This function will take the same inputs used in the codemographic simulations and test for demographic change for each
-population separatelly. This test could be usefull to select which populations will be included in the codemographic model and to optimize the prior distributions.
+population separately. This test could be useful to select which populations will be included in the codemographic model and to optimize the prior distributions.
 }

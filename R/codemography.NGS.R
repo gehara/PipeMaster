@@ -2,18 +2,18 @@
 #' @description Simulation of codemographic models
 #' @param nsims Total number of simulations
 #' @param var.zeta Variation on zeta parameter. Can be "FREE" to vary or be set to a specific value (between 0-1).
-#' @param coexp.prior Uniform prior for the coespansion time. Vector of two numbers with the lower and upper boudary of the prior.
+#' @param coexp.prior Uniform prior for the coexpansion time. Vector of two numbers with the lower and upper boundary of the prior.
 #' @param th Threshold. Minimum time difference between Ts, time of simultaneous change and population specific times.
 #' @param Ne.prior Data frame with the prior values for the Ne of each population.
 #' @param NeA.prior Data frame with the prior values for the ancestral Ne of each population.
 #' @param time.prior Data frame with parameter values for the priors of the time of demographic change of each population.
 #' @param gene.prior Data frame with parameter values for the priors of the mutation rate of each species.
-#' @param alpha logical. If TRUE all demographic chages are exponential. If FALSE sudden changes. Defaut is FALSE.
-#' @param append.sims logical. If TRUE simulations are appended to the simulations file.  Defaut is FALSE.
-#' @param mu.rates list. A list of parameters of mutation rate prior distribution. Fist parameter: the type of distribution. Secound element should be NA. Third and remainning elements are parameters of the distribution which should be givin in order. For instance if using the rnorm distribution the third parameter is the mean and the forth the SD.
-#' @param path Path to the directiry to write the simulations. Defaut is the working directory.
+#' @param alpha logical. If TRUE all demographic changes are exponential. If FALSE sudden changes. Default is FALSE.
+#' @param append.sims logical. If TRUE simulations are appended to the simulations file. Default is FALSE.
+#' @param mu.rates list. A list of parameters of mutation rate prior distribution. First parameter: the type of distribution. Second element should be NA. Third and remaining elements are parameters of the distribution which should be given in order. For instance if using the rnorm distribution the third parameter is the mean and the fourth the SD.
+#' @param path Path to the directory to write the simulations. Default is the working directory.
 #' @details To simulate the model of Chan et al. (2014) the th parameter should be set to zero and the time.prior should have the same value of the coexp.prior.
-#' @details To simulate the Threshold model the th argument need to be higher than zero. To simulate the Narrow Coexpansion Time model the th argument need to be higher than zero and the boundaries of coexp.time shoud be narrower than the time.prior values.
+#' @details To simulate the Threshold model the th argument need to be higher than zero. To simulate the Narrow Coexpansion Time model the th argument need to be higher than zero and the boundaries of coexp.time should be narrower than the time.prior values.
 #' See references for more details. Use the sim.coexp2 function to simulate the partitioned time model.
 #' @references Gehara M., Garda A.A., Werneck F.P. et al. (2017) Estimating synchronous demographic changes across populations using hABC and its application for a herpetological community from northeastern Brazil. Molecular Ecology, 26, 4756–4771.
 #' @references Chan Y.L., Schanzenbach D., & Hickerson M.J. (2014) Detecting concerted demographic response across community assemblages using hierarchical approximate Bayesian computation. Molecular Biology and Evolution, 31, 2501–2515.
@@ -38,10 +38,10 @@ sim.coexp.ngs<-function(nsims,
   if(append.sims==F){
     simulations<-matrix(nrow=1,ncol=28)
     simulations[1,]<-c("zeta","ts","E(t)","DI",
-                       "s_average_segs", "s_average_pi", "s_average_w"," s_average_tajd", "s_average_dvk", "s_average_dvh",
-                       "s_variance_segs", "s_variance_pi", "s_variance_w", "s_variance_tajd", "s_variance_dvk", "s_variance_dvh",
-                       "s_kurtosis_segs", "s_kurtosis_pi", "s_kurtosis_w", "s_kurtosis_tajd", "s_kurtosis_dvk", "s_kurtosis_dvh",
-                       "s_skewness_segs", "s_skewness_pi", "s_skewness_w", "s_skewness_tajd", "s_skewness_dvk", "s_skewness_dvh")
+                       "s_mean_segs", "s_mean_pi", "s_mean_w", "s_mean_tajd", "s_mean_dvk", "s_mean_dvh",
+                       "s_var_segs", "s_var_pi", "s_var_w", "s_var_tajd", "s_var_dvk", "s_var_dvh",
+                       "s_kurt_segs", "s_kurt_pi", "s_kurt_w", "s_kurt_tajd", "s_kurt_dvk", "s_kurt_dvh",
+                       "s_skew_segs", "s_skew_pi", "s_skew_w", "s_skew_tajd", "s_skew_dvk", "s_skew_dvh")
 
     write.table(simulations,file="simulations.txt", quote=F,row.names=F, col.names=F, sep="\t")
     }
@@ -157,7 +157,6 @@ coexp.sample.pars.msABC<-function(nruns,
 # @return ms simulations
 coexp.msABC<-function(MS.par, gene.prior, alpha, pop.par, mu.rates) {
 
-  msABC <- PipeMaster:::get.msABC()
   nspecies <- length(MS.par)
   nruns<-nrow(MS.par[[1]])
   sim<-list(NULL)
@@ -174,10 +173,10 @@ coexp.msABC<-function(MS.par, gene.prior, alpha, pop.par, mu.rates) {
 
       write.table(locfile,paste(".locfile.txt",sep=""),row.names = F,col.names = T,quote = F,sep=" ")
 
-      sims <- read.table(text=system(paste(msABC,gene.prior[[xx]][1,2],1,"-eN",MS.par[[xx]][ii,2],MS.par[[xx]][ii,3],
-                                           "--frag-begin --finp .locfile.txt --N",pop.par[[xx]][ii,1],"--frag-end"), intern = T), sep="\t", header=T)
+      sims <- read.table(text=run.msABC(paste(gene.prior[[xx]][1,2],1,"-eN",MS.par[[xx]][ii,2],MS.par[[xx]][ii,3],
+                                              "--frag-begin --finp .locfile.txt --N",pop.par[[xx]][ii,1],"--frag-end")), sep="\t", header=T)
 
-      sims <- sims[,grep("average",colnames(sims))]
+      sims <- sims[,grep("^s_mean_",colnames(sims))]
       sims <- sims[,-grep("thomson",colnames(sims))]
       sims <- sims[,-grep("ZnS",colnames(sims))]
       sims <- sims[,-grep("FayWuH",colnames(sims))]
@@ -193,9 +192,9 @@ coexp.msABC<-function(MS.par, gene.prior, alpha, pop.par, mu.rates) {
   kur <- apply(sim, 2, kurtosis, na.rm = T)
   skew <- apply(sim, 2, skewness, na.rm = T)
 
-  names(skew)<-gsub("average","skewness",names(skew))
-  names(vari)<-gsub("average","variance",names(vari))
-  names(kur)<-gsub("average","kurtosis",names(kur))
+  names(skew)<-gsub("s_mean_","s_skew_",names(skew))
+  names(vari)<-gsub("s_mean_","s_var_",names(vari))
+  names(kur)<-gsub("s_mean_","s_kurt_",names(kur))
 
   return(c(average,vari,kur,skew))
 }

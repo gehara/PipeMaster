@@ -24,7 +24,7 @@ sim.coexp.ngs(
 
 \item{var.zeta}{Variation on zeta parameter. Can be "FREE" to vary or be set to a specific value (between 0-1).}
 
-\item{coexp.prior}{Uniform prior for the coespansion time. Vector of two numbers with the lower and upper boudary of the prior.}
+\item{coexp.prior}{Uniform prior for the coexpansion time. Vector of two numbers with the lower and upper boundary of the prior.}
 
 \item{th}{Threshold. Minimum time difference between Ts, time of simultaneous change and population specific times.}
 
@@ -36,13 +36,13 @@ sim.coexp.ngs(
 
 \item{gene.prior}{Data frame with parameter values for the priors of the mutation rate of each species.}
 
-\item{mu.rates}{list. A list of parameters of mutation rate prior distribution. Fist parameter: the type of distribution. Secound element should be NA. Third and remainning elements are parameters of the distribution which should be givin in order. For instance if using the rnorm distribution the third parameter is the mean and the forth the SD.}
+\item{mu.rates}{list. A list of parameters of mutation rate prior distribution. First parameter: the type of distribution. Second element should be NA. Third and remaining elements are parameters of the distribution which should be given in order. For instance if using the rnorm distribution the third parameter is the mean and the fourth the SD.}
 
-\item{alpha}{logical. If TRUE all demographic chages are exponential. If FALSE sudden changes. Defaut is FALSE.}
+\item{alpha}{logical. If TRUE all demographic changes are exponential. If FALSE sudden changes. Default is FALSE.}
 
-\item{append.sims}{logical. If TRUE simulations are appended to the simulations file.  Defaut is FALSE.}
+\item{append.sims}{logical. If TRUE simulations are appended to the simulations file. Default is FALSE.}
 
-\item{path}{Path to the directiry to write the simulations. Defaut is the working directory.}
+\item{path}{Path to the directory to write the simulations. Default is the working directory.}
 }
 \description{
 Simulation of codemographic models
@@ -50,7 +50,7 @@ Simulation of codemographic models
 \details{
 To simulate the model of Chan et al. (2014) the th parameter should be set to zero and the time.prior should have the same value of the coexp.prior.
 
-To simulate the Threshold model the th argument need to be higher than zero. To simulate the Narrow Coexpansion Time model the th argument need to be higher than zero and the boundaries of coexp.time shoud be narrower than the time.prior values.
+To simulate the Threshold model the th argument need to be higher than zero. To simulate the Narrow Coexpansion Time model the th argument need to be higher than zero and the boundaries of coexp.time should be narrower than the time.prior values.
 See references for more details. Use the sim.coexp2 function to simulate the partitioned time model.
 }
 \references{

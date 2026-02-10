@@ -10,10 +10,10 @@ H.div(x)
 \item{x}{a DNAbin object}
 }
 \value{
-Number of haplotypes and haplotype diversity and of x.
+Number of haplotypes and haplotype diversity of x.
 }
 \description{
-This function calculates haplotipe diversity from DNAbin sequence file
+This function calculates haplotype diversity from DNAbin sequence file
 }
 \note{
 requires Pegas package

@@ -17,6 +17,11 @@
 #' @export
 sim.ms.sumstat<-function(model,use.alpha=F,nsim.blocks=1,sim.block.size=1000,path=getwd(),perpop.SS=T,overall.SS=T,
                       output.name="model",get.moments=F,append.sims=F){
+  .Deprecated("sim.msABC.sumstat", package = "PipeMaster",
+              msg = "sim.ms.sumstat() is deprecated. Use sim.msABC.sumstat() or sim.msABC.sanger() instead, which use the built-in msABC C code and do not require PopGenome.")
+  if (!requireNamespace("PopGenome", quietly = TRUE)) {
+    stop("sim.ms.sumstat() requires the PopGenome package. Please use sim.msABC.sumstat() instead.")
+  }
 
   # get population structure
   pops<-get.pops(model)

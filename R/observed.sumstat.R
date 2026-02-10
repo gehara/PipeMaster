@@ -14,6 +14,11 @@
 #' @note This function does not work on Windows systems.
 #' @export
 observed.sumstat<-function(model,path.to.fasta,fasta.files=list.files(),overall.SS=T,perpop.SS=T,get.moments=T){
+  .Deprecated("obs.sumstat.ngs", package = "PipeMaster",
+              msg = "observed.sumstat() is deprecated. Use obs.sumstat.ngs() instead, which uses the built-in msABC C code and does not require PopGenome.")
+  if (!requireNamespace("PopGenome", quietly = TRUE)) {
+    stop("observed.sumstat() requires the PopGenome package. Please use obs.sumstat.ngs() instead.")
+  }
 
   wd.path <- getwd()
 

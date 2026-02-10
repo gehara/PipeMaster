@@ -12,7 +12,7 @@ observed.pw.distances(tree, path)
 \item{path}{path to the directory containing fasta files to be included in the calculation.}
 }
 \value{
-Pairwise distances betwen tips of species tree.
+Pairwise distances between tips of species tree.
 }
 \description{
 Calculation of paiwise distance between the tips of the tree.

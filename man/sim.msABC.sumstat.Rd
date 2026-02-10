@@ -13,20 +13,19 @@ sim.msABC.sumstat(
   rec.rates = NULL,
   append.sims = F,
   block.size = 10,
-  msABC.call = get.msABC(),
   output.name,
   ncores
 )
 }
 \arguments{
-\item{model}{A model object bult by the main.menu function. Both genomic and sanger-type models are allowed.}
+\item{model}{A model object built by the main.menu function. Both genomic and sanger-type models are allowed.}
 
-\item{nsim.blocks}{Number of blocks to simulate. The total number of simulations is: nsim.blocks x sim.block.size.}
+\item{nsim.blocks}{Number of blocks to simulate. The total number of simulations is: nsim.blocks x block.size (x ncores when ncores > 1).}
 
 \item{path}{Path to write the output. By default outputs will be saved in the working directory.}
 
 \item{use.alpha}{Logical. If TRUE the most recent population size change will be exponential. If FALSE sudden demographic changes. Default is FALSE.
-This argument changes ONLY the MOST RECENT demographich change.}
+This argument changes ONLY the MOST RECENT demographic change.}
 
 \item{mu.rates}{List. Distribution to sample the mutation rates. The first element of the list should be the name of the distribution as a character string. All distributions available in r-base and r-package e1071 are allowed.
 The second element of the list must be the number of loci. The following elements are the parameters of the distribution to be passed on to the r-distribution function.
@@ -38,13 +37,12 @@ The second element of the list must be the number of loci. The following element
 
 \item{append.sims}{Logical. If TRUE simulations will be appended in the last output. Default is FALSE.}
 
-\item{msABC.call}{String. Path to the msABC executable. msABC binaries for Mac and Linux are included in the package and should work cases for these operating systems.
-There is no need to change this unless you want to compile the program yourself and point the function to it.}
+\item{block.size}{Simulations are performed in blocks. This argument defines the size of the block in number of simulations, i.e. how many simulations to run per block.
+A block of 1000 will work for most cases. Increase the total number of simulations with nsim.blocks argument.}
 
-\item{output.name}{String. The prefix of the output names. Defalt is "model"}
+\item{output.name}{String. The prefix of the output names. Default is "model".}
 
-\item{sim.block.size}{Simulations are performed in blocks. This argument defines the size of the block in number of simulations, i.e. how many simulations to run per block.
-A block of 1000 will work for most cases. Increse the total number of simulations with nsim.block argument.}
+\item{ncores}{Number of cores for parallel execution. When ncores > 1, separate R worker processes are spawned. Default is 1.}
 }
 \value{
 Writes simulations and parameters to the path directory.
@@ -55,10 +53,42 @@ This function simulates summary statistics using msABC.
              This will simulate the entire loci, not a single SNP.
              You should include all loci in the model object, including invariable ones. Use the get.data.structure function to set up the parameters of the loci - bp and number of individuals - to be simulated.
 }
+\examples{
+\dontrun{
+# Load example demographic models
+data("A_piscivorus", package = "PipeMaster")
+
+# Check model priors
+get.prior.table(Is)
+
+# Quick test run (small block size, single core)
+tmpdir <- tempdir()
+sim.msABC.sumstat(model = Is,
+                  nsim.blocks = 1,
+                  block.size = 10,
+                  path = tmpdir,
+                  use.alpha = FALSE,
+                  output.name = "test_Is",
+                  ncores = 1)
+
+# Read simulated summary statistics
+sim.data <- read.table(file.path(tmpdir, "SIMS_test_Is.txt"), header = TRUE)
+head(sim.data)
+
+# Production run (more simulations, multiple cores)
+# sim.msABC.sumstat(model = IM,
+#                   nsim.blocks = 50,
+#                   block.size = 1000,
+#                   path = tmpdir,
+#                   use.alpha = FALSE,
+#                   output.name = "IM_sims",
+#                   ncores = 4)
+}
+}
 \references{
 Hudson R.R. (2002) Generating samples under a Wright-Fisher neutral model of genetic variation. Bioinformatics, 18, 337–338.
 
-Pavlidis P., Laurent S., & Stephan W. (2010) msABC: A modification of Hudson’s ms to facilitate multi-locus ABC analysis. Molecular Ecology Resources, 10, 723–727.
+Pavlidis P., Laurent S., & Stephan W. (2010) msABC: A modification of Hudson's ms to facilitate multi-locus ABC analysis. Molecular Ecology Resources, 10, 723–727.
 }
 \author{
 Marcelo Gehara

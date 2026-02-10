@@ -3,17 +3,16 @@
 #'              It is optimized for nextgen data, but it should also work for sanger.
 #'              This will simulate the entire loci, not a single SNP.
 #'              You should include all loci in the model object, including invariable ones. Use the get.data.structure function to set up the parameters of the loci - bp and number of individuals - to be simulated.
-#' @param model A model object bult by the main.menu function. Both genomic and sanger-type models are allowed.
+#' @param model A model object built by the main.menu function. Both genomic and sanger-type models are allowed.
 #' @param use.alpha Logical. If TRUE the most recent population size change will be exponential. If FALSE sudden demographic changes. Default is FALSE.
-#'                  This argument changes ONLY the MOST RECENT demographich change.
-#' @param nsim.blocks Number of blocks to simulate. The total number of simulations is: nsim.blocks x sim.block.size.
-#' @param sim.block.size Simulations are performed in blocks. This argument defines the size of the block in number of simulations, i.e. how many simulations to run per block.
-#'                       A block of 1000 will work for most cases. Increse the total number of simulations with nsim.block argument.
+#'                  This argument changes ONLY the MOST RECENT demographic change.
+#' @param nsim.blocks Number of blocks to simulate. The total number of simulations is: nsim.blocks x block.size (x ncores when ncores > 1).
+#' @param block.size Simulations are performed in blocks. This argument defines the size of the block in number of simulations, i.e. how many simulations to run per block.
+#'                   A block of 1000 will work for most cases. Increase the total number of simulations with nsim.blocks argument.
 #' @param path Path to write the output. By default outputs will be saved in the working directory.
-#' @param output.name String. The prefix of the output names. Defalt is "model"
+#' @param output.name String. The prefix of the output names. Default is "model".
 #' @param append.sims Logical. If TRUE simulations will be appended in the last output. Default is FALSE.
-#' @param msABC.call String. Path to the msABC executable. msABC binaries for Mac and Linux are included in the package and should work cases for these operating systems.
-#'                   There is no need to change this unless you want to compile the program yourself and point the function to it.
+#' @param ncores Number of cores for parallel execution. When ncores > 1, separate R worker processes are spawned. Default is 1.
 #' @param mu.rates List. Distribution to sample the mutation rates. The first element of the list should be the name of the distribution as a character string. All distributions available in r-base and r-package e1071 are allowed.
 #'                   The second element of the list must be the number of loci. The following elements are the parameters of the distribution to be passed on to the r-distribution function.
 #'                    Ex.: mu.rates = list("rtnorm", 1000, 1e-9, 1e-9, 0). i.e sample 1000 values using the rtnorm function with mean 1e-9 and SD 1e-9, with lower tail limit at zero.
@@ -21,12 +20,43 @@
 #'                   The second element of the list must be the number of loci. The following elements are the parameters of the distribution to be passed on to the r-distribution function.
 #'                    Ex.: rec.rates = list("rtnorm", 1000, 1e-9, 1e-9, 0). i.e sample 1000 values using the rtnorm function with mean 1e-9 and SD 1e-9, with lower tail limit at zero.
 #' @return Writes simulations and parameters to the path directory.
+#' @examples
+#' \dontrun{
+#' # Load example demographic models
+#' data("A_piscivorus", package = "PipeMaster")
+#'
+#' # Check model priors
+#' get.prior.table(Is)
+#'
+#' # Quick test run (small block size, single core)
+#' tmpdir <- tempdir()
+#' sim.msABC.sumstat(model = Is,
+#'                   nsim.blocks = 1,
+#'                   block.size = 10,
+#'                   path = tmpdir,
+#'                   use.alpha = FALSE,
+#'                   output.name = "test_Is",
+#'                   ncores = 1)
+#'
+#' # Read simulated summary statistics
+#' sim.data <- read.table(file.path(tmpdir, "SIMS_test_Is.txt"), header = TRUE)
+#' head(sim.data)
+#'
+#' # Production run (more simulations, multiple cores)
+#' # sim.msABC.sumstat(model = IM,
+#' #                   nsim.blocks = 50,
+#' #                   block.size = 1000,
+#' #                   path = tmpdir,
+#' #                   use.alpha = FALSE,
+#' #                   output.name = "IM_sims",
+#' #                   ncores = 4)
+#' }
 #' @references Hudson R.R. (2002) Generating samples under a Wright-Fisher neutral model of genetic variation. Bioinformatics, 18, 337–338.
-#' @references Pavlidis P., Laurent S., & Stephan W. (2010) msABC: A modification of Hudson’s ms to facilitate multi-locus ABC analysis. Molecular Ecology Resources, 10, 723–727.
+#' @references Pavlidis P., Laurent S., & Stephan W. (2010) msABC: A modification of Hudson's ms to facilitate multi-locus ABC analysis. Molecular Ecology Resources, 10, 723–727.
 #' @author Marcelo Gehara
 #' @export
 sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.rates=NULL, rec.rates = NULL,
-                            append.sims=F,block.size=10, msABC.call = get.msABC(),output.name,ncores){
+                            append.sims=F,block.size=10,output.name,ncores){
 
   WD<-getwd()
 
@@ -45,9 +75,7 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
   if(append.sims==F){
     com <- PipeMaster:::msABC.commander(model,use.alpha=use.alpha,arg=1)
     write.table(locfile,paste(".",1,"locfile.txt",sep=""),row.names = F,col.names = T,quote = F,sep=" ")
-    options(warn=-1)
-    x <- strsplit(system2(msABC.call, args=com[[1]], stdout = T,stderr=T,wait=T),"\t")
-    options(warn=0)
+    x <- strsplit(run.msABC(com[[1]]),"\t")
     nam<-x[1][[1]]
     #TD_denom <- paste(nam[grep("pi",nam)],nam[grep("_w",nam)],sep="_")
     #nam<-nam[-grep("ZnS",nam)]
@@ -63,114 +91,149 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
     write.table(t(nam),file=paste("SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=F,sep="\t")
 }
 
-  write(paste('arg <- commandArgs(TRUE)',
-              'cat(paste("Core",arg),sep="\\n")',
-              "suppressMessages(library(PipeMaster))",
-              #"suppressMessages(library(devtools))",
-              #"load_all('~/Github/PipeMaster')",
-              'load(file=".PM_objects.RData")',
-              "res<-sim.func(arg)",
-              'save(res,file=paste(".",arg,"_SIMS.rda",sep=""))',
-              'write(1,".log",append=T,sep="\\n")',
-              'invisible(file.remove(paste(".",arg,"locfile.txt",sep="")))',
-              "quit(save='no')",sep="\n"),".script_parallel.R")
+  if(ncores > 1) {
+    # === MULTI-CORE: spawn separate R processes ===
+    abs.path <- normalizePath(getwd())
+    save(model, nsim.blocks, block.size, use.alpha, mu.rates, rec.rates, output.name,
+         file = file.path(abs.path, ".PM_worker_params.RData"))
 
-  sim.func<-function(arg){
-
-      simulations<-NULL
-      for(i in 1:block.size){
-        if(!(is.null(mu.rates))){
-          rates<-do.call(mu.rates[[1]],args=mu.rates[2:length(mu.rates)])
-          rates<-rep(rates, each=as.numeric(model$I[1,3]))
-          rates<-list(rates,c(0,0))
-        } else {
-        rates <- sample.mu.rates(model)
-        }
-        if(!(is.null(rec.rates))){
-          r.rates <- do.call(rec.rates[[1]],args=rec.rates[2:length(rec.rates)])
-          r.rates <- rep(r.rates, each = as.numeric(model$I[1,3]))
-        } else {
-        r.rates <- 0
-        }
-        locfile[,5] <- rates[[1]]
-        locfile[,6] <- r.rates
-
-        write.table(locfile,paste(".",arg,"locfile.txt",sep=""),row.names = F,col.names = T,quote = F,sep=" ")
-        com <- msABC.commander(model, use.alpha=use.alpha,arg=arg)
-        options(warn=-1)
-        sumstat <- read.table(text=system2(msABC.call, args=com[[1]], stdout = T,stderr=T,wait=T),header=T,sep="\t")
-        options(warn=0)
-        sumstat <- subset(sumstat, select=-c(X))
-        #TD_denom <- data.frame(sumstat[,grep("pi",colnames(sumstat))]-sumstat[,grep("_w",colnames(sumstat))])
-        #colnames(TD_denom) <- paste(colnames(sumstat)[grep("pi",colnames(sumstat))],sumstat[,grep("_w",colnames(sumstat))])
-        #sumstat<-sumstat[,-grep("ZnS",colnames(sumstat))]
-        #sumstat<-sumstat[,-grep("thomson",colnames(sumstat))]
-        #sumstat <- cbind(sumstat, TD_denom)
-        #Mean<-apply(sumstat,2,mean, na.rm = T)
-        #var<-apply(sumstat,2,var, na.rm=T)
-        #kur<-apply(sumstat,2,kurtosis, na.rm=T)
-        #skew<-apply(sumstat,2,skewness, na.rm=T)
-
-        #cols <- grep("fwh",colnames(sumstat))
-        cols <- grep("thomson",colnames(sumstat))
-        cols <- c(cols,grep("ZnS",colnames(sumstat)))
-        #cols <- c(cols,grep("_FayWuH",colnames(sumstat)))
-
-        if(length(cols)!=0) sumstat <- sumstat[,-cols]
-
-        param <- c(com[[2]][2,],rates[[2]])
-        names(param) <- c(com[[2]][1,],"mean.rate","sd.rate")
-      simulations <- rbind(simulations,c(param,sumstat))
-      }
-    return(simulations)
-  }
-
-  parentls <- function()ls(envir=parent.frame())
-  save(list=parentls(),file='.PM_objects.RData')
-
-  total.sims<-0
-  for(j in 1:nsim.blocks) {
+    worker_script <- paste(
+      'args <- commandArgs(TRUE)',
+      'worker_id <- as.integer(args[1])',
+      'suppressMessages(library(PipeMaster))',
+      sprintf('base_path <- "%s"', abs.path),
+      'load(file.path(base_path, ".PM_worker_params.RData"))',
+      'worker_dir <- file.path(base_path, paste0(".worker_", worker_id))',
+      'dir.create(worker_dir, showWarnings=FALSE)',
+      'sim.msABC.sumstat(model=model, nsim.blocks=nsim.blocks, block.size=block.size,',
+      '                  path=worker_dir, use.alpha=use.alpha, mu.rates=mu.rates,',
+      '                  rec.rates=rec.rates, append.sims=TRUE,',
+      '                  output.name=output.name, ncores=1)',
+      'write("done", file.path(base_path, paste0(".worker_", worker_id, ".done")))',
+      'quit(save="no")',
+      sep="\n")
+    writeLines(worker_script, file.path(abs.path, ".PM_worker.R"))
 
     start.time <- Sys.time()
-
-    write(0,".log")
-    for(c in 1:ncores){
-      system(paste("Rscript .script_parallel.R",c), wait = F)
+    for(w in 1:ncores) {
+      system(paste("Rscript", file.path(abs.path, ".PM_worker.R"), w,
+                    ">", file.path(abs.path, paste0(".worker_", w, ".log")), "2>&1"),
+             wait = FALSE)
     }
+    cat(paste("PipeMaster:: Launched", ncores, "worker processes"), "\n")
 
-    l<-"0"
-    while(sum(as.numeric(unlist(strsplit(l, "")))) < ncores){
-        Sys.sleep(5)
-        l<-readLines(".log")
+    total_expected <- nsim.blocks * block.size * ncores
+    while(TRUE) {
+      Sys.sleep(5)
+      done_count <- sum(file.exists(file.path(abs.path, paste0(".worker_", 1:ncores, ".done"))))
+
+      total_sims <- 0
+      for(w in 1:ncores) {
+        wf <- file.path(abs.path, paste0(".worker_", w), paste0("SIMS_", output.name, ".txt"))
+        if(file.exists(wf)) {
+          n <- length(readLines(wf))
+          if(n > 0) total_sims <- total_sims + n
+        }
       }
 
-    file.remove(".log")
+      elapsed_h <- as.numeric(difftime(Sys.time(), start.time, units="hours"))
+      if(total_sims > 0 && elapsed_h > 0) {
+        rate <- total_sims / elapsed_h
+        remaining <- round(max(0, (total_expected - total_sims) / rate), 3)
+        cat(paste0("PipeMaster:: ", total_sims, " of ", total_expected,
+                   " (~", round(rate), " sims/h) | ~", remaining,
+                   " hours remaining | ", done_count, "/", ncores, " workers done"), "\n")
+      }
+      if(done_count >= ncores) break
+    }
 
-    simulations<-NULL
-    cat("Reading simulations from worker nodes", sep="\n")
-    for(c in 1:ncores){
-        load(file = paste(".",c,"_SIMS.rda",sep=""))
-        simulations <- rbind(simulations, res)
+    cat("Compiling results from workers", sep="\n")
+    outfile <- file.path(abs.path, paste0("SIMS_", output.name, ".txt"))
+    for(w in 1:ncores) {
+      wf <- file.path(abs.path, paste0(".worker_", w), paste0("SIMS_", output.name, ".txt"))
+      if(file.exists(wf)) {
+        worker_data <- readLines(wf)
+        if(length(worker_data) > 0) {
+          cat(paste(worker_data, collapse="\n"), "\n", file=outfile, append=TRUE, sep="")
         }
-
-    cat("Writing simulations to file", sep="\n")
-
-    write.table(simulations,file=paste("SIMS_",output.name,".txt",sep=""),quote=F,row.names = F,col.names = F, append=T,sep="\t")
-
-    cat("Removing old simulations", sep="\n")
-
-    for(t in 1:ncores){
-    file.remove(paste(".",t,"_SIMS.rda",sep=""))
+      }
+      unlink(file.path(abs.path, paste0(".worker_", w)), recursive=TRUE)
+      f <- file.path(abs.path, paste0(".worker_", w, ".done"))
+      if(file.exists(f)) file.remove(f)
+    }
+    file.remove(file.path(abs.path, ".PM_worker_params.RData"))
+    file.remove(file.path(abs.path, ".PM_worker.R"))
+    for(w in 1:ncores) {
+      f <- file.path(abs.path, paste0(".worker_", w, ".log"))
+      if(file.exists(f)) file.remove(f)
     }
 
     end.time <- Sys.time()
-    total.sims <- total.sims+(block.size*ncores)
-    cycle.time <- (as.numeric(end.time)-as.numeric(start.time))/60/60
-    total.time <- cycle.time*nsim.blocks
-    passed.time <- cycle.time*j
-    remaining.time <- round(total.time-passed.time,3)
-    cat(paste("PipeMaster:: ",total.sims," (~",round((block.size*ncores)/cycle.time)," sims/h) | ~",remaining.time," hours remaining",sep=""),"\n")
+    elapsed_h <- as.numeric(difftime(end.time, start.time, units="hours"))
+    cat(paste0("PipeMaster:: Done! ", total_expected, " simulations in ",
+               round(elapsed_h, 3), " hours (~", round(total_expected / elapsed_h), " sims/h)"), "\n")
+
+  } else {
+    # === SINGLE CORE ===
+    sim.func<-function(arg){
+
+        simulations<-NULL
+        for(i in 1:block.size){
+          if(!(is.null(mu.rates))){
+            rates<-do.call(mu.rates[[1]],args=mu.rates[2:length(mu.rates)])
+            rates<-rep(rates, each=as.numeric(model$I[1,3]))
+            rates<-list(rates,c(0,0))
+          } else {
+          rates <- sample.mu.rates(model)
+          }
+          if(!(is.null(rec.rates))){
+            r.rates <- do.call(rec.rates[[1]],args=rec.rates[2:length(rec.rates)])
+            r.rates <- rep(r.rates, each = as.numeric(model$I[1,3]))
+          } else {
+          r.rates <- 0
+          }
+          locfile[,5] <- rates[[1]]
+          locfile[,6] <- r.rates
+
+          write.table(locfile,paste(".",arg,"locfile.txt",sep=""),row.names = F,col.names = T,quote = F,sep=" ")
+          com <- msABC.commander(model, use.alpha=use.alpha,arg=arg)
+          sumstat <- read.table(text=run.msABC(com[[1]]),header=T,sep="\t")
+          sumstat <- subset(sumstat, select=-c(X))
+
+          cols <- grep("thomson",colnames(sumstat))
+          cols <- c(cols,grep("ZnS",colnames(sumstat)))
+
+          if(length(cols)!=0) sumstat <- sumstat[,-cols]
+
+          param <- c(com[[2]][2,],rates[[2]])
+          names(param) <- c(com[[2]][1,],"mean.rate","sd.rate")
+        simulations <- rbind(simulations,c(param,sumstat))
+        }
+      return(simulations)
+    }
+
+    total.sims <- 0
+    for(j in 1:nsim.blocks) {
+      start.time <- Sys.time()
+      simulations <- sim.func(1)
+
+      cat("Writing simulations to file", sep="\n")
+      write.table(simulations, file=paste("SIMS_",output.name,".txt",sep=""),
+                  quote=F, row.names=F, col.names=F, append=T, sep="\t")
+
+      f <- ".1locfile.txt"
+      if(file.exists(f)) file.remove(f)
+
+      end.time <- Sys.time()
+      total.sims <- total.sims + block.size
+      cycle.time <- (as.numeric(end.time) - as.numeric(start.time)) / 60 / 60
+      total.time <- cycle.time * nsim.blocks
+      passed.time <- cycle.time * j
+      remaining.time <- round(total.time - passed.time, 3)
+      cat(paste("PipeMaster:: ", total.sims, " (~", round(block.size / cycle.time),
+                " sims/h) | ~", remaining.time, " hours remaining", sep=""), "\n")
+    }
   }
-setwd(WD)
+  setwd(WD)
 }
 

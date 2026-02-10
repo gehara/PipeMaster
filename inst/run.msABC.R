@@ -3,11 +3,11 @@ args = commandArgs(trailingOnly=TRUE)
 print(paste("core",args,"running"))
 
 library(msm)
+library(PipeMaster)
 model <- dget(".model")
 obj <- dget(".objects")
-block.size <- obj[[2]]
-msABC.call <- obj[[1]]
-use.alpha <- obj[[3]]
+block.size <- obj[[1]]
+use.alpha <- obj[[2]]
 
   ss <- NULL
   param <- NULL
@@ -18,7 +18,7 @@ use.alpha <- obj[[3]]
     SS<-list()
     options(warn=-1)
     for(u in 1:nrow(model$loci)){
-      SS[[u]] <- as.numeric(strsplit(system(paste(msABC.call,sum(as.numeric(model$I[u,4:ncol(model$I)])),1,com[[u]]), intern=T)[2],"\t")[[1]])
+      SS[[u]] <- as.numeric(strsplit(run.msABC(paste(sum(as.numeric(model$I[u,4:ncol(model$I)])),1,com[[u]]))[2],"\t")[[1]])
     }
     options(warn=0)
 

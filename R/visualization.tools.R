@@ -19,7 +19,7 @@ plot.sim.obs <- function(sim, obs)
 #' @description This function plots a density of the simulated prior.
 #' @param model A model object.
 #' @param nsamples Number of samples to draw from each prior distribution.
-#' @param mu.rates
+#' @param mu.rates List. Distribution to sample the mutation rates. If NULL, rates are sampled from the model. See sim.msABC.sumstat for details.
 #' @return Graphic
 #' @author Marcelo Gehara
 #' @export
@@ -53,7 +53,7 @@ plot.priors <- function(model, nsamples=1000, mu.rates=NULL){
 #' Get a table with prior distributions.
 #' @description This function makes a table with the parameters of the model and respective prior distribution.
 #' @param model A model object.
-#' @return A data frame with 4 columns: parameter name, first parameter of prior distribution, secound parameter of prior distribution, prior distribution.
+#' @return A data frame with 4 columns: parameter name, first parameter of prior distribution, second parameter of prior distribution, prior distribution.
 #' @author Marcelo Gehara
 #' @export
 get.prior.table <- function(model){
@@ -103,9 +103,11 @@ update.priors<-function(tab, model){
 #' @description This function plots a graphical representation of your model.
 #' @param model A model object generated in the main.menu.
 #' @param use.alpha Logical. If TRUE the most recent population size change will be exponential. If FALSE sudden demographic changes. Default is FALSE.
-#'                  This argument changes ONLY the MOST RECENT demographich change. You should indicate the population numbers for the exponential change
-#'                  toguether with the logical argument in a vector. Ex.c(T,1,2)
+#'                  This argument changes ONLY the MOST RECENT demographic change. You should indicate the population numbers for the exponential change
+#'                  together with the logical argument in a vector. Ex.c(T,1,2)
 #' @param average.of.priors logical. if TRUE parameters for the plot will be equal to the average of prior values.
+#' @param xlab Character. Label for the x-axis. Default is "Population".
+#' @param ylab Character. Label for the y-axis. Default is "Time before present (generations)".
 #' @param axes logical. if TRUE plot axes with models. Default is TRUE.
 #' @return Graphic
 #' @author Marcelo Gehara. This function is a wrapper of the PlotMS function of the POPDemog package.
@@ -136,15 +138,13 @@ PlotModel<-function(model, use.alpha=F, average.of.priors=F,
 
 
 #' Multiple plot function
-#
-# ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects)
-# - cols:   Number of columns in layout
-# - layout: A matrix specifying the layout. If present, 'cols' is ignored.
-#
-# If the layout is something like matrix(c(1,2,3,3), nrow=2, byrow=TRUE),
-# then plot 1 will go in the upper left, 2 will go in the upper right, and
-# 3 will go all the way across the bottom.
-#
+#' @description Arrange multiple ggplot objects in a grid layout. ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects).
+#' @param ... ggplot objects to arrange.
+#' @param plotlist A list of ggplot objects. Alternative to passing plots in ...
+#' @param file Unused. Kept for compatibility.
+#' @param cols Number of columns in the layout. Default is 1.
+#' @param layout A matrix specifying the layout. If present, 'cols' is ignored. For example, matrix(c(1,2,3,3), nrow=2, byrow=TRUE) places plot 1 upper left, plot 2 upper right, and plot 3 across the bottom.
+#' @return Graphic
 #' @export
 multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
   library(grid)
@@ -186,7 +186,7 @@ multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
 #' Principal Component Analysis plot
 #' @description plot first 10 PCs of simulated data against observed.
 #' @param models A data.frame object with combined summary statistics.
-#' @param data A character vector indexing the models object.
+#' @param index A character vector indexing the models object.
 #' @param observed Observed summary statistics. Should be the same as in models.
 #' @param subsample A number between 0-1 indicating a fraction of rows in the models object to be included in the PCA calculation.
 #' @return graphic

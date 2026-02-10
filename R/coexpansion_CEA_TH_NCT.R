@@ -2,17 +2,17 @@
 #' @description Simulation of codemographic models
 #' @param nsims Total number of simulations
 #' @param var.zeta Variation on zeta parameter. Can be "FREE" to vary or be set to a specific value (between 0-1).
-#' @param coexp.prior Uniform prior for the coespansion time. Vector of two numbers with the lower and upper boudary of the prior.
+#' @param coexp.prior Uniform prior for the coexpansion time. Vector of two numbers with the lower and upper boundary of the prior.
 #' @param th Threshold. Minimum time difference between Ts, time of simultaneous change and population specific times.
 #' @param Ne.prior Data frame with the prior values for the Ne of each population.
 #' @param NeA.prior Data frame with the prior values for the ancestral Ne of each population.
 #' @param time.prior Data frame with parameter values for the priors of the time of demographic change of each population.
 #' @param gene.prior Data frame with parameter values for the priors of the mutation rate of each species.
-#' @param alpha logical. If TRUE all demographic chages are exponential. If FALSE sudden changes. Defaut is FALSE.
-#' @param append.sims logical. If TRUE simulations are appended to the simulations file.  Defaut is FALSE.
-#' @param path Path to the directiry to write the simulations. Defaut is the working directory.
+#' @param alpha logical. If TRUE all demographic changes are exponential. If FALSE sudden changes. Default is FALSE.
+#' @param append.sims logical. If TRUE simulations are appended to the simulations file. Default is FALSE.
+#' @param path Path to the directory to write the simulations. Default is the working directory.
 #' @details To simulate the model of Chan et al. (2014) the th parameter should be set to zero and the time.prior should have the same value of the coexp.prior.
-#' @details To simulate the Threshold model the th argument need to be higher than zero. To simulate the Narrow Coexpansion Time model the th argument need to be higher than zero and the boundaries of coexp.time shoud be narrower than the time.prior values.
+#' @details To simulate the Threshold model the th argument need to be higher than zero. To simulate the Narrow Coexpansion Time model the th argument need to be higher than zero and the boundaries of coexp.time should be narrower than the time.prior values.
 #' See references for more details. Use the sim.coexp2 function to simulate the partitioned time model.
 #' @references Gehara M., Garda A.A., Werneck F.P. et al. (2017) Estimating synchronous demographic changes across populations using hABC and its application for a herpetological community from northeastern Brazil. Molecular Ecology, 26, 4756–4771.
 #' @references Chan Y.L., Schanzenbach D., & Hickerson M.J. (2014) Detecting concerted demographic response across community assemblages using hierarchical approximate Bayesian computation. Molecular Biology and Evolution, 31, 2501–2515.

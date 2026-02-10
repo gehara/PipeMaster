@@ -6,6 +6,20 @@
 \usage{
 multiplot(..., plotlist = NULL, file, cols = 1, layout = NULL)
 }
+\arguments{
+\item{...}{ggplot objects to arrange.}
+
+\item{plotlist}{A list of ggplot objects. Alternative to passing plots in ...}
+
+\item{file}{Unused. Kept for compatibility.}
+
+\item{cols}{Number of columns in the layout. Default is 1.}
+
+\item{layout}{A matrix specifying the layout. If present, 'cols' is ignored. For example, matrix(c(1,2,3,3), nrow=2, byrow=TRUE) places plot 1 upper left, plot 2 upper right, and plot 3 across the bottom.}
+}
+\value{
+Graphic
+}
 \description{
-Multiple plot function
+Arrange multiple ggplot objects in a grid layout. ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects).
 }

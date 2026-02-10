@@ -8,8 +8,8 @@ obs.sumstat.ngs(
   model = NULL,
   path.to.fasta,
   pop.assign,
-  moments = F,
-  msABC.call = get.msABC()
+  moments = TRUE,
+  ncores = 1
 )
 }
 \arguments{
@@ -19,10 +19,11 @@ obs.sumstat.ngs(
 Invariable sites must be included in the fasta alignments.
 Invariable loci must also be included. Alignments must contain phased data.}
 
-\item{pop.assign}{A two-column data frame with sample names in the first column and the corresponding population membership preferably as numbers in the second column (If you have a single population the numbers wont matter). The numbers should match the population number in the model object.}
+\item{pop.assign}{A two-column data frame with sample names in the first column and the corresponding population membership preferably as numbers in the second column (If you have a single population the numbers won't matter). The numbers should match the population number in the model object.}
 
-\item{msABC.call}{String. Path to the msABC executable. msABC binaries for Mac's and Linux are included in the package and should work in most computers.
-There is no need to change that unless you want to compile the program yourself and point the function to it.}
+\item{moments}{Logical. If TRUE computes the four moments (mean, variance, skewness, kurtosis) of each summary statistic across loci. Default is TRUE.}
+
+\item{ncores}{Number of cores for parallel execution. When ncores > 1, loci are processed in parallel using mclapply. Default is 1.}
 }
 \value{
 A table containing the observed summary stats.

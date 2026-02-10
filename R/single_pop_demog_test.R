@@ -1,20 +1,20 @@
 #' Simulation of demographic models for single populations.
-#' @description Test for constant size, population expantion and bottleneck for single population (non hiersrchical).
+#' @description Test for constant size, population expansion and bottleneck for single population (non hierarchical).
 #' @param nsims Total number of simulations per model.
 #' @param Ne.prior Data frame with the prior values for the Ne of each population.
 #' @param time.prior Data frame with parameter values for the priors of the time of demographic change of each population.
 #' @param gene.prior Data frame with parameter values for the priors of the mutation rate of each species.
-#' @param alpha logical. If TRUE all demographic chages are exponential. If FALSE sudden changes. Defaut is FALSE.
-#' @param path Path to the directory to write the simulations. Defaut is the working directory.
-#' @param tol Tolerance level of the ABC analysis. Ignored if do.ABC = FALSE. Defaut is 0.01.
+#' @param alpha logical. If TRUE all demographic changes are exponential. If FALSE sudden changes. Default is FALSE.
+#' @param path Path to the directory to write the simulations. Default is the working directory.
+#' @param tol Tolerance level of the ABC analysis. Ignored if do.ABC = FALSE. Default is 0.01.
 #' @param nval Number of validations for the cross-validation of the ABC. Ignored if do.ABC = FALSE. Default is 100.
 #' @param do.ABC logical. If TRUE ABC analysis is performed. Default is FALSE.
 #' @param do.PCA logical. If TRUE PCA of the observed against the simulated data is performed. Default is FALSE.
 #' @param observed Observed summary statistics calculated for the empirical data.
-#' @param CV logical. If TRUE cros-validation is performed. Defaut is FALSE
-#' @param mod 3 x 2 matrix of multiplyer priors (unif: min, max) for ancestral population sizes for each model. Default: cbind(c(1,0.001,2),c(1,0.1,20)). First row: constant size; min 1, max 1. Secound row: expansion; min 0.001, max 0.1. Third row: bottleneck; min 2, max 20.
+#' @param CV logical. If TRUE cross-validation is performed. Default is FALSE.
+#' @param mod 3 x 2 matrix of multiplier priors (unif: min, max) for ancestral population sizes for each model. Default: cbind(c(1,0.001,2),c(1,0.1,20)). First row: constant size; min 1, max 1. Second row: expansion; min 0.001, max 0.1. Third row: bottleneck; min 2, max 20.
 #' @details This function will take the same inputs used in the codemographic simulations and test for demographic change for each
-#' population separatelly. This test could be usefull to select which populations will be included in the codemographic model and to optimize the prior distributions.
+#' population separately. This test could be useful to select which populations will be included in the codemographic model and to optimize the prior distributions.
 #' @export
 single.pop.demog<-function(nsims,
                      Ne.prior,

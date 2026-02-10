@@ -10,6 +10,8 @@
 \item{model}{A model object.}
 
 \item{nsamples}{Number of samples to draw from each prior distribution.}
+
+\item{mu.rates}{List. Distribution to sample the mutation rates. If NULL, rates are sampled from the model. See sim.msABC.sumstat for details.}
 }
 \value{
 Graphic
