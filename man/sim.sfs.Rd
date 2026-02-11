@@ -46,9 +46,10 @@ Writes SIM_SFS_{output.name}.txt to the path directory. The file contains a head
 }
 \description{
 This function simulates the Site Frequency Spectrum (SFS) using the scrm coalescent simulator.
-             It outputs the SFS (unfolded or folded) averaged across loci for each simulation replicate,
-             suitable for inference with fastsimcoal2, dadi, moments, etc.
-             For multi-population models, scrm natively returns the joint SFS as a flattened vector.
+             For single-population models, it outputs the 1D SFS (unfolded or folded) summed across loci.
+             For multi-population models, it computes the joint SFS from segregating sites,
+             returning the flattened multi-dimensional array (e.g., (n1+1)*(n2+1) entries for 2 pops).
+             Suitable for inference with fastsimcoal2, dadi, moments, etc.
 }
 \examples{
 \dontrun{

@@ -1,8 +1,9 @@
 #' Simulate Site Frequency Spectra using scrm
 #' @description This function simulates the Site Frequency Spectrum (SFS) using the scrm coalescent simulator.
-#'              It outputs the SFS (unfolded or folded) averaged across loci for each simulation replicate,
-#'              suitable for inference with fastsimcoal2, dadi, moments, etc.
-#'              For multi-population models, scrm natively returns the joint SFS as a flattened vector.
+#'              For single-population models, it outputs the 1D SFS (unfolded or folded) summed across loci.
+#'              For multi-population models, it computes the joint SFS from segregating sites,
+#'              returning the flattened multi-dimensional array (e.g., (n1+1)*(n2+1) entries for 2 pops).
+#'              Suitable for inference with fastsimcoal2, dadi, moments, etc.
 #' @param model A model object built by the main.menu function.
 #' @param use.alpha Logical. If TRUE the most recent population size change will be exponential. If FALSE sudden demographic changes. Default is FALSE.
 #' @param nsim.blocks Number of blocks to simulate. The total number of simulations is: nsim.blocks x block.size (x ncores when ncores > 1).
@@ -77,11 +78,6 @@ sim.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
   if(append.sims == FALSE) {
     com <- PipeMaster:::ms.commander2(model, use.alpha = use.alpha)
 
-    # run one scrm call on first locus to discover SFS dimensions
-    nsam <- sum(as.numeric(model$I[1, 4:ncol(model$I)]))
-    test.result <- scrm::scrm(paste(nsam, 1, com[[1]], "-oSFS"))
-    sfs.test <- as.numeric(test.result$sfs)
-
     # parameter names: keep non-rate params, replace per-locus rates with mean.rate + sd.rate
     par.names <- com[[nrow(model$loci) + 1]][1, ]
     par.names <- par.names[-length(par.names)]  # drop scalar
@@ -91,11 +87,22 @@ sim.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
     }
 
     # SFS column names
-    if(folded) {
-      folded.sfs <- fold_sfs(sfs.test)
-      sfs.names <- paste0("sfs_fold_", seq(0, length(folded.sfs) - 1))
+    if(npop == 1) {
+      # Single pop: discover SFS dimensions from test scrm call
+      nsam <- sum(as.numeric(model$I[1, 4:ncol(model$I)]))
+      test.result <- scrm::scrm(paste(nsam, 1, com[[1]], "-oSFS"))
+      sfs.test <- as.numeric(test.result$sfs)
+      if(folded) {
+        folded.sfs <- fold_sfs(sfs.test)
+        sfs.names <- paste0("sfs_fold_", seq(0, length(folded.sfs) - 1))
+      } else {
+        sfs.names <- paste0("sfs_", seq(0, length(sfs.test) - 1))
+      }
     } else {
-      sfs.names <- paste0("sfs_", seq(0, length(sfs.test) - 1))
+      # Multi-pop: joint SFS dimensions from per-population sample sizes
+      pop_sizes_vec <- as.integer(model$I[1, pop_cols])
+      idx_grid <- expand.grid(lapply(pop_sizes_vec, function(n) 0:n))
+      sfs.names <- apply(idx_grid, 1, function(x) paste0("sfs_", paste(x, collapse = "_")))
     }
 
     nam <- c(par.names, sfs.names)
@@ -215,21 +222,30 @@ sim.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
           com[[n_loci + 1]] <- par.all
         }
 
-        # collect SFS across loci
-        sfs.list <- list()
-        for(u in 1:nrow(model$loci)) {
-          nsam <- sum(as.numeric(model$I[u, 4:ncol(model$I)]))
-          scrm.out <- scrm::scrm(paste(nsam, 1, com[[u]], "-oSFS"))
-          sfs.list[[u]] <- as.numeric(scrm.out$sfs)
-        }
-
-        # sum SFS across loci
-        sfs.mat <- do.call("rbind", sfs.list)
-        sfs.mean <- colSums(sfs.mat, na.rm = TRUE)
-
-        # fold if requested
-        if(folded) {
-          sfs.mean <- fold_sfs(sfs.mean)
+        # collect and sum SFS across loci
+        nsam <- sum(as.numeric(model$I[1, 4:ncol(model$I)]))
+        if(npop == 1) {
+          # Single pop: use -oSFS
+          sfs.list <- list()
+          for(u in 1:nrow(model$loci)) {
+            scrm.out <- scrm::scrm(paste(nsam, 1, com[[u]], "-oSFS"))
+            sfs.list[[u]] <- as.numeric(scrm.out$sfs)
+          }
+          sfs.mat <- do.call("rbind", sfs.list)
+          sfs.mean <- colSums(sfs.mat, na.rm = TRUE)
+          if(folded) sfs.mean <- fold_sfs(sfs.mean)
+        } else {
+          # Multi-pop: compute joint SFS from segregating sites
+          pop_sizes_vec <- as.integer(model$I[1, pop_cols])
+          joint_sfs <- array(0L, dim = pop_sizes_vec + 1L)
+          for(u in 1:nrow(model$loci)) {
+            scrm.out <- scrm::scrm(paste(nsam, 1, com[[u]]))
+            seg <- scrm.out$seg_sites[[1]]
+            if(ncol(seg) > 0) {
+              joint_sfs <- joint_sfs + compute_joint_sfs(seg, pop_sizes_vec)
+            }
+          }
+          sfs.mean <- as.vector(joint_sfs)
         }
 
         # extract parameters (drop scalar column)
@@ -287,4 +303,30 @@ fold_sfs <- function(sfs) {
     folded <- c(folded, sfs[half + 1])
   }
   folded
+}
+
+# Internal helper: compute joint SFS from a seg_sites matrix for multi-pop models
+# seg_sites: nsam x n_snps matrix (0/1) with rows ordered by population
+# pop_sizes: integer vector of per-population sample sizes
+# Returns: array of dimensions (n1+1) x (n2+1) x ... with SNP counts per joint frequency bin
+compute_joint_sfs <- function(seg_sites, pop_sizes) {
+  npop <- length(pop_sizes)
+  dims <- pop_sizes + 1L
+
+  if(ncol(seg_sites) == 0) return(array(0L, dim = dims))
+
+  cum_sizes <- cumsum(c(0L, pop_sizes))
+
+  # Count derived alleles per population for each SNP
+  pop_counts <- matrix(0L, nrow = ncol(seg_sites), ncol = npop)
+  for(p in 1:npop) {
+    rows <- (cum_sizes[p] + 1):cum_sizes[p + 1]
+    pop_counts[, p] <- colSums(seg_sites[rows, , drop = FALSE])
+  }
+
+  # Build joint SFS using table with proper factor levels
+  args <- lapply(1:npop, function(p) factor(pop_counts[, p], levels = 0:pop_sizes[p]))
+  sfs_table <- do.call(table, args)
+
+  return(array(as.integer(sfs_table), dim = dims))
 }

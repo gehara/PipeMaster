@@ -99,6 +99,144 @@ update.priors<-function(tab, model){
   return(model)
 }
 
+#' Plot a 2D Joint Site Frequency Spectrum
+#' @description Plots a 2D joint SFS as a heatmap with log10 color scale and colorbar,
+#'              following the standard convention used by dadi and moments.
+#'              Accepts either a matrix or a flattened vector (as output by sim.sfs for 2-population models).
+#'              Zero entries are masked (shown as white). Pop 1 is on the y-axis and Pop 2 on the x-axis.
+#' @param sfs A matrix (joint SFS) or numeric vector (flattened joint SFS from sim.sfs output).
+#' @param pop_sizes Integer vector of length 2 with per-population sample sizes. Required when sfs is a vector.
+#' @param pop_names Character vector of length 2 with population labels. Default is c("Pop 1", "Pop 2").
+#' @param folded Logical. If TRUE, folds the SFS by combining entries (i,j) with their complement (n1-i, n2-j). Default is FALSE.
+#' @param log Logical. If TRUE (default), uses log10 color scale.
+#' @param col Color palette vector. Default uses a 256-color YlOrRd palette.
+#' @param main Plot title. Default is "Joint SFS".
+#' @param ... Additional arguments passed to image().
+#' @examples
+#' \dontrun{
+#' # From sim.sfs output
+#' sim.data <- read.table("SIM_SFS_model.txt", header = TRUE)
+#' sfs_cols <- grep("^sfs_", colnames(sim.data))
+#'
+#' # Plot a single replicate (unfolded)
+#' sfs_vec <- as.numeric(sim.data[1, sfs_cols])
+#' plot.2D.sfs(sfs_vec, pop_sizes = c(64, 14))
+#'
+#' # Plot folded SFS
+#' plot.2D.sfs(sfs_vec, pop_sizes = c(64, 14), folded = TRUE)
+#'
+#' # Plot average across replicates
+#' avg_sfs <- colMeans(sim.data[, sfs_cols])
+#' plot.2D.sfs(avg_sfs, pop_sizes = c(64, 14),
+#'             pop_names = c("A. piscivorus", "A. conanti"))
+#' }
+#' @author Marcelo Gehara
+#' @rawNamespace export(plot.2D.sfs)
+plot.2D.sfs <- function(sfs, pop_sizes = NULL,
+                         pop_names = c("Pop 1", "Pop 2"),
+                         folded = FALSE,
+                         log = TRUE,
+                         col = NULL,
+                         main = "Joint SFS", ...) {
+
+  if(is.null(dim(sfs))) {
+    if(is.null(pop_sizes) || length(pop_sizes) != 2) {
+      stop("pop_sizes (integer vector of length 2) required when sfs is a vector.")
+    }
+    sfs <- matrix(as.numeric(sfs), nrow = pop_sizes[1] + 1, ncol = pop_sizes[2] + 1)
+  }
+
+  n1 <- nrow(sfs) - 1
+  n2 <- ncol(sfs) - 1
+
+  # Fold the SFS if requested
+  if(folded) {
+    sfs <- fold_2d_sfs(sfs)
+    if(main == "Joint SFS") main <- "Folded Joint SFS"
+  }
+
+  # Default color palette
+  if(is.null(col)) col <- hcl.colors(256, "YlOrRd", rev = TRUE)
+  ncolors <- length(col)
+
+  # Mask zeros (NA -> white in plot)
+  sfs[sfs == 0] <- NA
+
+  # Log10 transform
+  if(log) sfs <- log10(sfs)
+
+  zlim <- range(sfs, na.rm = TRUE)
+
+  # Save and restore graphics state
+  old_par <- par(no.readonly = TRUE)
+  on.exit(par(old_par))
+
+  # Layout: main plot + colorbar
+  layout(matrix(c(1, 2), nrow = 1), widths = c(5, 1.2))
+
+  # --- Main heatmap ---
+  # Transpose so pop1 = y-axis, pop2 = x-axis (dadi/moments convention)
+  par(mar = c(4.5, 4.5, 3, 0.5))
+  image(0:n2, 0:n1, t(sfs),
+        zlim = zlim, col = col,
+        xlab = paste(pop_names[2], "derived allele count"),
+        ylab = paste(pop_names[1], "derived allele count"),
+        main = main,
+        useRaster = TRUE, axes = FALSE, ...)
+  axis(1)
+  axis(2)
+  box()
+
+  # --- Colorbar ---
+  par(mar = c(4.5, 0.5, 3, 3.5))
+  bar_vals <- seq(zlim[1], zlim[2], length.out = ncolors)
+  image(1, bar_vals, matrix(bar_vals, nrow = 1), col = col,
+        axes = FALSE, xlab = "", ylab = "")
+  if(log) {
+    at_vals <- pretty(bar_vals)
+    labels <- sapply(at_vals, function(x) as.expression(bquote(10^.(round(x, 1)))))
+    axis(4, at = at_vals, labels = labels, las = 1)
+  } else {
+    axis(4, las = 1)
+  }
+  box()
+}
+
+# Internal helper: fold a 2D joint SFS
+# Combines each entry (i,j) with its complement (n1-i, n2-j).
+# The summed value is placed at whichever entry has the smaller total
+# derived allele count (i+j). Entries in the upper half become zero.
+fold_2d_sfs <- function(sfs) {
+  n1 <- nrow(sfs) - 1
+  n2 <- ncol(sfs) - 1
+  folded <- matrix(0, nrow = n1 + 1, ncol = n2 + 1)
+  processed <- matrix(FALSE, nrow = n1 + 1, ncol = n2 + 1)
+
+  for(i in 0:n1) {
+    for(j in 0:n2) {
+      if(processed[i + 1, j + 1]) next
+      mi <- n1 - i
+      mj <- n2 - j
+      if(i == mi && j == mj) {
+        # Self-complementary entry
+        folded[i + 1, j + 1] <- sfs[i + 1, j + 1]
+      } else {
+        # Sum the pair, place at the entry with smaller i+j
+        val <- sfs[i + 1, j + 1] + sfs[mi + 1, mj + 1]
+        if(i + j <= mi + mj) {
+          folded[i + 1, j + 1] <- val
+        } else {
+          folded[mi + 1, mj + 1] <- val
+        }
+      }
+      processed[i + 1, j + 1] <- TRUE
+      processed[mi + 1, mj + 1] <- TRUE
+    }
+  }
+
+  return(folded)
+}
+
 #' Plot model
 #' @description This function plots a graphical representation of your model.
 #' @param model A model object generated in the main.menu.
