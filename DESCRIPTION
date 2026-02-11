@@ -14,7 +14,8 @@ Imports: ape,
           shiny,
           shinydashboard,
           shinyjs,
-          DT
+          DT,
+          scrm
 Depends: ape,
           e1071,
           phyclust,
