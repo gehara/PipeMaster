@@ -1,6 +1,6 @@
 #' Observed summary statistics for nexgen data
 #' @description This function calculates the observed summary statistics from an empirical data.
-#'              This summary statistics are the same as those simulated by the sim.msABC.sumstat function.
+#'              This summary statistics are the same as those simulated by the sim.sumstat function.
 #'              It is optimized for nexgen data.
 #' @param model A model object built by the main.menu function. Any model with the same number of populations of your empirical data will work. This is just to build the sumstats names correctly.
 #' @param path.to.fasta Path to the folder containing all fastas to be included in the calculation.
@@ -78,7 +78,7 @@ obs.sumstat.ngs<-function(model=NULL,path.to.fasta,pop.assign,moments=TRUE,ncore
   x <- strsplit(run.msABC(paste(nsam, 1, perlocus_cmd)),"\t")
   colnames(observed) <- x[[1]]
 
-  # Filter thomson and ZnS columns (match sim.msABC.sumstat filtering)
+  # Filter thomson and ZnS columns (match sim.sumstat filtering)
   cols <- grep("thomson", colnames(observed))
   cols <- c(cols, grep("ZnS", colnames(observed)))
   if(length(cols) != 0) observed <- observed[, -cols, drop=FALSE]
@@ -94,7 +94,7 @@ obs.sumstat.ngs<-function(model=NULL,path.to.fasta,pop.assign,moments=TRUE,ncore
     moments_mat <- rbind(obs_mean, obs_var, obs_skew, obs_kurt)
     observed <- as.vector(moments_mat)
 
-    # Get fragment mode header for naming (same as sim.msABC.sumstat)
+    # Get fragment mode header for naming (same as sim.sumstat)
     com_frag <- PipeMaster:::msABC.commander(model, use.alpha=F, arg=1)
     locfile <- PipeMaster:::get.locfile(model)
     write.table(locfile, ".1locfile.txt", row.names=F, col.names=T, quote=F, sep=" ")

@@ -30,7 +30,7 @@ A table containing the observed summary stats.
 }
 \description{
 This function calculates the observed summary statistics from an empirical data.
-             This summary statistics are the same as those simulated by the sim.msABC.sumstat function.
+             This summary statistics are the same as those simulated by the sim.sumstat function.
              It is optimized for nexgen data.
 }
 \note{

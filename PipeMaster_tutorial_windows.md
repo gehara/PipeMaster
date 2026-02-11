@@ -87,7 +87,7 @@ Install all dependencies, install *PipeMaster* latest release from my github. Yo
   install.packages(c("ape","abc","e1071","phyclust","PopGenome","msm","ggplot2","foreach"),
                  repos="http://cran.us.r-project.org")
 
-  install.packages("http://github.com/gehara/PipeMaster/archive/PipeMaster-0.2.2.tar.gz",
+  install.packages("http://github.com/gehara/PipeMaster/archive/PipeMaster-v0.2.3.tar.gz",
                  repos=NULL)
   
   ## install  POPdemog to be able to plot your models                
@@ -120,7 +120,7 @@ Create a new directory to save the examples
     setwd(paste(getwd(),"/PM_example",sep=""))
   ```
   
-Set up a model by going into the Model Builder. You will be prompted to an interactive menu. Assign this function to an object (*Is* in the case bellow) so your model is saved at the end. We are going to set up a 2 population model.
+Set up a model by going into the Model Builder. You will be prompted to an interactive menu. Point this function to an object so your model is saved at the end. We are going to set up a 2 population model.
 
   ```
     Is <- main.menu()
@@ -129,7 +129,7 @@ Set up a model by going into the Model Builder. You will be prompted to an inter
 
 ## **Main Menu**
 
-We start by writing a 2 pop newick topology: *(1,2)*. This will set up a 2 pop isolation model with constant population size and no migration. You can follow the description in the menu to add parameters and priors to the model. The numbers on the right indicate the parameters of the model. This model has 2 population size parameters and 1 divergence parameter, or 1 junction in the coalescent direction. We are going to stick with a 3 parameter model for now. To visulize the model we need to specify the data to be simulated first. We nee to go to **Gene Menu** for that.
+We start by writing a 2 pop newick: *(1,2)*. This will sep up a 2 pop isolation model with constant population size, no migration. You can follow the description in the menu to add parameters and priors to the model. The numbers on the right indicate the parameters of the model. This model has 2 population size parameters and 1 divergence parameter, or 1 junction in the coalescent direction. We are going to stick with a 3 parameter model for now. To visulize the model we need to specify the data to be simulated first. We nee to go to **Gene Menu** for that.
 
 ```
   A > Number of populations to simulate      2
@@ -176,11 +176,11 @@ Type **I** in the **main menu** to go to the gene menu. To get into the **gene m
 
 ## **Mutation rate prior**
 
-**In the case of genomic data the mutation rate works as a hyperparameter**. The default uniform distribution above indicates the *min* and *max* values to sample an average and SD of all mutation rates. That is, the actual mutation rate for each of the 200 loci will be sampled from a normal distribution with average and SD sampled from this uniform prior. In each simulation iteration a new average and SD are sampled and from these parameters the 200 mutation rates are sampled. This normal distribution is truncated at zero, so it doesn't not really always have a bell shape. You can set other distributions to sample the mutation rate from. All distributions available in R are allowed, but this distribution is specified in the simulation function (*sim.sumstat*). We will see this further in the tutorial.
+**In the case of genomic data the mutation rate works as a hyperparameter**. The defaut uniform distribution above indicates the *min* and *max* values to sample an average and SD of all mutation rates. That is, the actual mutation rate for each of the 200 loci will be sampled from a normal distribution with average and SD sampled from this uniform prior. In each simulation iteration a new average and SD are sampled and from these parameters the 200 mutation rates are sampled. This normal distribution is truncated at zero, so it doesn't not really always have a bell shape. You can set different distribution for the mutation rate. All distributions available in R are allowed, but this distribution is specified in the simulation function (*sim.sumstat*). We will see this further in the tutorial.
 
 
 ## **Model Visualization**
-Now that we specified the type of data we will simulate we can visualize the model by typing **P** or **p**. It will ask if you are plotting a model with an exponential size change. Since our model has no size change we will choose FALSE.
+Now that we specifed the type of data we will simulate we can visualize the model by typing **P** or **p**. It will ask if you are plotting a model with an exponetial size change. Since our model has no size change we will choose FALSE.
 
 ```
   Model Builder >>>>P
@@ -192,7 +192,7 @@ Now that we specified the type of data we will simulate we can visualize the mod
 
 ## **Ne Priors Menu** 
 
-Let's check the Ne priors by typing *E* in the *main menu*. In this menu you can see the parameter names and their distribution. PipeMaster has as default uniform distributions with min and max values of 100,000 and 500,000 individuals respectively. The name Ne0.pop1 indicates that the parameter is contemporary, hence Ne0. Ancestral parameters will have ascending numbers going to the past. For instance, *Ne1.pop1* is the ancestral Ne after *Ne0*, *Ne2* is the ancestral Ne after *Ne1* and so on. Let's change one of the priors. Type **C** and then follow the instructions of the menu.  
+Let's check the Ne priors by typing *E* in the *main menu*. In this menu you can see the parameter names and their distribution. PipeMaster has as defaut uniform distributions with min and max values of 100,000 and 500,000 individuals respectively. The name Ne0.pop1 indicates that the parameter is contemporary, hence Ne0. Ancestral parameters will have acending numbers going to the past. For instance, Ne1.pop1 is the ancestral Ne after Ne0, Ne2 is the ancestral Ne after Ne1 and so on. Let's change one of the priors. Type **C** and then follow the instructions of the menu.  
 
 ```
   N > Ne prior distribution:               uniform
@@ -222,7 +222,7 @@ B > Back to main menu
 ```
 ## **Time Priors Menu**
 
-Type **G** in the **main menu** to go to **time priors**. In the **time prior** menu you can see all parameters relative to time. In this model we have a single parameter, *join1_2*, which represents the junction (or divergence in real life direction) of population 1 and 2. The default of PipeMaster is a uniform distribution with *min* and *max* of *500,000* and *1,500,000* generations. **Time is measured in generations**. If your organism has a generation time different than 1 year, you will need to convert the time from years to generations in order to set up your prior. For example, if you want to setup a divergence between 100,000 and 1,000,000 years and your organism has a generation time of 4 years, you will need to divide the time by 4. Your min and max values will be 25,000 ans 250,000. Type **B** to go back to the main menu.
+Type **G** in the **main menu** to go to **time priors**. In the **time prior** menu you can see all parameters relative to time. In this model we have a single parameter, *join1_2*, which represents the junction (or divergence in real life direction) of population 1 and 2. The default of PipeMaster is a uniform distribution with *min* and *max* of *500,000* and *1,500,000* generations. **Time is measured in generations**. If your organism has a generation time different than 1, you will need to convert the time from years to generations in order to set up your prior. For example, if you want to setup a divergence between 100,000 and 1,000,000 years and your organism has a generation time of 4 years, you will need to divide the time by 4. Your min and max values will be 25,000 ans 250,000. Type **B** to go back to the main menu.
 
 ```
   P > Time prior distribution:     uniform
@@ -447,7 +447,7 @@ There is an easier way to check the model parameters and priors. You can also up
     3      join1    1000    1000        runif
   
   
-  > Is2 <- update.priors(tab = Is.tab, model = Is)
+  > Is2 <- PipeMaster:::update.priors(tab = Is.tab, model = Is)
   > get.prior.table(model=Is2)
   
        Parameter prior.1 prior.2 distribution
@@ -482,7 +482,7 @@ Load and write some empirical data (dna sequences).
   setwd("./fastas")
   
   # write the fasta alignments
-  for(i in 1:length(seqs)){
+  for(i in 1:10){
     write.dna(seqs[[i]], file = paste("seq",i,".fas",sep="_"), format = "fasta")
   }
   
@@ -524,138 +524,42 @@ Instead of simulating the models we created we are going to simulate three model
 To calculate the summary statistics for the empirical data we will use the **obs.sumstat.ngs** function. This function also needs an assignment file and a model object. By default PipeMaster calculates all the available summary statistics, you select them *a posteriori*.
 
 ```
-  obs <- obs.sumstat.ngs(model = Is, path.to.fasta = "./fastas", pop.assign = popassign)
+setwd("./fastas")
+observed.sumstat(Is, path.to.fasta = getwd())
+## the observed is saved inside of the fasta folder
+### read the observed
+obs <- read.table("observed_popstats_mean.txt",header=T)
+obs <- cbind(obs,read.table("observed_overallstats_mean.txt",header=T)[1:3])
+getwd("../")
+
 ```
 To see the observed summary stats just type **obs**.
 To see the name of the summary stats **colnames(obs)**
   
 ```
  > colnames(obs)
-  
-   [1] "s_average_segs_1"               "s_variance_segs_1"
-   [3] "s_average_segs_2"               "s_variance_segs_2"
-   [5] "s_average_segs"                 "s_variance_segs"
-   [7] "s_average_pi_1"                 "s_variance_pi_1"
-   [9] "s_average_pi_2"                 "s_variance_pi_2"
-  [11] "s_average_pi"                   "s_variance_pi"
-  [13] "s_average_w_1"                  "s_variance_w_1"
-  [15] "s_average_w_2"                  "s_variance_w_2"
-  [17] "s_average_w"                    "s_variance_w"
-  [19] "s_average_tajd_1"               "s_variance_tajd_1"
-  [21] "s_average_tajd_2"               "s_variance_tajd_2"
-  [23] "s_average_tajd"                 "s_variance_tajd"
-  [25] "s_average_ZnS_1"                "s_variance_ZnS_1"
-  [27] "s_average_ZnS_2"                "s_variance_ZnS_2"
-  [29] "s_average_ZnS"                  "s_variance_ZnS"
-  [31] "s_average_Fst"                  "s_variance_Fst"
-  [33] "s_average_shared_1_2"           "s_variance_shared_1_2"
-  [35] "s_average_private_1_2"          "s_variance_private_1_2"
-  [37] "s_average_fixed_dif_1_2"        "s_variance_fixed_dif_1_2"
-  [39] "s_average_pairwise_fst_1_2"     "s_variance_pairwise_fst_1_2"
-  [41] "s_average_fwh_1"                "s_variance_fwh_1"
-  [43] "s_average_fwh_2"                "s_variance_fwh_2"
-  [45] "s_average_FayWuH"               "s_variance_FayWuH"
-  [47] "s_average_dvk_1"                "s_variance_dvk_1"
-  [49] "s_average_dvh_1"                "s_variance_dvh_1"
-  [51] "s_average_dvk_2"                "s_variance_dvk_2"
-  [53] "s_average_dvh_2"                "s_variance_dvh_2"
-  [55] "s_average_dvk"                  "s_variance_dvk"
-  [57] "s_average_dvh"                  "s_variance_dvh"
-  [59] "s_average_thomson_est_1"        "s_variance_thomson_est_1"
-  [61] "s_average_thomson_est_2"        "s_variance_thomson_est_2"
-  [63] "s_average_thomson_est"          "s_variance_thomson_est"
-  [65] "s_average_thomson_var_1"        "s_variance_thomson_var_1"
-  [67] "s_average_thomson_var_2"        "s_variance_thomson_var_2"
-  [69] "s_average_thomson_var"          "s_variance_thomson_var"
-  [71] "s_average_pi_1_s_average_w_1"   "s_variance_pi_1_s_variance_w_1"
-  [73] "s_average_pi_2_s_average_w_2"   "s_variance_pi_2_s_variance_w_2"
-  [75] "s_average_pi_s_average_w"       "s_variance_pi_s_variance_w"
+ 
+   [1] "ss.pop1_mean"    "ss.pop2_mean"    "pi.pop1_mean"    "pi.pop2_mean"   
+ [5] "H.pop1_mean"     "H.pop2_mean"     "TajD.pop1_mean"  "TajD.pop2_mean" 
+ [9] "FuLiD.pop1_mean" "FuLiD.pop2_mean" "FuLiF.pop1_mean" "FuLiF.pop2_mean"
+[13] "Hap.Fst_mean"    "nuc.Fst_mean"    "s.sites_mean"    "pi_mean"        
+[17] "Hap.div_mean"   
+   
 ```
   
-There are **76** summary statistics for this data, these are averages and variances across loci, for each population and overall. We are going to use **grep** to select the stats we want to exclude. Descriptions of summary statistics are found in the [msABC manual](https://www.dropbox.com/s/m1mkmp0xtiv2a3x/manual.pdf?dl=0)
-
-
-```
-  cols <- c(grep("thomson", colnames(obs)),
-              grep("pairwise_fst", colnames(obs)),
-              grep("Fay", colnames(obs)),
-              grep("fwh", colnames(obs)),
-              grep("_dv", colnames(obs)),
-              grep("_s_", colnames(obs)),
-              grep("_ZnS", colnames(obs)))
-            
-  obs <- t(data.frame(obs[,-cols]))
-```
-Check the sumstats names again
-
-```
-  > colnames(obs)
-
-   [1] "s_average_segs_1"         "s_variance_segs_1"
-   [3] "s_average_segs_2"         "s_variance_segs_2"
-   [5] "s_average_segs"           "s_variance_segs"
-   [7] "s_average_pi_1"           "s_variance_pi_1"
-   [9] "s_average_pi_2"           "s_variance_pi_2"
-  [11] "s_average_pi"             "s_variance_pi"
-  [13] "s_average_w_1"            "s_variance_w_1"
-  [15] "s_average_w_2"            "s_variance_w_2"
-  [17] "s_average_w"              "s_variance_w"
-  [19] "s_average_tajd_1"         "s_variance_tajd_1"
-  [21] "s_average_tajd_2"         "s_variance_tajd_2"
-  [23] "s_average_tajd"           "s_variance_tajd"
-  [25] "s_average_ZnS"            "s_variance_ZnS"
-  [27] "s_average_Fst"            "s_variance_Fst"
-  [29] "s_average_shared_1_2"     "s_variance_shared_1_2"
-  [31] "s_average_private_1_2"    "s_variance_private_1_2"
-  [33] "s_average_fixed_dif_1_2"  "s_variance_fixed_dif_1_2"
-```
-
-Save the observed as a table using **write.table**.
-
-```
-  write.table(obs,"observed.txt", quote=F,col.names=T, row.names=F)
-```
-
 ## **Simulating Data**
 
-Now that we have two models, **Is** and **IM** we are going to simulate summary statistics. We will use the *sim.sumstat* to simulate genomic data. This function only works in linux and Mac. PipeMaster controls *msABC* to simulate the data. It simulates data in batches or blocks to avoid memory overload in R and at the same time optimize the time spent in writing the simulations to file. To control the total number of simulations you have to control the size of the simulation block, the number of blocks to simulate, and the number of cores used. The total number of simulations = nsim.blocks *x* block.size *x* ncores. You can play with these values to optimize the speed of the simulation process. A small block size will take less RAM but will require a more frequent management of the slave nodes by the master node. This can be time consuming. A large block size may overload R, R can't handle a lot of memory very well. It can also take up too much RAM, specially if you are running several cores at the same time. PipeMaster will output a time estimate at the console. This might help you optimize the parameters. From my experience, a block.size of 1000 will be good for most cases. If you don't want to mess with this, just leave at 1000, it should work fine.
-
-
-```
-  sim.sumstat(Is, nsim.blocks = 1, use.alpha = F, 
-  output.name = "Is", append.sims = F, block.size =   500, ncores = 2)
-
-  sim.sumstat(IM, nsim.blocks = 1, use.alpha = F, 
-  output.name = "IM", append.sims = F, block.size =   500, ncores = 2)
-                    
-  sim.sumstat(IsBot2, nsim.blocks = 1, use.alpha = F, 
-  output.name = "IsBot2", append.sims = F, block.size =   500, ncores = 2)
+Now that we have two models, **Is** and **IM** we are going to simulate summary statistics. We will use the *sim.sumstat* to simulate data. PipeMaster simulates data in batches or blocks to avoid memory overload in R and at the same time optimize the time spent in writing the simulations to file. To control the total number of simulations you have to control the size of the simulation block, the number of blocks to simulate, and the number of cores used. The total number of simulations = nsim.blocks *x* block.size. You can play with these values to optimize the speed of the simulation process. A small block size will take less RAM but will require a more frequent management of the slave nodes by the master node. This can be time consuming. A large block size may overload R, R can't handle a lot of memory very well. It can also take up too much RAM, specially if you are running several cores at the same time. PipeMaster will output a time estimate at the console. This might help you optimize the parameters. From my experience, a block.size of 1000 will be good for most cases. If you don't want to mess with this, just leave at 1000, it should work fine.
 
 ```
-
-
-## **Mutation rate**
-
-In PipeMaster the mutation rate can be parameterized in different ways. The default option is to use a uniform distribution to sample a *mean* and and *standard deviation* for the mutation rate across all the loci (mutation rate per locus per generation). So, PipeMaster will take that *mean* and *SD* and generate a uniform distribution to sample one mutation rate per loci. However a specific distribution to sample mutation rates from can be specified as an argument of the simulation function. All distributions available in r-base and r-package e1071 are allowed. The argument should be a list. The first element of the list is the name of the distribution function. The second element of the list must be the number of loci. The following elements are the parameters of the distribution to be passed on to the r-distribution function.
-
-```
-sim.sumstat(Is, nsim.blocks = 1, use.alpha = F, 
-                  output.name = "Is", append.sims = F, block.size = 500, ncores = 20,
-                  mu.rates = list("rtnorm",30, 1e-9, 0, 0))
-```
-
-## **Recombination rate**                  
-
-It is also possible to specify a distribution for the recombination rate in the same way. The recombination rate is specified as the probability of recombination per base pair.
+sim.ms.sumstat(Is, nsim.blocks = 1, use.alpha = F, output.name = "Is",
+                append.sims = F, get.moments = F)
+sim.ms.sumstat(IM, nsim.blocks = 1, use.alpha = F, output.name = "IM",
+                append.sims = F, get.moments = F)
+sim.ms.sumstat(IsBot2, nsim.blocks = 1, use.alpha = F, output.name = "IM",
+                append.sims = F, get.moments = F)
 
 ```
-sim.sumstat(Is, nsim.blocks = 1, use.alpha = F, 
-                  output.name = "Is", append.sims = F, block.size = 500, ncores = 2,
-                  rec.rates = list("runif", 30, 1e-9, 0),
-                  mu.rates = list("rtnorm",30, 1e-9, 0, 0))
-                  
-```                  
-                  
 -------------------------------------------------------------------------------------------------------
 
 # **Second part**
@@ -666,6 +570,7 @@ In this part of the tutorial we will go through some of the visualization functi
 ## **Plotting a Model**
 
 There is now a new function in PipeMaster to plot your model. This function is a wrapper of the PlotMS function from the POPdemog r-package. I have not tested it extensively yet, if you find bugs please send me an email (marcelo.gehara@gmail.com). 
+
 ```
 PlotModel(model=Is, use.alpha = F, average.of.priors=F)
 PlotModel(model=IM, use.alpha = F, average.of.priors=F)
@@ -681,7 +586,7 @@ PlotModel(model=IsBot2, use.alpha = c(T,1), average.of.priors=F)
 We can use the *plot.prior* function to visualize the prior distributions. 
   
 ```
-plot.priors(Is, nsamples = 1000)
+PipeMaster:::plot.priors(Is, nsamples = 1000)
 ```
 ![Prior distributions](priors.png)
 
@@ -690,20 +595,23 @@ plot.priors(Is, nsamples = 1000)
 Let's visualize the simulations. Read the simulations back into R. If your simulation file is very big (you have many simulations, like 5E5 or more) you should use the bigmemory r-package to handle the data. We will also match the simulations sumstats to the observed so that we keep the same set of sumstats in the simulated. 
 
 ```
-Is.sim <- read.table("SIMS_Is.txt", header=T)
-IM.sim <- read.table("SIMS_IM.txt", header=T)
-IsBot2.sim <- read.table("SIMS_IsBot2.txt", header=T)
+  Is.sim <- read.table("Is_popstats_mean.txt", header=T)
+  Is.sim <- cbind(Is.sim,read.table("Is_overallstats_mean.txt",   header=T)[,1:3])
 
-Is.sim <- Is.sim[,colnames(Is.sim) %in% colnames(obs)]
-IM.sim <- IM.sim[,colnames(IM.sim) %in% colnames(obs)]
-IsBot2.sim <- IsBot2.sim[,colnames(IsBot2.sim) %in% colnames(obs)]
+  IM.sim <- read.table("IM_popstats_mean.txt", header=T)
+  IM.sim <- cbind(IM.sim,read.table("IM_overallstats_mean.txt", header=T)[,1:3])
+
+  IsBot2.sim <- read.table("IsBot2_popstats_mean.txt", header=T)
+  IsBot2.sim <- cbind(IsBot2.sim,read.table("IsBot2_overallstats_mean.txt", header=T)[,1:3])
+
 ```
 
 Now we can plot the observed against the simulated. This helps you evaluate your model and have a visual idea of how the simulations fit the empirical data. 
 
 ```
-plot.sim.obs(Is.sim, obs)
-plot.sim.obs(IsBot2.sim, obs)
+PipeMaster:::plot.sim.obs(Is.sim, as.matrix(obs))
+PipeMaster:::plot.sim.obs(IsBot2.sim, as.matrix(obs))
+
 ```
 ![Simulated (histogram) and observed (red line) summary statistics](sim.obs.png)
 
@@ -766,28 +674,29 @@ It is important to perform a cross-validation to evaluate if the models are iden
 
 ## **Approximate Bayesian computation for parameter inference**. 
 
-The *abc* performs a rejection step for parameter estoimates as well. For this we will use just the best model.
+The *abc* performs a rejection step for parameter estimates as well. For this we will use just the best model.
   
 ```
 # read selected model
-IsBot2.sim <- read.table("SIMS_IsBot2.txt", header=T)
-  
+IsBot2.sim <- read.table("IsBot2_popstats_mean.txt", header=T)
+IsBot2.sim <- cbind(IsBot2.sim,read.table("IsBot2_overallstats_mean.txt", header=T)[,1:3])
 # separate summary statistics from parameters
 sims <- IsBot2.sim[,colnames(IsBot2.sim) %in% colnames(obs)]
-param <- IsBot2.sim[,1:11]
-  
+param <- read.table("IsBot2_pars.txt", header=T)[,1:9]
+
 # estimate posterior distribution of parameters
-  
+
 posterior <- abc(target = obs,
-            param = param,
-            sumstat = sims,
-            method = "rejection",
-            tol=0.1) 
-            
-            summary(posterior)
-            
+                 param = param,
+                 sumstat = sims,
+                 method = "rejection",
+                 tol=0.1) 
+
+summary(posterior)
+
 # write results to file
 write.table(summary(posterior), "parameters_est.txt")
+
 ```  
 
 Plot posterior distribution
@@ -795,9 +704,9 @@ Plot posterior distribution
 ```
 # plot posterior probabilities against prior
   for(i in 1:ncol(param)){
-    plot(density(posterior$unadj.values[,i]), col=2, main = colnames(param)[i])
-    lines(density(param[,i]))
-  }
+  plot(density(posterior$unadj.values[,i]), col=2, main = colnames(param)[i])
+  lines(density(param[,i]))
+}
 ```
 
 **Cross-validation** 

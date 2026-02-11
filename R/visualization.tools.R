@@ -19,7 +19,7 @@ plot.sim.obs <- function(sim, obs)
 #' @description This function plots a density of the simulated prior.
 #' @param model A model object.
 #' @param nsamples Number of samples to draw from each prior distribution.
-#' @param mu.rates List. Distribution to sample the mutation rates. If NULL, rates are sampled from the model. See sim.msABC.sumstat for details.
+#' @param mu.rates List. Distribution to sample the mutation rates. If NULL, rates are sampled from the model. See sim.sumstat for details.
 #' @return Graphic
 #' @author Marcelo Gehara
 #' @export

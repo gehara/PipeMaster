@@ -3,7 +3,9 @@ ms.string.generator<-function(model,size.pars,mig.pars,time.pars,use.alpha,scala
   # rescale to inheritance scalar and transform size parameters to relative to Ne0
   size.pars[,4:5] <- as.numeric(size.pars[,4]) * scalar
   # rescale migration to inheritance scalar
-  mig.pars[,4:5] <- as.numeric(mig.pars[,4]) * scalar
+  if(!is.null(mig.pars)) {
+    mig.pars[,4:5] <- as.numeric(mig.pars[,4]) * scalar
+  }
 
   # empty string for ms flags
   string<-list()
@@ -12,7 +14,11 @@ ms.string.generator<-function(model,size.pars,mig.pars,time.pars,use.alpha,scala
 ################################################################
 
   curr.Ne <- subset(size.pars, size.pars[,2]=="-n")
-  ent <- subset(time.pars, time.pars[,2]=="-en")
+  if(!is.null(time.pars)) {
+    ent <- subset(time.pars, time.pars[,2]=="-en")
+  } else {
+    ent <- time.pars
+  }
   en <- subset(size.pars, size.pars[,2]=="-en")
 
 

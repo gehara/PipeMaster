@@ -180,7 +180,7 @@ Digite **I** no menu principal **main menu** para ir para o gene menu. Para aces
 
 ## **Mutation rate prior**
 
-**No caso de dados genômicos, a taxa de mutação funciona como um hiperparâmetro**. A distribuição uniforme indica os valores mínimo *min* and máximo *max* para amostrar uma média e desvio padrão SD de todas as taxas de mutação. Ou seja, a taxa de mutação para cada um dos 30 loci será amostrada de uma distribuição normal com média e SD amostrados deste prior uniforme. Em cada iteração de simulaçao, uma nova média e SD são amostrados, e destes parâmetros são amostrados as 30 taxas de mutação. Esta distribuição normal é truncada em zero, de maneira que nem sempre terá a forma de uma distribuição normal padrão. Você pode determinar outras distribuições de onde amostrar as taxas de mutações. Todas as distribuições contempladas em R são permitidas, mas esta deve ser especificada na função de simulação (*sim.msABC.sumstat*). Este tópico será abordado mais a frente neste tutorial.
+**No caso de dados genômicos, a taxa de mutação funciona como um hiperparâmetro**. A distribuição uniforme indica os valores mínimo *min* and máximo *max* para amostrar uma média e desvio padrão SD de todas as taxas de mutação. Ou seja, a taxa de mutação para cada um dos 30 loci será amostrada de uma distribuição normal com média e SD amostrados deste prior uniforme. Em cada iteração de simulaçao, uma nova média e SD são amostrados, e destes parâmetros são amostrados as 30 taxas de mutação. Esta distribuição normal é truncada em zero, de maneira que nem sempre terá a forma de uma distribuição normal padrão. Você pode determinar outras distribuições de onde amostrar as taxas de mutações. Todas as distribuições contempladas em R são permitidas, mas esta deve ser especificada na função de simulação (*sim.sumstat*). Este tópico será abordado mais a frente neste tutorial.
 
 
 ## **Model Visualization**
@@ -643,18 +643,18 @@ Salve o resultado como uma tabela usando **write.table**.
 
 ## **Simulating data**
 
-Agora que temos dois modelos, **Is** e **IM**, vamos simular estatísticas sumárias. Vamos utilizar *sim.msABC.sumstat* para simular dados genômicos. Esta função funciona somente em linux e Mac. PipeMaster controla *msABC* para simular os dados. O pacote simula dados em lotes ou blocos para evitar sobrecarga de memória no R, e ao mesmo tempo otimizar o tempo gasto para registrar as simulações em arquivo.Para controlar o número total de simulações, você precisa controlar o tamanho do bloco de simulações, o número de blocos para simular, e o número de cores utilizados. O número total de simulações será = nsim.blocks *x* block.size *x* ncores. Você pode jogar com estes valores para otimizar a velocidade do processo de simulação. Um tamanho de bloco menor usara menos RAM, mas exigirá uma interação mais frequente entre o master node e os slave nodes, o que pode gastar tempo. Um tamanho de bloco maior pode sobrecarregar o R, já que R não consegue lidar bem com muita memória. Também pode ocupar muita RAM, especialmente se estiver rodando muitos cores ao mesmo tempo. PipeMaster vai mostrar uma estimativa de tempo no console, o que pode ajudar você a otimizar os parâmetros. Pela minha experiência, um block.size de 1000 funcionará bem para a maioria dos casos. Se não quiser mexer com isso, deixe em 1000 que deve dar certo.
+Agora que temos dois modelos, **Is** e **IM**, vamos simular estatísticas sumárias. Vamos utilizar *sim.sumstat* para simular dados genômicos. Esta função funciona somente em linux e Mac. PipeMaster controla *msABC* para simular os dados. O pacote simula dados em lotes ou blocos para evitar sobrecarga de memória no R, e ao mesmo tempo otimizar o tempo gasto para registrar as simulações em arquivo.Para controlar o número total de simulações, você precisa controlar o tamanho do bloco de simulações, o número de blocos para simular, e o número de cores utilizados. O número total de simulações será = nsim.blocks *x* block.size *x* ncores. Você pode jogar com estes valores para otimizar a velocidade do processo de simulação. Um tamanho de bloco menor usara menos RAM, mas exigirá uma interação mais frequente entre o master node e os slave nodes, o que pode gastar tempo. Um tamanho de bloco maior pode sobrecarregar o R, já que R não consegue lidar bem com muita memória. Também pode ocupar muita RAM, especialmente se estiver rodando muitos cores ao mesmo tempo. PipeMaster vai mostrar uma estimativa de tempo no console, o que pode ajudar você a otimizar os parâmetros. Pela minha experiência, um block.size de 1000 funcionará bem para a maioria dos casos. Se não quiser mexer com isso, deixe em 1000 que deve dar certo.
 
 
 ```
   ##### MAC e LINUX ######
-  sim.msABC.sumstat(Is, nsim.blocks = 1, use.alpha = F, 
+  sim.sumstat(Is, nsim.blocks = 1, use.alpha = F, 
   output.name = "Is", append.sims = F, block.size =   500, ncores = 2)
 
-  sim.msABC.sumstat(IM, nsim.blocks = 1, use.alpha = F, 
+  sim.sumstat(IM, nsim.blocks = 1, use.alpha = F, 
   output.name = "IM", append.sims = F, block.size =   500, ncores = 2)
                     
-  sim.msABC.sumstat(IsBot2, nsim.blocks = 1, use.alpha = F, 
+  sim.sumstat(IsBot2, nsim.blocks = 1, use.alpha = F, 
   output.name = "IsBot2", append.sims = F, block.size =   500, ncores = 2)
   ##### MAC e LINUX ######
   
@@ -677,7 +677,7 @@ Agora que temos dois modelos, **Is** e **IM**, vamos simular estatísticas sumá
 No PipeMaster, a taxa de mutação pode ser parametrizada de diferentes maneiras. A opção padrão é usar uma distribuição uniforme para amostrar uma *média* e *desvio padrão* para a taxa de mutação em todos os loci (taxa de mutação por locus por geração). Portanto, o PipeMaster pegará essa *média* e *SD* e gerará uma distribuição uniforme para amostrar uma taxa de mutação por loci. No entanto, uma distribuição específica para amostrar as taxas de mutação pode ser especificada como um argumento da função de simulação. Todas as distribuições disponíveis em r-base e r-package e1071 são permitidas. O argumento deve ser uma lista. O primeiro elemento da lista é o nome da função de distribuição. O segundo elemento da lista deve ser o número de loci. Os seguintes elementos são os parâmetros da distribuição a serem passados para a função de distribuição do r.
 
 ```
-sim.msABC.sumstat(Is, nsim.blocks = 1, use.alpha = F, 
+sim.sumstat(Is, nsim.blocks = 1, use.alpha = F, 
                   output.name = "Is", append.sims = F, block.size = 500, ncores = 20,
                   mu.rates = list("rtnorm",30, 1e-9, 0, 0))
 ```
@@ -687,7 +687,7 @@ sim.msABC.sumstat(Is, nsim.blocks = 1, use.alpha = F,
 Também é possível especificar uma distribuição para a taxa de recombinação da mesma forma. A taxa de recombinação é especificada como a probabilidade de recombinação por par de bases.
 
 ```
-sim.msABC.sumstat(Is, nsim.blocks = 1, use.alpha = F, 
+sim.sumstat(Is, nsim.blocks = 1, use.alpha = F, 
                   output.name = "Is", append.sims = F, block.size = 500, ncores = 2,
                   rec.rates = list("runif", 30, 1e-9, 0),
                   mu.rates = list("rtnorm",30, 1e-9, 0, 0))

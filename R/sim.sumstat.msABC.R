@@ -30,7 +30,7 @@
 #'
 #' # Quick test run (small block size, single core)
 #' tmpdir <- tempdir()
-#' sim.msABC.sumstat(model = Is,
+#' sim.sumstat(model = Is,
 #'                   nsim.blocks = 1,
 #'                   block.size = 10,
 #'                   path = tmpdir,
@@ -43,7 +43,7 @@
 #' head(sim.data)
 #'
 #' # Production run (more simulations, multiple cores)
-#' # sim.msABC.sumstat(model = IM,
+#' # sim.sumstat(model = IM,
 #' #                   nsim.blocks = 50,
 #' #                   block.size = 1000,
 #' #                   path = tmpdir,
@@ -55,7 +55,7 @@
 #' @references Pavlidis P., Laurent S., & Stephan W. (2010) msABC: A modification of Hudson's ms to facilitate multi-locus ABC analysis. Molecular Ecology Resources, 10, 723–727.
 #' @author Marcelo Gehara
 #' @export
-sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.rates=NULL, rec.rates = NULL,
+sim.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.rates=NULL, rec.rates = NULL,
                             append.sims=F,block.size=10,output.name,ncores){
 
   WD<-getwd()
@@ -105,7 +105,7 @@ sim.msABC.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.ra
       'load(file.path(base_path, ".PM_worker_params.RData"))',
       'worker_dir <- file.path(base_path, paste0(".worker_", worker_id))',
       'dir.create(worker_dir, showWarnings=FALSE)',
-      'sim.msABC.sumstat(model=model, nsim.blocks=nsim.blocks, block.size=block.size,',
+      'sim.sumstat(model=model, nsim.blocks=nsim.blocks, block.size=block.size,',
       '                  path=worker_dir, use.alpha=use.alpha, mu.rates=mu.rates,',
       '                  rec.rates=rec.rates, append.sims=TRUE,',
       '                  output.name=output.name, ncores=1)',

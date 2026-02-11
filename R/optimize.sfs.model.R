@@ -14,7 +14,7 @@
 #'   Length must equal the number of populations. If NULL (default), the optimal
 #'   targets are found automatically.
 #' @return A modified model object with uniform sample sizes across all loci,
-#'   ready for use with \code{sim.scrm.sfs}.
+#'   ready for use with \code{sim.sfs}.
 #' @examples
 #' \dontrun{
 #' data("A_piscivorus", package = "PipeMaster")
@@ -26,7 +26,7 @@
 #' Is_manual <- optimize.sfs.model(Is, target = c(40, 14))
 #'
 #' # Then simulate SFS
-#' sim.scrm.sfs(model = Is_sfs, nsim.blocks = 1, block.size = 100,
+#' sim.sfs(model = Is_sfs, nsim.blocks = 1, block.size = 100,
 #'              path = tempdir(), output.name = "test")
 #' }
 #' @author Marcelo Gehara

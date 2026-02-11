@@ -60,7 +60,9 @@ ms.commander2<-function(model,use.alpha=use.alpha){
   loci <- cbind(loci, ms.scalar * as.numeric(loci[,4]) * as.numeric(loci[,2]))
 
   #### convertion of time to coalescent scale
-  time.pars[,4:5] <- as.numeric(time.pars[,4])/ms.scalar
+  if(!is.null(time.pars)) {
+    time.pars[,4:5] <- as.numeric(time.pars[,4])/ms.scalar
+  }
 
   # rescale to inheritance scalar and transform size parameters to relative to Ne0
   size.pars[,4:5] <- as.numeric(size.pars[,4])/Ne0

@@ -11,14 +11,49 @@
 #' @param path Path to write the output. By default outputs will be saved in the working directory.
 #' @param output.name String. The prefix of the output names. Default is "model".
 #' @param append.sims Logical. If TRUE simulations will be appended in the last output. Default is FALSE.
+#' @param mu.rates List. Distribution to sample the mutation rates. The first element of the list should be the name of the distribution as a character string.
+#'                 The second element of the list must be the number of loci. The following elements are the parameters of the distribution.
+#'                 Ex.: mu.rates = list("rtnorm", 1000, 1e-9, 1e-9, 0). If NULL, rates are sampled from the model priors. Default is NULL.
 #' @param folded Logical. If TRUE the SFS will be folded. Default is FALSE.
 #' @param ncores Number of cores for parallel execution. When ncores > 1, separate R worker processes are spawned. Default is 1.
-#' @return Writes simulations (parameters + SFS) to the path directory.
+#' @return Writes SIM_SFS_{output.name}.txt to the path directory. The file contains a header row followed by one row per replicate, with parameter values (including mean.rate and sd.rate) and SFS bins.
+#' @examples
+#' \dontrun{
+#' # Load example demographic models
+#' data("A_piscivorus", package = "PipeMaster")
+#'
+#' # Optimize model for uniform sample sizes
+#' Is_opt <- optimize.sfs.model(Is)
+#'
+#' # Quick test run (small block size, single core)
+#' tmpdir <- tempdir()
+#' sim.sfs(model = Is_opt,
+#'         nsim.blocks = 1,
+#'         block.size = 10,
+#'         path = tmpdir,
+#'         use.alpha = FALSE,
+#'         output.name = "test_sfs",
+#'         ncores = 1)
+#'
+#' # Read simulated SFS
+#' sim.data <- read.table(file.path(tmpdir, "SIM_SFS_test_sfs.txt"), header = TRUE)
+#' head(sim.data)
+#'
+#' # Folded SFS
+#' sim.sfs(model = Is_opt,
+#'         nsim.blocks = 1,
+#'         block.size = 10,
+#'         path = tmpdir,
+#'         use.alpha = FALSE,
+#'         output.name = "test_sfs_folded",
+#'         folded = TRUE,
+#'         ncores = 1)
+#' }
 #' @author Marcelo Gehara
 #' @export
-sim.scrm.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
+sim.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
                           path=getwd(), output.name="model", append.sims=FALSE,
-                          folded=FALSE, ncores=1) {
+                          mu.rates=NULL, folded=FALSE, ncores=1) {
 
   WD <- getwd()
 
@@ -47,9 +82,13 @@ sim.scrm.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
     test.result <- scrm::scrm(paste(nsam, 1, com[[1]], "-oSFS"))
     sfs.test <- as.numeric(test.result$sfs)
 
-    # parameter names (drop scalar column)
+    # parameter names: keep non-rate params, replace per-locus rates with mean.rate + sd.rate
     par.names <- com[[nrow(model$loci) + 1]][1, ]
-    par.names <- par.names[-length(par.names)]
+    par.names <- par.names[-length(par.names)]  # drop scalar
+    rate.idx <- which(par.names %in% model$loci[,1])
+    if(length(rate.idx) > 0) {
+      par.names <- c(par.names[-rate.idx], "mean.rate", "sd.rate")
+    }
 
     # SFS column names
     if(folded) {
@@ -60,7 +99,7 @@ sim.scrm.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
     }
 
     nam <- c(par.names, sfs.names)
-    write.table(t(nam), file = paste0("SIMS_", output.name, ".txt"),
+    write.table(t(nam), file = paste0("SIM_SFS_", output.name, ".txt"),
                 quote = FALSE, row.names = FALSE, col.names = FALSE,
                 append = FALSE, sep = "\t")
   }
@@ -68,7 +107,7 @@ sim.scrm.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
   ############### Multi-core path
   if(ncores > 1) {
     abs.path <- normalizePath(getwd())
-    save(model, nsim.blocks, block.size, use.alpha, output.name, folded,
+    save(model, nsim.blocks, block.size, use.alpha, output.name, mu.rates, folded,
          file = file.path(abs.path, ".PM_worker_params.RData"))
 
     worker_script <- paste(
@@ -79,8 +118,8 @@ sim.scrm.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
       'load(file.path(base_path, ".PM_worker_params.RData"))',
       'worker_dir <- file.path(base_path, paste0(".worker_", worker_id))',
       'dir.create(worker_dir, showWarnings=FALSE)',
-      'sim.scrm.sfs(model=model, nsim.blocks=nsim.blocks, block.size=block.size,',
-      '             path=worker_dir, use.alpha=use.alpha, folded=folded,',
+      'sim.sfs(model=model, nsim.blocks=nsim.blocks, block.size=block.size,',
+      '             path=worker_dir, use.alpha=use.alpha, mu.rates=mu.rates, folded=folded,',
       '             append.sims=TRUE,',
       '             output.name=output.name, ncores=1)',
       'write("done", file.path(base_path, paste0(".worker_", worker_id, ".done")))',
@@ -103,7 +142,7 @@ sim.scrm.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
 
       total_sims <- 0
       for(w in 1:ncores) {
-        wf <- file.path(abs.path, paste0(".worker_", w), paste0("SIMS_", output.name, ".txt"))
+        wf <- file.path(abs.path, paste0(".worker_", w), paste0("SIM_SFS_", output.name, ".txt"))
         if(file.exists(wf)) {
           n <- length(readLines(wf))
           if(n > 0) total_sims <- total_sims + n
@@ -122,9 +161,9 @@ sim.scrm.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
     }
 
     cat("Compiling results from workers", sep = "\n")
-    outfile <- file.path(abs.path, paste0("SIMS_", output.name, ".txt"))
+    outfile <- file.path(abs.path, paste0("SIM_SFS_", output.name, ".txt"))
     for(w in 1:ncores) {
-      wf <- file.path(abs.path, paste0(".worker_", w), paste0("SIMS_", output.name, ".txt"))
+      wf <- file.path(abs.path, paste0(".worker_", w), paste0("SIM_SFS_", output.name, ".txt"))
       if(file.exists(wf)) {
         worker_data <- readLines(wf)
         if(length(worker_data) > 0) {
@@ -154,6 +193,28 @@ sim.scrm.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
       for(i in 1:block.size) {
         com <- PipeMaster:::ms.commander2(model, use.alpha = use.alpha)
 
+        # override mutation rates if mu.rates is provided
+        if(!is.null(mu.rates)) {
+          user.rates <- do.call(mu.rates[[1]], args = mu.rates[2:length(mu.rates)])
+          n_loci <- nrow(model$loci)
+          if(length(user.rates) < n_loci) user.rates <- rep_len(user.rates, n_loci)
+          # get scalar from parameter matrix
+          par.all <- com[[n_loci + 1]]
+          ms.scalar <- as.numeric(par.all[2, ncol(par.all)])
+          # replace -t value in each locus command
+          for(u in 1:n_loci) {
+            bp <- as.numeric(model$loci[u, 2])
+            new.theta <- ms.scalar * user.rates[u] * bp
+            com[[u]] <- sub("-t\\s+[0-9.eE+\\-]+", paste("-t", new.theta), com[[u]])
+          }
+          # replace rate values in parameter matrix
+          rate.rows <- which(par.all[1, ] %in% model$loci[,1])
+          for(r in seq_along(rate.rows)) {
+            par.all[2, rate.rows[r]] <- as.character(user.rates[r])
+          }
+          com[[n_loci + 1]] <- par.all
+        }
+
         # collect SFS across loci
         sfs.list <- list()
         for(u in 1:nrow(model$loci)) {
@@ -162,9 +223,9 @@ sim.scrm.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
           sfs.list[[u]] <- as.numeric(scrm.out$sfs)
         }
 
-        # average SFS across loci
+        # sum SFS across loci
         sfs.mat <- do.call("rbind", sfs.list)
-        sfs.mean <- colMeans(sfs.mat, na.rm = TRUE)
+        sfs.mean <- colSums(sfs.mat, na.rm = TRUE)
 
         # fold if requested
         if(folded) {
@@ -173,7 +234,14 @@ sim.scrm.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
 
         # extract parameters (drop scalar column)
         par <- com[[nrow(model$loci) + 1]][2, ]
-        par <- par[-length(par)]
+        par <- par[-length(par)]  # drop scalar
+        par.names.tmp <- com[[nrow(model$loci) + 1]][1, ]
+        par.names.tmp <- par.names.tmp[-length(par.names.tmp)]
+        rate.idx <- which(par.names.tmp %in% model$loci[,1])
+        if(length(rate.idx) > 0) {
+          rates <- as.numeric(par[rate.idx])
+          par <- c(par[-rate.idx], mean(rates), sd(rates))
+        }
 
         results <- rbind(results, c(par, sfs.mean))
       }
@@ -186,7 +254,7 @@ sim.scrm.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
       simulations <- sim.sfs.func()
 
       cat("Writing simulations to file", sep = "\n")
-      write.table(simulations, file = paste0("SIMS_", output.name, ".txt"),
+      write.table(simulations, file = paste0("SIM_SFS_", output.name, ".txt"),
                   quote = FALSE, row.names = FALSE, col.names = FALSE,
                   append = TRUE, sep = "\t")
 

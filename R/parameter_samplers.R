@@ -18,8 +18,10 @@ sample.pars<-function(x){
 # internal function of the ms.commander
 sample.w.cond<-function(par.matrix,cond.matrix){
 
-  nam<-rownames(cond.matrix)
   x<-sample.pars(par.matrix)
+  if(is.null(cond.matrix)) return(x)
+
+  nam<-rownames(cond.matrix)
 
   y<-which(cond.matrix=="<", arr.ind=T)
 

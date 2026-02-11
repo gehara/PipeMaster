@@ -150,25 +150,25 @@ plot.priors(Is)
 ### 5) Simulate data for all 10 models
 
 ```{r}
-sim.msABC.sumstat(Is, nsim.blocks = 1, use.alpha = F, output.name = "Is", append.sims = F, block.size = 500, ncores = 2)
+sim.sumstat(Is, nsim.blocks = 1, use.alpha = F, output.name = "Is", append.sims = F, block.size = 500, ncores = 2)
 
-sim.msABC.sumstat(IM, nsim.blocks = 1, use.alpha = F, output.name = "IM", append.sims = F, block.size = 500, ncores = 2)
+sim.sumstat(IM, nsim.blocks = 1, use.alpha = F, output.name = "IM", append.sims = F, block.size = 500, ncores = 2)
 
-sim.msABC.sumstat(IsD, nsim.blocks = 1, use.alpha = c(T,1,2), output.name = "IsD", append.sims = F, block.size = 500, ncores = 2)
+sim.sumstat(IsD, nsim.blocks = 1, use.alpha = c(T,1,2), output.name = "IsD", append.sims = F, block.size = 500, ncores = 2)
 
-sim.msABC.sumstat(IMD, nsim.blocks = 1, use.alpha = c(T,1,2), output.name = "IMD", append.sims = F, block.size = 500, ncores = 2)
+sim.sumstat(IMD, nsim.blocks = 1, use.alpha = c(T,1,2), output.name = "IMD", append.sims = F, block.size = 500, ncores = 2)
 
-sim.msABC.sumstat(IsBot, nsim.blocks = 1, use.alpha = c(T,1,2), output.name = "IsBot", append.sims = F, block.size = 500, ncores = 2)
+sim.sumstat(IsBot, nsim.blocks = 1, use.alpha = c(T,1,2), output.name = "IsBot", append.sims = F, block.size = 500, ncores = 2)
 
-sim.msABC.sumstat(IMBot, nsim.blocks = 1, use.alpha = c(T,1,2), output.name = "IMBot", append.sims = F, block.size = 500, ncores = 2)
+sim.sumstat(IMBot, nsim.blocks = 1, use.alpha = c(T,1,2), output.name = "IMBot", append.sims = F, block.size = 500, ncores = 2)
 
-sim.msABC.sumstat(IsBot2, nsim.blocks = 1, use.alpha = c(T,1), output.name = "IsBot2", append.sims = F, block.size = 500, ncores = 2)
+sim.sumstat(IsBot2, nsim.blocks = 1, use.alpha = c(T,1), output.name = "IsBot2", append.sims = F, block.size = 500, ncores = 2)
 
-sim.msABC.sumstat(IMBot2, nsim.blocks = 1, use.alpha = c(T,1), output.name = "IMBot2", append.sims = F, block.size = 500, ncores = 2)
+sim.sumstat(IMBot2, nsim.blocks = 1, use.alpha = c(T,1), output.name = "IMBot2", append.sims = F, block.size = 500, ncores = 2)
 
-sim.msABC.sumstat(IsD2, nsim.blocks = 1, use.alpha = c(T,1), output.name = "IsD2", append.sims = F, block.size = 500, ncores = 2)
+sim.sumstat(IsD2, nsim.blocks = 1, use.alpha = c(T,1), output.name = "IsD2", append.sims = F, block.size = 500, ncores = 2)
 
-sim.msABC.sumstat(IMD2, nsim.blocks = 1, use.alpha = c(T,1), output.name = "IMD2", append.sims = F, block.size = 500, ncores = 2)
+sim.sumstat(IMD2, nsim.blocks = 1, use.alpha = c(T,1), output.name = "IMD2", append.sims = F, block.size = 500, ncores = 2)
 ```
 ### 6) Read simulations
 
