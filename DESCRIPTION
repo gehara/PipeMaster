@@ -8,7 +8,6 @@ Authors@R: c(person("Marcelo", "Gehara", email = "marcelo.gehara@gmail.com", rol
              person("Frank","Burbrink", role="aut"))
 Imports: ape,
           e1071,
-          phyclust,
           abc,
           msm,
           shiny,
@@ -18,11 +17,10 @@ Imports: ape,
           scrm
 Depends: ape,
           e1071,
-          phyclust,
           abc,
           msm
 Suggests: PopGenome
-Description: PipeMaster helps you build and simulate coalescent models within R. One can use the interactive menu to build a colescent model that can be further simulated. It can also simulate simutaineous expansion for single locus data across multiple species. It can output summary statistics and coalescent trees. It will output hyper summary statistics in the case of coexpansion models. It can also calculate the same summary stats from your own data. It uses the ms coalescent simulator implemented as a function in "phyclust" and a built-in msABC C implementation to calculate summary stats.
+Description: PipeMaster helps you build and simulate coalescent models within R. One can use the interactive menu to build a colescent model that can be further simulated. It can also simulate simutaineous expansion for single locus data across multiple species. It can output summary statistics and coalescent trees. It will output hyper summary statistics in the case of coexpansion models. It can also calculate the same summary stats from your own data. It uses a built-in ms/msABC C implementation for coalescent simulation and summary statistic computation.
 License: GPL (>= 2)
 URL: http://www.marcelogehara.org/
 BugReports: https://github.com/gehara/PipeMaster

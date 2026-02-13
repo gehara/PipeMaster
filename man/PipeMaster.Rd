@@ -6,7 +6,7 @@
 \alias{PipeMaster}
 \title{PipeMaster: A package to build and simulate coalescent models}
 \description{
-PipeMaster helps you build and simulate coalescent models within R. One can use the interactive menu to build a colescent model that can be further simulated. It can also simulate simutaineous expansion for single locus data across multiple species. It can output summary statistics and coalescent trees. It will output hyper summary statistics in the case of coexpansion models. It can also calculate the same summary stats from your own data. It uses the ms coalescent simulator implemented as a function in "phyclust" and a built-in msABC C implementation to calculate summary stats.
+PipeMaster helps you build and simulate coalescent models within R. One can use the interactive menu to build a colescent model that can be further simulated. It can also simulate simutaineous expansion for single locus data across multiple species. It can output summary statistics and coalescent trees. It will output hyper summary statistics in the case of coexpansion models. It can also calculate the same summary stats from your own data. It uses a built-in ms/msABC C implementation for coalescent simulation and summary statistic computation.
 }
 \section{PipeMaster functions}{
 

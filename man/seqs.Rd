@@ -3,17 +3,20 @@
 \docType{data}
 \name{seqs}
 \alias{seqs}
-\title{200 sequences of the Dermatonotus muelleri frog}
+\title{200 sequences of the Dermatonotus muelleri frog (Deprecated)}
 \format{
-An object of class \code{"cross"}; see \code{\link[qtl]{read.cross}}.
+A list of 200 \code{DNAbin} matrices.
 }
 \usage{
-data(200seqs)
+data(seqs, package = "PipeMaster")
 }
 \description{
-200 sequences stored in a list.
+\lifecycle{deprecated}
+This dataset is deprecated and will be replaced in a future version.
+200 sequences stored in a list of DNAbin matrices.
 }
 \references{
 Gehara et al. (in review)
 }
 \keyword{datasets}
+\keyword{internal}

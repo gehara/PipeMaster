@@ -2,7 +2,7 @@
 % Please edit documentation in R/sim.sfs.R
 \name{sim.sfs}
 \alias{sim.sfs}
-\title{Simulate Site Frequency Spectra using scrm}
+\title{Simulate Site Frequency Spectra}
 \usage{
 sim.sfs(
   model,
@@ -13,6 +13,7 @@ sim.sfs(
   output.name = "model",
   append.sims = FALSE,
   mu.rates = NULL,
+  one.snp = FALSE,
   folded = FALSE,
   ncores = 1
 )
@@ -37,6 +38,11 @@ A block of 1000 will work for most cases. Increase the total number of simulatio
 The second element of the list must be the number of loci. The following elements are the parameters of the distribution.
 Ex.: mu.rates = list("rtnorm", 1000, 1e-9, 1e-9, 0). If NULL, rates are sampled from the model priors. Default is NULL.}
 
+\item{one.snp}{Logical. If TRUE, one segregating site is randomly sampled per locus before
+computing the SFS. This reduces variance inflation caused by linkage among
+sites within the same locus. Recommended for short loci where recombination
+is negligible. Default is FALSE.}
+
 \item{folded}{Logical. If TRUE the SFS will be folded. Default is FALSE.}
 
 \item{ncores}{Number of cores for parallel execution. When ncores > 1, separate R worker processes are spawned. Default is 1.}
@@ -45,7 +51,8 @@ Ex.: mu.rates = list("rtnorm", 1000, 1e-9, 1e-9, 0). If NULL, rates are sampled 
 Writes SIM_SFS_{output.name}.txt to the path directory. The file contains a header row followed by one row per replicate, with parameter values (including mean.rate and sd.rate) and SFS bins.
 }
 \description{
-This function simulates the Site Frequency Spectrum (SFS) using the scrm coalescent simulator.
+This function simulates the Site Frequency Spectrum (SFS) using the built-in
+             coalescent simulator (ms/msABC). SFS computation is performed natively in C for speed.
              For single-population models, it outputs the 1D SFS (unfolded or folded) summed across loci.
              For multi-population models, it computes the joint SFS from segregating sites,
              returning the flattened multi-dimensional array (e.g., (n1+1)*(n2+1) entries for 2 pops).

@@ -3,17 +3,20 @@
 \docType{data}
 \name{popassign}
 \alias{popassign}
-\title{assignment file example for the Dermatonotus muelleri sequences}
+\title{Population assignment file for Dermatonotus muelleri sequences (Deprecated)}
 \format{
-An object of class \code{"cross"}; see \code{\link[qtl]{read.cross}}.
+A data frame with 88 rows and 2 columns (\code{sample}, \code{pop}).
 }
 \usage{
 data(popassign, package = "PipeMaster")
 }
 \description{
-assignment file
+\lifecycle{deprecated}
+This dataset is deprecated and will be replaced in a future version.
+Population assignment table mapping samples to populations.
 }
 \references{
 Gehara et al. (in review)
 }
 \keyword{datasets}
+\keyword{internal}

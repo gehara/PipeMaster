@@ -38,7 +38,7 @@ Load the package:
 library(PipeMaster)
 ```
 
-PipeMaster depends on `ape`, `abc`, `e1071`, `phyclust`, and `msm`. These are installed automatically. For the Shiny GUI, you also need `shinydashboard`, `shinyjs`, and `DT`.
+PipeMaster depends on `ape`, `abc`, `e1071`, and `msm`. These are installed automatically. For the Shiny GUI, you also need `shinydashboard`, `shinyjs`, and `DT`.
 
 ### Simulation engine
 

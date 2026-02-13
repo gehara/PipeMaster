@@ -6,7 +6,8 @@
 \usage{
 obs.sumstat.ngs(
   model = NULL,
-  path.to.fasta,
+  path.to.fasta = NULL,
+  path.to.phylip = NULL,
   pop.assign,
   moments = TRUE,
   ncores = 1
@@ -17,7 +18,12 @@ obs.sumstat.ngs(
 
 \item{path.to.fasta}{Path to the folder containing all fastas to be included in the calculation.
 Invariable sites must be included in the fasta alignments.
-Invariable loci must also be included. Alignments must contain phased data.}
+Invariable loci must also be included. Alignments must contain phased data.
+Either path.to.fasta or path.to.phylip must be provided.}
+
+\item{path.to.phylip}{Path to a multi-locus sequential PHYLIP file. Each locus block starts
+with a "ntax nchar" header followed by ntax sequence lines. Alternative
+to path.to.fasta for datasets with many loci.}
 
 \item{pop.assign}{A two-column data frame with sample names in the first column and the corresponding population membership preferably as numbers in the second column (If you have a single population the numbers won't matter). The numbers should match the population number in the model object.}
 
