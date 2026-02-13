@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 # Test script for obs.sfs() function
-# Validates observed SFS computation from FASTA data against Python reference SFS
+# Validates observed SFS computation from PHYLIP data against Python reference SFS
 
 suppressMessages(library(PipeMaster))
 
@@ -31,13 +31,13 @@ check <- function(desc, condition) {
 }
 
 # ============================================================================
-# Test 1: Vaquita2Epoch (1-pop, 40 haplotypes)
+# Test 1: Vaquita2Epoch (1-pop, 40 haplotypes, PHYLIP input)
 # ============================================================================
-cat("\n=== Test 1: Vaquita2Epoch (1-pop) ===\n")
+cat("\n=== Test 1: Vaquita2Epoch (1-pop, PHYLIP) ===\n")
 
 pop_assign_vaq <- read.table("pop_assign_Vaquita2Epoch.txt", header = FALSE)
 obs_vaq <- obs.sfs(model = Vaquita2Epoch,
-                   path.to.fasta = file.path(test_dir, "fasta_Vaquita2Epoch"),
+                   path.to.phylip = file.path(test_dir, "phylip_Vaquita2Epoch.phy"),
                    pop.assign = pop_assign_vaq)
 
 check("Vaquita: 1 row", nrow(obs_vaq) == 1)
@@ -72,13 +72,13 @@ check("Vaquita: total SNP count matches reference", sum(obs_vaq) == sum(ref_vaq)
 
 
 # ============================================================================
-# Test 2: Africa_1T12 (1-pop, 40 haplotypes)
+# Test 2: Africa_1T12 (1-pop, 40 haplotypes, PHYLIP input)
 # ============================================================================
-cat("\n=== Test 2: Africa_1T12 (1-pop) ===\n")
+cat("\n=== Test 2: Africa_1T12 (1-pop, PHYLIP) ===\n")
 
 pop_assign_afr <- read.table("pop_assign_Africa_1T12.txt", header = FALSE)
 obs_afr <- obs.sfs(model = Africa_1T12,
-                   path.to.fasta = file.path(test_dir, "fasta_Africa_1T12"),
+                   path.to.phylip = file.path(test_dir, "phylip_Africa_1T12.phy"),
                    pop.assign = pop_assign_afr)
 
 check("Africa: 1 row", nrow(obs_afr) == 1)
@@ -102,13 +102,13 @@ check("Africa: total SNP count matches reference", sum(obs_afr) == sum(ref_afr))
 
 
 # ============================================================================
-# Test 3: OutOfAfrica_2T12 (2-pop joint SFS, 40+40 haplotypes)
+# Test 3: OutOfAfrica_2T12 (2-pop joint SFS, 40+40 haplotypes, PHYLIP)
 # ============================================================================
-cat("\n=== Test 3: OutOfAfrica_2T12 (2-pop joint SFS) ===\n")
+cat("\n=== Test 3: OutOfAfrica_2T12 (2-pop joint SFS, PHYLIP) ===\n")
 
 pop_assign_ooa2 <- read.table("pop_assign_OutOfAfrica_2T12.txt", header = FALSE)
 obs_ooa2 <- obs.sfs(model = OutOfAfrica_2T12,
-                    path.to.fasta = file.path(test_dir, "fasta_OutOfAfrica_2T12"),
+                    path.to.phylip = file.path(test_dir, "phylip_OutOfAfrica_2T12.phy"),
                     pop.assign = pop_assign_ooa2)
 
 check("OoA_2T12: 1 row", nrow(obs_ooa2) == 1)
@@ -146,13 +146,13 @@ check("OoA_2T12: matrix dimensions match reference", all(dim(sfs_mat) == dim(ref
 
 
 # ============================================================================
-# Test 4: OutOfAfrica_3G09 (2-pop, 40+40 haplotypes)
+# Test 4: OutOfAfrica_3G09 (2-pop, 40+40 haplotypes, PHYLIP)
 # ============================================================================
-cat("\n=== Test 4: OutOfAfrica_3G09 (2-pop) ===\n")
+cat("\n=== Test 4: OutOfAfrica_3G09 (2-pop, PHYLIP) ===\n")
 
 pop_assign_ooa3 <- read.table("pop_assign_OutOfAfrica_3G09.txt", header = FALSE)
 obs_ooa3 <- obs.sfs(model = OutOfAfrica_3G09,
-                    path.to.fasta = file.path(test_dir, "fasta_OutOfAfrica_3G09"),
+                    path.to.phylip = file.path(test_dir, "phylip_OutOfAfrica_3G09.phy"),
                     pop.assign = pop_assign_ooa3)
 
 check("OoA_3G09: 1 row", nrow(obs_ooa3) == 1)
@@ -163,12 +163,12 @@ check("OoA_3G09: has sfs_matrix attribute", !is.null(attr(obs_ooa3, "sfs_matrix"
 
 
 # ============================================================================
-# Test 5: Folded SFS (1-pop)
+# Test 5: Folded SFS (1-pop, PHYLIP)
 # ============================================================================
-cat("\n=== Test 5: Folded SFS ===\n")
+cat("\n=== Test 5: Folded SFS (PHYLIP) ===\n")
 
 obs_vaq_folded <- obs.sfs(model = Vaquita2Epoch,
-                          path.to.fasta = file.path(test_dir, "fasta_Vaquita2Epoch"),
+                          path.to.phylip = file.path(test_dir, "phylip_Vaquita2Epoch.phy"),
                           pop.assign = pop_assign_vaq,
                           folded = TRUE)
 

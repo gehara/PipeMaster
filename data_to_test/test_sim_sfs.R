@@ -225,7 +225,7 @@ sim.sfs(model = Vaquita2Epoch,
         path = tmpdir,
         use.alpha = FALSE,
         output.name = "test_murates",
-        mu.rates = list("runif", 200, 1e-9, 1e-8),
+        mu.rates = list("runif", 10000, 1e-9, 1e-8),
         ncores = 1)
 
 outfile_mu <- file.path(tmpdir, "SIM_SFS_test_murates.txt")

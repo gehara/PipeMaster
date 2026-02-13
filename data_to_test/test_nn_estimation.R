@@ -6,6 +6,8 @@
 # Compares NN point estimates vs ABC rejection vs true values.
 #
 # Models: Vaquita2Epoch (1-pop bottleneck), OutOfAfrica_3G09 (2-pop with migration)
+#
+# Architecture: Residual blocks with batch normalization, Huber loss, ensemble of 5
 
 suppressPackageStartupMessages({
   library(keras)
@@ -13,6 +15,7 @@ suppressPackageStartupMessages({
 })
 
 set.seed(42)
+N_ENSEMBLE <- 5
 
 # ============================================================================
 # Load data
@@ -24,7 +27,6 @@ load("data_to_test/observed_msABC_sumstats.RData")  # observed_msABC_Vaquita2Epo
 load("data_to_test/test_models.RData")              # model objects with true_params
 
 # True params in PipeMaster scale (from model attributes)
-# Filter to numeric entries only (exclude 'model' string)
 extract_true_params <- function(model_obj) {
   tp <- attr(model_obj, "true_params")
   is_num <- sapply(tp, is.numeric)
@@ -40,16 +42,13 @@ true_ooa <- extract_true_params(OutOfAfrica_3G09)
 abc_reject <- function(sim_df, obs_vals, stat_cols, tol_frac) {
   sim_matrix <- as.matrix(sim_df[, stat_cols, drop = FALSE])
   obs_vector <- obs_vals[stat_cols]
-  # Replace non-finite with 0
   sim_matrix[!is.finite(sim_matrix)] <- 0
   obs_vector[!is.finite(obs_vector)] <- 0
-  # Standardize
   sim_means <- colMeans(sim_matrix)
   sim_sd <- apply(sim_matrix, 2, sd, na.rm = TRUE)
   sim_sd[sim_sd == 0] <- 1
   sim_scaled <- sweep(sim_matrix, 2, sim_means) / rep(sim_sd, each = nrow(sim_matrix))
   obs_scaled <- (obs_vector - sim_means) / sim_sd
-  # Euclidean distance
   distances <- sqrt(rowSums(sweep(sim_scaled, 2, obs_scaled)^2))
   tol <- quantile(distances, tol_frac)
   which(distances <= tol)
@@ -62,7 +61,6 @@ run_abc <- function(sim_df, obs_mat, param_cols, stat_cols, model_name) {
   obs_vals <- as.numeric(obs_mat[1, ])
   names(obs_vals) <- colnames(obs_mat)
 
-  # Find in-range stats (exclude stats where observed is outside sim range)
   in_range <- character(0)
   for (col in stat_cols) {
     ov <- obs_vals[col]
@@ -75,29 +73,31 @@ run_abc <- function(sim_df, obs_mat, param_cols, stat_cols, model_name) {
   accepted <- abc_reject(sim_df, obs_vals, in_range, 0.001)
   cat(sprintf("  Accepted %d simulations\n", length(accepted)))
 
-  # Posterior medians for target params
   abc_est <- sapply(param_cols, function(p) median(sim_df[accepted, p]))
   abc_est
 }
 
 # ============================================================================
-# Helper: prepare data for a model
+# Helper: prepare data with feature augmentation
 # ============================================================================
 
 prepare_data <- function(sim_df, obs_mat, param_names, model_name) {
 
   cat(sprintf("\n=== %s ===\n", model_name))
 
-  # Separate targets and features
   nuisance <- c("mean.rate", "sd.rate")
   stat_cols <- setdiff(colnames(sim_df), c(param_names, nuisance))
   target_cols <- setdiff(param_names, nuisance)
 
   targets <- as.matrix(sim_df[, target_cols])
-  features <- as.matrix(sim_df[, stat_cols])
+  features_raw <- as.matrix(sim_df[, stat_cols])
 
-  cat(sprintf("  Simulations: %d | Features: %d | Targets: %d\n",
-              nrow(features), ncol(features), ncol(targets)))
+  # Feature augmentation: add log1p(abs(features)) columns
+  features_log <- log1p(abs(features_raw))
+  features <- cbind(features_raw, features_log)
+
+  cat(sprintf("  Simulations: %d | Raw features: %d | Augmented features: %d | Targets: %d\n",
+              nrow(features), ncol(features_raw), ncol(features), ncol(targets)))
   cat(sprintf("  Target params: %s\n", paste(target_cols, collapse = ", ")))
 
   # Remove rows with NA/Inf in features
@@ -138,12 +138,13 @@ prepare_data <- function(sim_df, obs_mat, param_names, model_name) {
   X_val   <- scale_features(X_val)
   X_test  <- scale_features(X_test)
 
-  # Prepare observed data with same scaling
+  # Prepare observed data: augment + scale
   obs_vec <- as.numeric(obs_mat[1, ])
   names(obs_vec) <- colnames(obs_mat)
-  obs_vec <- obs_vec[stat_cols]
-  X_obs <- matrix((obs_vec - feat_mean) / feat_sd, nrow = 1)
-  # Impute NaN/NA in observed data with 0 (= training mean after z-scoring)
+  obs_raw <- obs_vec[stat_cols]
+  obs_log <- log1p(abs(obs_raw))
+  obs_aug <- c(obs_raw, obs_log)
+  X_obs <- matrix((obs_aug - feat_mean) / feat_sd, nrow = 1)
   X_obs[is.na(X_obs) | is.nan(X_obs)] <- 0
 
   # Log-transform targets, then standardize
@@ -175,90 +176,177 @@ prepare_data <- function(sim_df, obs_mat, param_names, model_name) {
 }
 
 # ============================================================================
-# Helper: build and train model
+# Helper: build residual model (functional API)
 # ============================================================================
 
-build_and_train <- function(data, model_name) {
+build_model <- function(n_features, n_targets) {
 
-  n_features <- ncol(data$X_train)
-  n_targets  <- ncol(data$Y_train)
+  l2_reg <- regularizer_l2(1e-4)
 
-  cat(sprintf("  Building model: %d -> 128 -> 64 -> 32 -> %d\n", n_features, n_targets))
+  # Residual block: Dense(relu)->BN->Dense->BN + skip -> relu
+  res_block <- function(x, units) {
+    skip <- x
+    x <- x %>%
+      layer_dense(units = units, activation = "relu",
+                  kernel_regularizer = l2_reg) %>%
+      layer_batch_normalization() %>%
+      layer_dense(units = units, activation = "linear",
+                  kernel_regularizer = l2_reg) %>%
+      layer_batch_normalization()
+    x <- layer_add(list(x, skip))
+    x <- layer_activation(x, activation = "relu")
+    x
+  }
 
-  model <- keras_model_sequential() %>%
-    layer_dense(units = 128, activation = "relu", input_shape = n_features) %>%
-    layer_batch_normalization() %>%
-    layer_dropout(rate = 0.1) %>%
-    layer_dense(units = 64, activation = "relu") %>%
-    layer_batch_normalization() %>%
-    layer_dropout(rate = 0.1) %>%
-    layer_dense(units = 32, activation = "relu") %>%
-    layer_batch_normalization() %>%
-    layer_dropout(rate = 0.1) %>%
+  input <- layer_input(shape = n_features)
+
+  # Projection to 256
+  x <- input %>%
+    layer_dense(units = 256, activation = "relu",
+                kernel_regularizer = l2_reg) %>%
+    layer_batch_normalization()
+
+  # Two residual blocks at 256
+  x <- res_block(x, 256)
+  x <- res_block(x, 256)
+
+  # Bottleneck to 128
+  x <- x %>%
+    layer_dense(units = 128, activation = "relu",
+                kernel_regularizer = l2_reg) %>%
+    layer_batch_normalization()
+
+  # One residual block at 128
+  x <- res_block(x, 128)
+
+  # Final layers
+  x <- x %>%
+    layer_dense(units = 64, activation = "relu",
+                kernel_regularizer = l2_reg) %>%
+    layer_batch_normalization()
+
+  output <- x %>%
     layer_dense(units = n_targets, activation = "linear")
 
+  model <- keras_model(input, output)
+
   model %>% compile(
-    loss = "mse",
+    loss = loss_huber(delta = 1.0),
     optimizer = optimizer_adam(learning_rate = 0.001),
     metrics = list("mae")
   )
 
-  callbacks <- list(
-    callback_early_stopping(
-      monitor = "val_loss",
-      patience = 20,
-      restore_best_weights = TRUE
-    ),
-    callback_reduce_lr_on_plateau(
-      monitor = "val_loss",
-      patience = 10,
-      factor = 0.5,
-      verbose = 1
-    )
-  )
-
-  cat("  Training...\n")
-  history <- model %>% fit(
-    x = data$X_train,
-    y = data$Y_train,
-    validation_data = list(data$X_val, data$Y_val),
-    epochs = 500,
-    batch_size = 256,
-    callbacks = callbacks,
-    verbose = 0
-  )
-
-  h <- history$metrics
-  n_epochs <- length(h$loss)
-  cat(sprintf("  Stopped at epoch %d | Train loss: %.6f | Val loss: %.6f\n",
-              n_epochs, h$loss[n_epochs], h$val_loss[n_epochs]))
-
-  list(model = model, history = history)
+  model
 }
 
 # ============================================================================
-# Helper: evaluate NN + ABC and compare
+# Helper: train ensemble of models
 # ============================================================================
 
-evaluate_and_compare <- function(model, data, sim_df, obs_mat, true_params, model_name) {
+train_ensemble <- function(data, model_name, n_models = N_ENSEMBLE) {
 
-  # --- NN predictions ---
+  n_features <- ncol(data$X_train)
+  n_targets  <- ncol(data$Y_train)
+
+  cat(sprintf("  Architecture: Input(%d) -> 256[res x2] -> 128[res x1] -> 64 -> %d\n",
+              n_features, n_targets))
+  cat(sprintf("  Loss: Huber | Ensemble: %d models\n", n_models))
+
+  models <- list()
+
+  for (i in seq_len(n_models)) {
+    cat(sprintf("\n  --- Training model %d/%d (%s) ---\n", i, n_models, model_name))
+
+    # Set different seed for each model (affects weight init)
+    tensorflow::tf$random$set_seed(as.integer(42 + i * 7))
+
+    model <- build_model(n_features, n_targets)
+
+    callbacks <- list(
+      callback_early_stopping(
+        monitor = "val_loss",
+        patience = 30,
+        restore_best_weights = TRUE
+      ),
+      callback_reduce_lr_on_plateau(
+        monitor = "val_loss",
+        patience = 15,
+        factor = 0.5,
+        min_lr = 1e-6,
+        verbose = 1
+      )
+    )
+
+    history <- model %>% fit(
+      x = data$X_train,
+      y = data$Y_train,
+      validation_data = list(data$X_val, data$Y_val),
+      epochs = 1000,
+      batch_size = 512,
+      callbacks = callbacks,
+      verbose = 0
+    )
+
+    h <- history$metrics
+    n_epochs <- length(h$loss)
+    cat(sprintf("  Stopped at epoch %d | Train loss: %.6f | Val loss: %.6f\n",
+                n_epochs, h$loss[n_epochs], h$val_loss[n_epochs]))
+
+    models[[i]] <- model
+  }
+
+  models
+}
+
+# ============================================================================
+# Helper: predict with ensemble (average)
+# ============================================================================
+
+predict_ensemble <- function(models, X, data) {
+  # Returns: list(mean = matrix, sd = matrix) in original scale
+  preds_scaled <- lapply(models, function(m) predict(m, X, verbose = 0))
+  preds_array <- array(unlist(preds_scaled),
+                       dim = c(nrow(X), ncol(data$Y_train), length(models)))
+
+  # Inverse transform each: scaled -> log -> original
   inverse_transform <- function(Y_scaled) {
     Y_log <- t(t(Y_scaled) * data$target_sd + data$target_mean)
     exp(Y_log)
   }
 
-  # Test set R² and RMSE
-  Y_test_pred_scaled <- predict(model, data$X_test, verbose = 0)
-  Y_test_pred <- inverse_transform(Y_test_pred_scaled)
+  preds_orig <- lapply(seq_along(models), function(i) {
+    inverse_transform(preds_scaled[[i]])
+  })
+  preds_orig_array <- array(unlist(preds_orig),
+                            dim = c(nrow(X), ncol(data$Y_train), length(models)))
 
-  cat(sprintf("\n  --- %s: Test Set Evaluation ---\n", model_name))
-  cat(sprintf("  %-15s %8s %12s\n", "Parameter", "R²", "RMSE"))
+  # Mean and SD across models
+  ens_mean <- apply(preds_orig_array, c(1, 2), mean)
+  ens_sd   <- apply(preds_orig_array, c(1, 2), sd)
+
+  colnames(ens_mean) <- data$target_cols
+  colnames(ens_sd)   <- data$target_cols
+
+  list(mean = ens_mean, sd = ens_sd)
+}
+
+# ============================================================================
+# Helper: evaluate ensemble + ABC and compare
+# ============================================================================
+
+evaluate_and_compare <- function(models, data, sim_df, obs_mat, true_params, model_name) {
+
+  # --- Ensemble predictions on test set ---
+  ens_test <- predict_ensemble(models, data$X_test, data)
+
+  cat(sprintf("\n  --- %s: Test Set Evaluation (ensemble of %d) ---\n",
+              model_name, length(models)))
+  cat(sprintf("  %-15s %8s %12s\n", "Parameter", "R\u00b2", "RMSE"))
   cat(sprintf("  %s\n", paste(rep("-", 37), collapse = "")))
 
   for (j in seq_along(data$target_cols)) {
     y_true <- data$Y_test_raw[, j]
-    y_pred <- Y_test_pred[, j]
+    y_pred <- ens_test$mean[, j]
     ss_res <- sum((y_true - y_pred)^2)
     ss_tot <- sum((y_true - mean(y_true))^2)
     r2 <- 1 - ss_res / ss_tot
@@ -266,17 +354,25 @@ evaluate_and_compare <- function(model, data, sim_df, obs_mat, true_params, mode
     cat(sprintf("  %-15s %8.4f %12.2f\n", data$target_cols[j], r2, rmse))
   }
 
-  # NN on observed
-  Y_obs_pred_scaled <- predict(model, data$X_obs, verbose = 0)
-  Y_obs_pred <- inverse_transform(Y_obs_pred_scaled)
-  nn_est <- as.numeric(Y_obs_pred)
+  # --- Ensemble prediction on observed ---
+  ens_obs <- predict_ensemble(models, data$X_obs, data)
+  nn_est <- as.numeric(ens_obs$mean)
+  nn_sd  <- as.numeric(ens_obs$sd)
   names(nn_est) <- data$target_cols
+  names(nn_sd)  <- data$target_cols
+
+  cat(sprintf("\n  Ensemble prediction uncertainty (SD across %d models):\n", length(models)))
+  for (p in data$target_cols) {
+    cat(sprintf("    %-15s  mean: %12.4f  sd: %12.4f  cv: %.1f%%\n",
+                p, nn_est[p], nn_sd[p],
+                ifelse(nn_est[p] != 0, abs(nn_sd[p] / nn_est[p]) * 100, 0)))
+  }
 
   # --- ABC rejection ---
   abc_est <- run_abc(sim_df, obs_mat, data$target_cols, data$stat_cols, model_name)
 
   # --- Comparison table ---
-  cat(sprintf("\n  --- %s: True vs ABC vs NN ---\n", model_name))
+  cat(sprintf("\n  --- %s: True vs ABC vs NN (ensemble) ---\n", model_name))
   cat(sprintf("  %-15s %12s %12s %12s %10s %10s\n",
               "Parameter", "True", "ABC", "NN", "ABC err%", "NN err%"))
   cat(sprintf("  %s\n", paste(rep("-", 73), collapse = "")))
@@ -298,7 +394,7 @@ evaluate_and_compare <- function(model, data, sim_df, obs_mat, true_params, mode
     }
   }
 
-  list(nn = nn_est, abc = abc_est)
+  list(nn = nn_est, nn_sd = nn_sd, abc = abc_est)
 }
 
 # ============================================================================
@@ -314,9 +410,9 @@ data_vaq <- prepare_data(
   model_name = "Vaquita2Epoch"
 )
 
-fit_vaq <- build_and_train(data_vaq, "Vaquita2Epoch")
+models_vaq <- train_ensemble(data_vaq, "Vaquita2Epoch")
 res_vaq <- evaluate_and_compare(
-  fit_vaq$model, data_vaq, sim_vaq,
+  models_vaq, data_vaq, sim_vaq,
   observed_msABC_Vaquita2Epoch, true_vaq, "Vaquita2Epoch"
 )
 
@@ -335,9 +431,9 @@ data_ooa <- prepare_data(
   model_name = "OutOfAfrica_3G09"
 )
 
-fit_ooa <- build_and_train(data_ooa, "OutOfAfrica_3G09")
+models_ooa <- train_ensemble(data_ooa, "OutOfAfrica_3G09")
 res_ooa <- evaluate_and_compare(
-  fit_ooa$model, data_ooa, sim_ooa,
+  models_ooa, data_ooa, sim_ooa,
   observed_msABC_OutOfAfrica_3G09, true_ooa, "OutOfAfrica_3G09"
 )
 
@@ -346,7 +442,7 @@ res_ooa <- evaluate_and_compare(
 # ============================================================================
 
 cat("\n\n========================================================\n")
-cat("  FINAL SUMMARY: ABC vs NN (which is closer to true?)\n")
+cat("  FINAL SUMMARY: ABC vs NN ensemble (which is closer to true?)\n")
 cat("========================================================\n")
 
 summarize_winner <- function(res, true_params, target_cols, model_name) {

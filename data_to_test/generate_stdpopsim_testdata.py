@@ -2,11 +2,12 @@
 """
 Generate test data for PipeMaster using stdpopsim.
 
-Produces 4 datasets under known demographic models:
+Produces 5 datasets under known demographic models:
 1. Africa_1T12 (1 pop)       -> 1D SFS
 2. OutOfAfrica_2T12 (2 pop)  -> 2D joint SFS
-3. OutOfAfrica_3G09 (2 pop subset) -> summary statistics
-4. Vaquita2Epoch_1R22 (1 pop bottleneck) -> summary statistics
+3. OutOfAfrica_3G09 (3 pop)  -> summary statistics + 3D SFS
+4. Vaquita2Epoch_1R22 (1 pop bottleneck) -> summary statistics + SFS
+5. PonAbe TwoSpecies_2L11 (2 pop) -> summary statistics + 2D SFS
 
 Output format matches PipeMaster conventions:
   - Tab-separated files
@@ -28,7 +29,8 @@ OUTDIR = os.path.dirname(os.path.abspath(__file__))
 # ============================================================================
 
 def compute_1d_sfs(ts, pop_id=None):
-    """Compute 1D SFS from a tree sequence for a given population."""
+    """Compute 1D SFS from a tree sequence for a given population.
+    Only biallelic sites are counted (multi-allelic sites are skipped)."""
     if pop_id is not None:
         sample_ids = ts.samples(population=pop_id)
     else:
@@ -36,13 +38,15 @@ def compute_1d_sfs(ts, pop_id=None):
     n = len(sample_ids)
     sfs = np.zeros(n + 1, dtype=int)
     for var in ts.variants(samples=sample_ids):
+        if len(var.alleles) != 2:
+            continue
         count = int(np.sum(var.genotypes))
         sfs[count] += 1
     return sfs
 
 
 def compute_joint_sfs_2d(ts, pop1_id, pop2_id):
-    """Compute 2D joint SFS from a tree sequence."""
+    """Compute 2D joint SFS from a tree sequence (biallelic sites only)."""
     samples_p1 = ts.samples(population=pop1_id)
     samples_p2 = ts.samples(population=pop2_id)
     n1, n2 = len(samples_p1), len(samples_p2)
@@ -50,10 +54,31 @@ def compute_joint_sfs_2d(ts, pop1_id, pop2_id):
 
     all_samples = np.concatenate([samples_p1, samples_p2])
     for var in ts.variants(samples=all_samples):
+        if len(var.alleles) != 2:
+            continue
         g = var.genotypes
         c1 = int(np.sum(g[:n1]))
         c2 = int(np.sum(g[n1:]))
         joint_sfs[c1, c2] += 1
+    return joint_sfs
+
+
+def compute_joint_sfs_3d(ts, pop1_id, pop2_id, pop3_id):
+    """Compute 3D joint SFS from a tree sequence (biallelic sites only)."""
+    samples_p1 = ts.samples(population=pop1_id)
+    samples_p2 = ts.samples(population=pop2_id)
+    samples_p3 = ts.samples(population=pop3_id)
+    n1, n2, n3 = len(samples_p1), len(samples_p2), len(samples_p3)
+    joint_sfs = np.zeros((n1 + 1, n2 + 1, n3 + 1), dtype=int)
+    all_samples = np.concatenate([samples_p1, samples_p2, samples_p3])
+    for var in ts.variants(samples=all_samples):
+        if len(var.alleles) != 2:
+            continue
+        g = var.genotypes
+        c1 = int(np.sum(g[:n1]))
+        c2 = int(np.sum(g[n1:n1+n2]))
+        c3 = int(np.sum(g[n1+n2:]))
+        joint_sfs[c1, c2, c3] += 1
     return joint_sfs
 
 
@@ -62,6 +87,8 @@ def _pop_basic_stats(ts, samp, n, pop_id):
     from collections import Counter
     seg_sites = 0
     for var in ts.variants(samples=samp):
+        if len(var.alleles) != 2:
+            continue
         freq = int(np.sum(var.genotypes))
         if 0 < freq < n:
             seg_sites += 1
@@ -148,6 +175,8 @@ def compute_perlocus_sumstats(ts, pop_ids):
 
         seg_total = 0
         for var in ts.variants(samples=all_samp):
+            if len(var.alleles) != 2:
+                continue
             freq = int(np.sum(var.genotypes))
             if 0 < freq < n_total:
                 seg_total += 1
@@ -188,6 +217,8 @@ def compute_perlocus_sumstats(ts, pop_ids):
                 fixed_dif = 0
                 all_pair = np.concatenate([samp_i, samp_j])
                 for var in ts.variants(samples=all_pair):
+                    if len(var.alleles) != 2:
+                        continue
                     g = var.genotypes
                     c_i = int(np.sum(g[:ni]))
                     c_j = int(np.sum(g[ni:]))
@@ -252,7 +283,7 @@ def simulate_loci(species, model, contig_length, n_loci, samples_dict, seed=42):
         locus_seed = int(rng.randint(1, 2**31))
         ts = engine.simulate(model, contig, samples_dict, seed=locus_seed)
         tree_seqs.append(ts)
-        if (i + 1) % 50 == 0:
+        if (i + 1) % 500 == 0:
             print(f"  Simulated {i+1}/{n_loci} loci", file=sys.stderr)
 
     return tree_seqs
@@ -378,6 +409,85 @@ def export_fasta_files(tree_seqs, outdir, pop_sample_map, contig_length):
     print(f"  Wrote {pop_assign_path} ({n_samples} samples)")
 
 
+def export_phylip_file(tree_seqs, filepath, pop_sample_map, contig_length):
+    """
+    Export all loci as sequential PHYLIP blocks in a single file.
+
+    Each locus is a standard PHYLIP block:
+        ntax nchar
+        name1      SEQUENCE...
+        name2      SEQUENCE...
+
+    Blocks are separated by a blank line.
+
+    Args:
+        tree_seqs: list of tree sequences (one per locus)
+        filepath: output .phy file path
+        pop_sample_map: list of (pop_name_hint, pop_fallback_id, pop_number, n_diploid)
+        contig_length: length of each contig (bp)
+
+    Also writes a pop_assign file alongside.
+    """
+    # Build ordered sample names and pop assignments from first tree sequence
+    ts0 = tree_seqs[0]
+    sample_names = []
+    pop_numbers = []
+    counter = 1
+    for name_hint, fallback_id, pop_num, n_dip in pop_sample_map:
+        pid = get_pop_id(ts0, name_hint, fallback_id)
+        samp = ts0.samples(population=pid)
+        for s in samp:
+            sample_names.append(f"sample_{counter}")
+            pop_numbers.append(pop_num)
+            counter += 1
+
+    n_samples = len(sample_names)
+    # Pad names to 10 chars (standard PHYLIP)
+    padded_names = [name.ljust(10) for name in sample_names]
+
+    with open(filepath, 'w') as f:
+        for locus_idx, ts in enumerate(tree_seqs):
+            # Initialize all-A sequences
+            seqs = [['A'] * contig_length for _ in range(n_samples)]
+
+            # Get sample indices for this locus
+            locus_indices = []
+            for name_hint, fallback_id, pop_num, n_dip in pop_sample_map:
+                pid = get_pop_id(ts, name_hint, fallback_id)
+                samp = ts.samples(population=pid)
+                locus_indices.extend(samp)
+
+            # Apply variants (biallelic only)
+            all_samp = np.array(locus_indices)
+            for var in ts.variants(samples=all_samp):
+                if len(var.alleles) != 2:
+                    continue
+                pos = int(var.site.position)
+                if pos >= contig_length:
+                    continue
+                for i in range(n_samples):
+                    if var.genotypes[i] != 0:
+                        seqs[i][pos] = 'T'
+
+            # Write PHYLIP block
+            f.write(f" {n_samples} {contig_length}\n")
+            for i in range(n_samples):
+                f.write(f"{padded_names[i]}{''.join(seqs[i])}\n")
+
+            if (locus_idx + 1) % 1000 == 0:
+                print(f"  Exported {locus_idx + 1}/{len(tree_seqs)} loci", file=sys.stderr)
+
+    print(f"  Wrote {filepath} ({len(tree_seqs)} loci, {os.path.getsize(filepath)} bytes)")
+
+    # Write pop_assign file
+    basename = os.path.basename(filepath).replace('phylip_', '').replace('.phy', '')
+    pop_assign_path = os.path.join(os.path.dirname(filepath), f"pop_assign_{basename}.txt")
+    with open(pop_assign_path, 'w') as f:
+        for i in range(n_samples):
+            f.write(f'{sample_names[i]}\t{pop_numbers[i]}\n')
+    print(f"  Wrote {pop_assign_path} ({n_samples} samples)")
+
+
 # ============================================================================
 # 1. Africa_1T12 - Single population 1D SFS
 # ============================================================================
@@ -386,8 +496,8 @@ print("=== 1. Africa_1T12: 1D SFS (single population) ===")
 species_hs = stdpopsim.get_species("HomSap")
 model_1 = species_hs.get_demographic_model("Africa_1T12")
 n_samples_1 = 20  # diploid individuals -> 40 haplotypes
-n_loci_1 = 200
-contig_len_1 = 1000  # 1kb per locus
+n_loci_1 = 10000
+contig_len_1 = 100  # 100bp per locus
 
 tree_seqs_1 = simulate_loci(
     species_hs, model_1, contig_len_1, n_loci_1,
@@ -417,11 +527,11 @@ meta = {
 }
 write_tsv([meta], list(meta.keys()), os.path.join(OUTDIR, "meta_Africa_1T12.txt"))
 
-# Export FASTA files for Africa_1T12
-print("  Exporting FASTA files for Africa_1T12...")
-export_fasta_files(
+# Export PHYLIP file for Africa_1T12
+print("  Exporting PHYLIP file for Africa_1T12...")
+export_phylip_file(
     tree_seqs_1,
-    os.path.join(OUTDIR, "fasta_Africa_1T12"),
+    os.path.join(OUTDIR, "phylip_Africa_1T12.phy"),
     pop_sample_map=[
         ("AFR", 0, 1, n_samples_1),  # pop 1: AFR
     ],
@@ -436,8 +546,8 @@ print("\n=== 2. OutOfAfrica_2T12: 2D joint SFS (AFR + EUR) ===")
 
 model_2 = species_hs.get_demographic_model("OutOfAfrica_2T12")
 n_afr_2, n_eur_2 = 20, 20  # diploid
-n_loci_2 = 200
-contig_len_2 = 1000
+n_loci_2 = 10000
+contig_len_2 = 100
 
 tree_seqs_2 = simulate_loci(
     species_hs, model_2, contig_len_2, n_loci_2,
@@ -480,11 +590,11 @@ meta_2 = {
 }
 write_tsv([meta_2], list(meta_2.keys()), os.path.join(OUTDIR, "meta_OutOfAfrica_2T12.txt"))
 
-# Export FASTA files for OutOfAfrica_2T12
-print("  Exporting FASTA files for OutOfAfrica_2T12...")
-export_fasta_files(
+# Export PHYLIP file for OutOfAfrica_2T12
+print("  Exporting PHYLIP file for OutOfAfrica_2T12...")
+export_phylip_file(
     tree_seqs_2,
-    os.path.join(OUTDIR, "fasta_OutOfAfrica_2T12"),
+    os.path.join(OUTDIR, "phylip_OutOfAfrica_2T12.phy"),
     pop_sample_map=[
         ("AFR", 0, 1, n_afr_2),   # pop 1: AFR
         ("EUR", 1, 2, n_eur_2),   # pop 2: EUR
@@ -494,18 +604,18 @@ export_fasta_files(
 
 
 # ============================================================================
-# 3. OutOfAfrica_3G09 - Two-pop summary stats (YRI + CEU)
+# 3. OutOfAfrica_3G09 - Three-pop summary stats (YRI + CEU + CHB)
 # ============================================================================
-print("\n=== 3. OutOfAfrica_3G09: Summary statistics (YRI + CEU) ===")
+print("\n=== 3. OutOfAfrica_3G09: Summary statistics + SFS (YRI + CEU + CHB) ===")
 
 model_3 = species_hs.get_demographic_model("OutOfAfrica_3G09")
-n_yri, n_ceu = 20, 20
-n_loci_3 = 200
-contig_len_3 = 1000
+n_yri, n_ceu, n_chb = 20, 20, 20
+n_loci_3 = 10000
+contig_len_3 = 100
 
 tree_seqs_3 = simulate_loci(
     species_hs, model_3, contig_len_3, n_loci_3,
-    {"YRI": n_yri, "CEU": n_ceu, "CHB": 0}, seed=SEED + 2
+    {"YRI": n_yri, "CEU": n_ceu, "CHB": n_chb}, seed=SEED + 2
 )
 
 # Compute per-locus summary stats
@@ -513,7 +623,8 @@ all_stats_3 = []
 for k, ts in enumerate(tree_seqs_3):
     yri_id = get_pop_id(ts, "YRI", 0)
     ceu_id = get_pop_id(ts, "CEU", 1)
-    stats = compute_perlocus_sumstats(ts, pop_ids=[yri_id, ceu_id])
+    chb_id = get_pop_id(ts, "CHB", 2)
+    stats = compute_perlocus_sumstats(ts, pop_ids=[yri_id, ceu_id, chb_id])
     stats["locus"] = k + 1
     all_stats_3.append(stats)
 
@@ -529,15 +640,45 @@ write_tsv([observed_3], list(observed_3.keys()), os.path.join(OUTDIR, "observed_
 meta_3 = {
     "model": "OutOfAfrica_3G09",
     "species": "HomSap",
-    "pops_sampled": "YRI,CEU",
+    "pops_sampled": "YRI,CEU,CHB",
     "n_diploid_YRI": n_yri,
     "n_diploid_CEU": n_ceu,
+    "n_diploid_CHB": n_chb,
     "n_loci": n_loci_3,
     "contig_length": contig_len_3,
     "mutation_rate": model_3.mutation_rate,
-    "description": "Out-of-Africa YRI+CEU (Gutenkunst et al. 2009)"
+    "description": "Out-of-Africa YRI+CEU+CHB (Gutenkunst et al. 2009)"
 }
 write_tsv([meta_3], list(meta_3.keys()), os.path.join(OUTDIR, "meta_OutOfAfrica_3G09.txt"))
+
+# Export PHYLIP file for OutOfAfrica_3G09
+print("  Exporting PHYLIP file for OutOfAfrica_3G09...")
+export_phylip_file(
+    tree_seqs_3,
+    os.path.join(OUTDIR, "phylip_OutOfAfrica_3G09.phy"),
+    pop_sample_map=[
+        ("YRI", 0, 1, n_yri),   # pop 1: YRI
+        ("CEU", 1, 2, n_ceu),   # pop 2: CEU
+        ("CHB", 2, 3, n_chb),   # pop 3: CHB
+    ],
+    contig_length=contig_len_3,
+)
+
+# Compute 3D joint SFS
+nh_yri, nh_ceu, nh_chb = n_yri * 2, n_ceu * 2, n_chb * 2
+total_joint_sfs_3 = np.zeros((nh_yri + 1, nh_ceu + 1, nh_chb + 1), dtype=int)
+for ts in tree_seqs_3:
+    yri_id = get_pop_id(ts, "YRI", 0)
+    ceu_id = get_pop_id(ts, "CEU", 1)
+    chb_id = get_pop_id(ts, "CHB", 2)
+    total_joint_sfs_3 += compute_joint_sfs_3d(ts, yri_id, ceu_id, chb_id)
+
+# Flatten 3D SFS using expand.grid order (pop1 varies fastest)
+idx_grid = [(i, j, k) for k in range(nh_chb + 1) for j in range(nh_ceu + 1) for i in range(nh_yri + 1)]
+sfs_names_3d = [f"sfs_{i}_{j}_{k}" for i, j, k in idx_grid]
+flat_vals = [int(total_joint_sfs_3[i, j, k]) for i, j, k in idx_grid]
+row_3d = dict(zip(sfs_names_3d, flat_vals))
+write_tsv([row_3d], sfs_names_3d, os.path.join(OUTDIR, "observed_sfs_OutOfAfrica_3G09.txt"))
 
 # Export FASTA files for OutOfAfrica_3G09
 print("  Exporting FASTA files for OutOfAfrica_3G09...")
@@ -545,8 +686,9 @@ export_fasta_files(
     tree_seqs_3,
     os.path.join(OUTDIR, "fasta_OutOfAfrica_3G09"),
     pop_sample_map=[
-        ("YRI", 0, 1, n_yri),   # pop 1: YRI
-        ("CEU", 1, 2, n_ceu),   # pop 2: CEU
+        ("YRI", 0, 1, n_yri),
+        ("CEU", 1, 2, n_ceu),
+        ("CHB", 2, 3, n_chb),
     ],
     contig_length=contig_len_3,
 )
@@ -560,8 +702,8 @@ print("\n=== 4. Vaquita2Epoch_1R22: Summary statistics (bottleneck) ===")
 species_ps = stdpopsim.get_species("PhoSin")
 model_4 = species_ps.get_demographic_model("Vaquita2Epoch_1R22")
 n_vaq = 20
-n_loci_4 = 200
-contig_len_4 = 1000
+n_loci_4 = 10000
+contig_len_4 = 100
 
 tree_seqs_4 = simulate_loci(
     species_ps, model_4, contig_len_4, n_loci_4,
@@ -605,11 +747,11 @@ meta_4 = {
 }
 write_tsv([meta_4], list(meta_4.keys()), os.path.join(OUTDIR, "meta_Vaquita2Epoch.txt"))
 
-# Export FASTA files for Vaquita2Epoch
-print("  Exporting FASTA files for Vaquita2Epoch...")
-export_fasta_files(
+# Export PHYLIP file for Vaquita2Epoch
+print("  Exporting PHYLIP file for Vaquita2Epoch...")
+export_phylip_file(
     tree_seqs_4,
-    os.path.join(OUTDIR, "fasta_Vaquita2Epoch"),
+    os.path.join(OUTDIR, "phylip_Vaquita2Epoch.phy"),
     pop_sample_map=[
         ("Vaquita", 0, 1, n_vaq),  # pop 1: Vaquita
     ],
@@ -618,15 +760,107 @@ export_fasta_files(
 
 
 # ============================================================================
+# 5. PonAbe TwoSpecies_2L11 - Two-pop isolation-with-migration + growth
+# ============================================================================
+print("\n=== 5. PonAbe TwoSpecies_2L11: Summary statistics + SFS (Sumatran + Bornean) ===")
+
+species_pa = stdpopsim.get_species("PonAbe")
+model_5 = species_pa.get_demographic_model("TwoSpecies_2L11")
+n_sum, n_bor = 20, 20
+n_loci_5 = 10000
+contig_len_5 = 100
+
+tree_seqs_5 = simulate_loci(
+    species_pa, model_5, contig_len_5, n_loci_5,
+    {"Sumatran": n_sum, "Bornean": n_bor}, seed=SEED + 4
+)
+
+# Per-locus summary stats
+all_stats_5 = []
+for k, ts in enumerate(tree_seqs_5):
+    sum_id = get_pop_id(ts, "Sumatran", 0)
+    bor_id = get_pop_id(ts, "Bornean", 1)
+    stats = compute_perlocus_sumstats(ts, pop_ids=[sum_id, bor_id])
+    stats["locus"] = k + 1
+    all_stats_5.append(stats)
+
+stat_keys_5 = [k for k in all_stats_5[0].keys() if k != "locus"]
+fields_locus_5 = ["locus"] + stat_keys_5
+write_tsv(all_stats_5, fields_locus_5, os.path.join(OUTDIR, "perlocus_sumstats_PonAbe.txt"))
+
+# Observed moments
+observed_5 = compute_moments(all_stats_5, stat_keys_5)
+write_tsv([observed_5], list(observed_5.keys()), os.path.join(OUTDIR, "observed_sumstats_PonAbe.txt"))
+
+# 2D Joint SFS
+nh_sum, nh_bor = n_sum * 2, n_bor * 2
+total_joint_sfs_5 = np.zeros((nh_sum + 1, nh_bor + 1), dtype=int)
+for ts in tree_seqs_5:
+    sum_id = get_pop_id(ts, "Sumatran", 0)
+    bor_id = get_pop_id(ts, "Bornean", 1)
+    total_joint_sfs_5 += compute_joint_sfs_2d(ts, sum_id, bor_id)
+
+# Flatten
+idx_grid_5 = [(i, j) for j in range(nh_bor + 1) for i in range(nh_sum + 1)]
+sfs_names_5 = [f"sfs_{i}_{j}" for i, j in idx_grid_5]
+flat_vals_5 = [int(total_joint_sfs_5[i, j]) for i, j in idx_grid_5]
+row_5 = dict(zip(sfs_names_5, flat_vals_5))
+write_tsv([row_5], sfs_names_5, os.path.join(OUTDIR, "observed_sfs_PonAbe.txt"))
+
+# Also save matrix for plotting
+np.savetxt(os.path.join(OUTDIR, "observed_joint_sfs_matrix_PonAbe.txt"),
+           total_joint_sfs_5, delimiter="\t", fmt="%d")
+print(f"  Wrote joint SFS matrix ({total_joint_sfs_5.shape})")
+
+meta_5 = {
+    "model": "TwoSpecies_2L11",
+    "species": "PonAbe",
+    "n_diploid_Sumatran": n_sum,
+    "n_diploid_Bornean": n_bor,
+    "n_haploid_Sumatran": nh_sum,
+    "n_haploid_Bornean": nh_bor,
+    "n_loci": n_loci_5,
+    "contig_length": contig_len_5,
+    "mutation_rate": model_5.mutation_rate,
+    "description": "Orangutan isolation-with-migration + growth (Locke et al. 2011)"
+}
+write_tsv([meta_5], list(meta_5.keys()), os.path.join(OUTDIR, "meta_PonAbe.txt"))
+
+# Export PHYLIP file for PonAbe
+print("  Exporting PHYLIP file for PonAbe...")
+export_phylip_file(
+    tree_seqs_5,
+    os.path.join(OUTDIR, "phylip_PonAbe.phy"),
+    pop_sample_map=[
+        ("Sumatran", 0, 1, n_sum),
+        ("Bornean", 1, 2, n_bor),
+    ],
+    contig_length=contig_len_5,
+)
+
+# Export FASTA files for PonAbe
+print("  Exporting FASTA files for PonAbe...")
+export_fasta_files(
+    tree_seqs_5,
+    os.path.join(OUTDIR, "fasta_PonAbe"),
+    pop_sample_map=[
+        ("Sumatran", 0, 1, n_sum),
+        ("Bornean", 1, 2, n_bor),
+    ],
+    contig_length=contig_len_5,
+)
+
+
+# ============================================================================
 # Summary
 # ============================================================================
 print("\n=== Done! Generated files: ===")
 for f in sorted(os.listdir(OUTDIR)):
-    if f.endswith(".txt") and ("observed" in f or "meta" in f or "perlocus" in f or "pop_assign" in f):
-        fpath = os.path.join(OUTDIR, f)
-        print(f"  {f}  ({os.path.getsize(fpath)} bytes)")
-for d in sorted(os.listdir(OUTDIR)):
-    dpath = os.path.join(OUTDIR, d)
-    if os.path.isdir(dpath) and d.startswith("fasta_"):
-        n_fas = len([x for x in os.listdir(dpath) if x.endswith(".fas")])
-        print(f"  {d}/  ({n_fas} FASTA files)")
+    fpath = os.path.join(OUTDIR, f)
+    if os.path.isfile(fpath) and (f.endswith(".txt") or f.endswith(".phy")):
+        if any(k in f for k in ["observed", "meta", "perlocus", "pop_assign", "phylip_"]):
+            size_mb = os.path.getsize(fpath) / 1024 / 1024
+            if size_mb > 1:
+                print(f"  {f}  ({size_mb:.1f} MB)")
+            else:
+                print(f"  {f}  ({os.path.getsize(fpath)} bytes)")
