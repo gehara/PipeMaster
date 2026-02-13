@@ -1,0 +1,11 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+R/Rcpp.R
+R/cpp.cpp
+test.R
+R/.Rhistory
+example_of_datadocumentation.R
+msABClinux
+TODO.md
