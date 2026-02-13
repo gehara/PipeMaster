@@ -77,10 +77,7 @@ Vá para o console do R, instale devtools e depois PipeMaster:
   ```
   install.packages("devtools")
   devtools::install_github("gehara/PipeMaster")
-  ## install  POPdemog to be able to plot your models                
-  install.packages("https://github.com/YingZhou001/POPdemog/raw/master/POPdemog_1.0.3.tar.gz",
-                 repos=NULL)
-  
+
   ```
 
 **Instalação sem devtools**
@@ -92,10 +89,6 @@ Instale todas as dependências, instale a versão mais recente de *PipeMaster* d
                  repos="http://cran.us.r-project.org")
 
   install.packages("http://github.com/gehara/PipeMaster/archive/PipeMaster-0.2.2.tar.gz",
-                 repos=NULL)
-  
-  ## install  POPdemog to be able to plot your models                
-  install.packages("https://github.com/YingZhou001/POPdemog/raw/master/POPdemog_1.0.3.tar.gz",
                  repos=NULL)
 
   ```
@@ -703,7 +696,7 @@ Nesta parte do tutorial, vamos ver algumas das funções de visualização do Pi
 
 ## **Plotting a model**
 
-Existe agora uma função no PipeMaster para plotar seu modelo. Esta é uma função wrapper que irá acionar a função PlotMS do pacote POPdemog. Ela ainda não foi extensivamente testada, portanto se encontrar um bug, por favor me comunique por email (marcelo.gehara@gmail.com). 
+Existe uma função no PipeMaster para plotar seu modelo. Se encontrar um bug, por favor me comunique por email (marcelo.gehara@gmail.com).
 ```
 PlotModel(model=Is, use.alpha = F, average.of.priors=F)
 PlotModel(model=IM, use.alpha = F, average.of.priors=F)

@@ -90,10 +90,6 @@ Install all dependencies, install *PipeMaster* latest release from my github. Yo
   install.packages("http://github.com/gehara/PipeMaster/archive/PipeMaster-v0.2.3.tar.gz",
                  repos=NULL)
   
-  ## install  POPdemog to be able to plot your models                
-  install.packages("https://github.com/YingZhou001/POPdemog/raw/master/POPdemog_1.0.3.tar.gz",
-                 repos=NULL)
-
   ```
   
 -------
@@ -569,7 +565,7 @@ In this part of the tutorial we will go through some of the visualization functi
 
 ## **Plotting a Model**
 
-There is now a new function in PipeMaster to plot your model. This function is a wrapper of the PlotMS function from the POPdemog r-package. I have not tested it extensively yet, if you find bugs please send me an email (marcelo.gehara@gmail.com). 
+There is a function in PipeMaster to plot your model. If you find bugs please send me an email (marcelo.gehara@gmail.com).
 
 ```
 PlotModel(model=Is, use.alpha = F, average.of.priors=F)
