@@ -1,14 +1,16 @@
-#' 200 sequences of the Dermatonotus muelleri frog
+#' 200 sequences of the Dermatonotus muelleri frog (Deprecated)
 #'
-#' 200 sequences stored in a list.
+#' \lifecycle{deprecated}
+#' This dataset is deprecated and will be replaced in a future version.
+#' 200 sequences stored in a list of DNAbin matrices.
 #'
 #' @docType data
 #'
-#' @usage data(200seqs)
+#' @usage data(seqs, package = "PipeMaster")
 #'
-#' @format An object of class \code{"cross"}; see \code{\link[qtl]{read.cross}}.
+#' @format A list of 200 \code{DNAbin} matrices.
 #'
-#' @keywords datasets
+#' @keywords datasets internal
 #'
 #' @references Gehara et al. (in review)
 #'

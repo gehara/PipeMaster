@@ -249,6 +249,146 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
 #' y<-ms.to.DNAbin(x,bp=1000)
 #' nuc.div(y)
 #' @export
+# internal function
+# @description Reads a multi-locus sequential PHYLIP file and returns loci as
+#   character matrices (samples x sites), equivalent to read.dna(format="fasta")
+#   followed by as.character(). Each locus block starts with " ntax nchar" header.
+# @param filepath Path to the sequential PHYLIP file.
+# @return A list of character matrices, one per locus. Row names are sample names,
+#   columns are individual nucleotide positions (lowercase).
+read.phylip.loci <- function(filepath) {
+  lines <- readLines(filepath)
+  n_lines <- length(lines)
+  loci <- list()
+  i <- 1
+  locus_idx <- 0
+
+  while(i <= n_lines) {
+    # Skip blank lines
+    if(nchar(trimws(lines[i])) == 0) {
+      i <- i + 1
+      next
+    }
+
+    # Parse header: " ntax nchar"
+    header <- as.integer(strsplit(trimws(lines[i]), "\\s+")[[1]])
+    ntax <- header[1]
+    nchar_seq <- header[2]
+    i <- i + 1
+    locus_idx <- locus_idx + 1
+
+    # Read ntax sequence lines
+    names_vec <- character(ntax)
+    mat <- matrix("", nrow = ntax, ncol = nchar_seq)
+    for(j in 1:ntax) {
+      # Name is first 10 chars (padded), sequence is the rest
+      line <- lines[i]
+      name <- trimws(substr(line, 1, 10))
+      seq_str <- gsub("\\s", "", substr(line, 11, nchar(line)))
+      names_vec[j] <- name
+      mat[j, ] <- strsplit(tolower(seq_str), "")[[1]]
+      i <- i + 1
+    }
+    rownames(mat) <- names_vec
+    loci[[locus_idx]] <- mat
+  }
+  loci
+}
+
+# internal function
+# @description Converts a character matrix (samples x sites) to ms-like format.
+#   This is the PHYLIP equivalent of fasta.snp.2ms(): instead of reading a file,
+#   it takes an already-parsed alignment matrix (e.g., from read.phylip.loci()).
+# @param fas Character matrix with nucleotide sequences (samples as rows, sites as columns).
+#   Row names must be sample names.
+# @param pop.assign Two-column data frame: col1 = sample names, col2 = population numbers.
+# @return A list with one element: a character vector of ms-like output lines.
+mat.snp.2ms <- function(fas, pop.assign) {
+
+  pops <- data.frame(pop.assign)
+  pops <- pops[with(pops, order(pops[,2])), ]
+
+  # Reorder rows by population assignment
+  fasta <- NULL
+  p <- NULL
+  for(j in 1:nrow(pops)) {
+    x <- match(rownames(fas), pops[j, 1])
+    x <- which(x == 1)
+    if(length(x) != 0) {
+      p <- rbind(p, pops[rep(j, length(x)), ])
+      fasta <- rbind(fasta, fas[x, ])
+    }
+  }
+  fas <- fasta
+  pops <- p
+
+  npops <- length(unique(pops[,2]))
+  pop.list <- list()
+  for(i in 1:npops) {
+    pop.list[[i]] <- length(which(pops[,2] == i))
+  }
+  string <- paste("-I", npops, paste(unlist(pop.list), collapse = " "))
+
+  # Identify variable sites (exclude gaps, N, monomorphic)
+  bin <- NULL
+  pos <- NULL
+  for(i in 1:ncol(fas)) {
+    a <- length(grep("a", fas[,i]))
+    c <- length(grep("c", fas[,i]))
+    g <- length(grep("g", fas[,i]))
+    t <- length(grep("t", fas[,i]))
+
+    n <- length(grep("n", fas[,i]))
+    gap <- length(grep("-", fas[,i]))
+    if(gap > 0) next
+    if(n > 0) next
+    if(!nrow(fas) %in% c(a,c,g,t)) {
+      bin <- cbind(bin, fas[,i])
+      pos <- c(pos, i)
+    }
+  }
+  pos <- pos / ncol(fas)
+
+  if(!is.null(bin)) {
+    # Encode: major allele -> 0, everything else -> 1
+    for(j in 1:ncol(bin)) {
+      a <- length(grep("a", bin[,j])) / nrow(bin)
+      c <- length(grep("c", bin[,j])) / nrow(bin)
+      g <- length(grep("g", bin[,j])) / nrow(bin)
+      t <- length(grep("t", bin[,j])) / nrow(bin)
+      bases <- c(a, c, g, t)
+      names(bases) <- c("a", "c", "g", "t")
+      base <- which.max(bases[1:4])
+      bin[,j] <- gsub(names(base), 0, bin[,j])
+      bases <- bases[-base]
+      for(i in 1:length(bases)) {
+        bin[,j] <- gsub(names(bases[i]), 1, bin[,j])
+      }
+    }
+    seqs <- NULL
+    for(i in 1:nrow(bin)) {
+      seqs <- c(seqs, paste(bin[i,], collapse = ""))
+    }
+    ss <- ncol(bin)
+  } else {
+    seqs <- NULL
+    ss <- 0
+  }
+
+  ms.out <- list()
+  if(npops > 1) {
+    ms.out[[1]] <- paste("ms", nrow(fas), 1, string)
+  } else {
+    ms.out[[1]] <- paste("ms", nrow(fas), 1)
+  }
+  ms.out[[1]] <- c(ms.out[[1]], "//")
+  ms.out[[1]] <- c(ms.out[[1]], paste("segsites:", ss))
+  ms.out[[1]] <- c(ms.out[[1]], paste("positions:   ", paste(pos, collapse = "    ")))
+  ms.out[[1]] <- c(ms.out[[1]], paste(seqs, sep = "\n"))
+
+  return(ms.out)
+}
+
 ms.to.DNAbin<-function(ms.output, bp.length){
   ss<-as.numeric(strsplit(ms.output[3]," ")[[1]][2]) # get seg sites
 

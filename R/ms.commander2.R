@@ -7,6 +7,9 @@
 #
 ms.commander2<-function(model,use.alpha=use.alpha){
 
+  .Deprecated("msABC.commander", package = "PipeMaster",
+              msg = "ms.commander2() is deprecated. Use msABC.commander() instead, which uses fragment mode for efficient multi-locus simulation.")
+
   # empty parameter vector
   parameters<-vector()
 

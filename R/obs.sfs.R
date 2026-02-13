@@ -1,20 +1,27 @@
-#' Observed Site Frequency Spectrum from FASTA Data
-#' @description Computes the observed Site Frequency Spectrum (SFS) from empirical FASTA alignments.
+#' Observed Site Frequency Spectrum from FASTA or PHYLIP Data
+#' @description Computes the observed Site Frequency Spectrum (SFS) from empirical alignments.
 #'              For single-population data, returns the 1D SFS. For multi-population data, returns
 #'              the joint SFS. Output format matches sim.sfs() for direct comparison.
+#'              SFS computation is performed natively in C for speed.
 #' @param model A model object built by the main.menu function. Any model with the same number of
 #'              populations as your data will work (used for consistency checks).
 #' @param path.to.fasta Path to the folder containing FASTA alignments (.fas files).
 #'                      Invariable sites must be included. Alignments must contain phased data.
+#'                      Either path.to.fasta or path.to.phylip must be provided.
+#' @param path.to.phylip Path to a multi-locus sequential PHYLIP file. Each locus block starts
+#'                       with a "ntax nchar" header followed by ntax sequence lines. Alternative
+#'                       to path.to.fasta for datasets with many loci.
 #' @param pop.assign A two-column data frame with sample names in the first column and population
 #'                   numbers in the second column. Numbers should match population ordering in the model.
+#' @param one.snp Logical. If TRUE, one segregating site is randomly sampled per locus before
+#'                computing the SFS. This reduces variance inflation caused by linkage among
+#'                sites within the same locus. Recommended for short loci where recombination
+#'                is negligible. Default is FALSE.
 #' @param folded Logical. If TRUE the SFS will be folded (1-pop only). Default is FALSE.
-#' @param ncores Number of cores for parallel execution. When ncores > 1, loci are processed
-#'               in parallel using mclapply. Default is 1.
 #' @return A one-row data frame with SFS bins as columns. Column names follow sim.sfs() convention:
 #'         sfs_0, sfs_1, ... for 1-pop; sfs_0_0, sfs_1_0, ... for multi-pop (expand.grid order).
 #'         For 2-pop models, the result has an "sfs_matrix" attribute for use with plot.2D.sfs().
-#' @note Polarization: fasta.snp.2ms() assigns the major allele as ancestral (0).
+#' @note Polarization: the major allele (most frequent) is assigned as ancestral (0).
 #'       This differs from true ancestral polarization, so the unfolded SFS may not match
 #'       simulation-based SFS that use true ancestral alleles. Consider using folded=TRUE
 #'       when comparing with such SFS, or when no outgroup is available.
@@ -23,9 +30,14 @@
 #' # Load a model and population assignment
 #' pop_assign <- read.table("pop_assign.txt", header = FALSE)
 #'
-#' # Compute observed 1D SFS
+#' # Compute observed 1D SFS from FASTA files
 #' obs <- obs.sfs(model = my_model,
 #'                path.to.fasta = "path/to/fastas",
+#'                pop.assign = pop_assign)
+#'
+#' # Compute observed 1D SFS from PHYLIP file
+#' obs <- obs.sfs(model = my_model,
+#'                path.to.phylip = "path/to/data.phy",
 #'                pop.assign = pop_assign)
 #'
 #' # Compute folded SFS
@@ -36,12 +48,13 @@
 #' }
 #' @author Marcelo Gehara
 #' @export
-obs.sfs <- function(model, path.to.fasta, pop.assign, folded = FALSE, ncores = 1) {
-
-  WD <- getwd()
-  on.exit(setwd(WD))
+obs.sfs <- function(model, path.to.fasta = NULL, path.to.phylip = NULL,
+                    pop.assign, one.snp = FALSE, folded = FALSE) {
 
   # Validate inputs
+  if(is.null(path.to.fasta) && is.null(path.to.phylip))
+    stop("Either path.to.fasta or path.to.phylip must be provided")
+
   pop.assign <- data.frame(pop.assign)
   if(ncol(pop.assign) < 2) stop("pop.assign must have at least 2 columns")
   if(length(which(pop.assign[,2] %in% c(1:10) == FALSE)) > 0)
@@ -51,77 +64,34 @@ obs.sfs <- function(model, path.to.fasta, pop.assign, folded = FALSE, ncores = 1
   pop_sizes <- as.integer(table(pop.assign[,2]))
   nsam <- sum(pop_sizes)
 
-  # List FASTA files
-  setwd(path.to.fasta)
-  fasta.files <- list.files(pattern = "\\.fa")
-  if(length(fasta.files) == 0) stop("No FASTA files found in ", path.to.fasta)
-  n_loci <- length(fasta.files)
-
-  cat(paste0("PipeMaster:: Computing observed SFS from ", n_loci,
-             " loci with ", ncores, " cores\n"))
-
-  # Process one locus: convert FASTA -> ms format -> parse -> compute SFS
-  process.one.locus <- function(i) {
-    ms.output <- PipeMaster:::fasta.snp.2ms(path.to.fasta, fasta.files[i],
-                                              write.file = FALSE, pop.assign)
-    ms_lines <- ms.output[[1]]
-
-    # Parse segregating sites count
-    ss <- as.integer(strsplit(ms_lines[3], ": ")[[1]][2])
-
-    if(is.na(ss) || ss == 0) {
-      if(npop == 1) return(numeric(nsam + 1))
-      else return(array(0L, dim = pop_sizes + 1L))
-    }
-
-    # Parse haplotype strings into binary matrix (samples x SNPs)
-    hap_strings <- ms_lines[5:length(ms_lines)]
-    hap_strings <- hap_strings[nchar(hap_strings) > 0]
-    n_haps <- length(hap_strings)
-    seg_sites <- matrix(0L, nrow = n_haps, ncol = ss)
-    for(h in seq_along(hap_strings)) {
-      seg_sites[h, ] <- as.integer(strsplit(hap_strings[h], "")[[1]])
-    }
-
-    # Compute per-locus SFS
-    if(npop == 1) {
-      sfs <- tabulate(colSums(seg_sites) + 1L, nbins = nsam + 1L)
-    } else {
-      sfs <- compute_joint_sfs(seg_sites, pop_sizes)
-    }
-    sfs
-  }
-
-  # Process all loci (with optional parallelization)
-  if(ncores > 1) {
-    all_sfs <- list()
-    batch_size <- ncores * 2
-    for(batch_start in seq(1, n_loci, by = batch_size)) {
-      batch_end <- min(batch_start + batch_size - 1, n_loci)
-      batch_idx <- batch_start:batch_end
-      batch_results <- parallel::mclapply(batch_idx, process.one.locus,
-                                           mc.cores = ncores)
-      all_sfs <- c(all_sfs, batch_results)
-      cat(paste0("PipeMaster:: ", batch_end, " of ", n_loci, " loci processed\n"))
-    }
+  # Read loci into list of character matrices
+  if(!is.null(path.to.phylip)) {
+    cat("PipeMaster:: Reading multi-locus PHYLIP file...\n")
+    loci <- read.phylip.loci(path.to.phylip)
   } else {
-    all_sfs <- lapply(seq_len(n_loci), function(i) {
-      result <- process.one.locus(i)
-      if(i %% 50 == 0)
-        cat(paste0("PipeMaster:: ", i, " of ", n_loci, " loci processed\n"))
-      result
+    fasta.files <- list.files(path.to.fasta, pattern = "\\.fa")
+    if(length(fasta.files) == 0) stop("No FASTA files found in ", path.to.fasta)
+    cat(paste0("PipeMaster:: Reading ", length(fasta.files), " FASTA files...\n"))
+    loci <- lapply(fasta.files, function(f) {
+      dna <- ape::read.dna(file.path(path.to.fasta, f), format = "fasta")
+      as.character(dna)
     })
   }
 
-  # Sum SFS across all loci
-  if(npop == 1) {
-    total_sfs <- numeric(nsam + 1)
-  } else {
-    total_sfs <- array(0L, dim = pop_sizes + 1L)
-  }
-  for(s in all_sfs) {
-    total_sfs <- total_sfs + s
-  }
+  n_loci <- length(loci)
+  cat(paste0("PipeMaster:: Computing observed SFS from ", n_loci, " loci (native C)\n"))
+
+  # Compute sample index mapping: pop-ordered position -> matrix row (0-based)
+  pop.assign <- pop.assign[order(pop.assign[,2]), ]
+  sample_names <- rownames(loci[[1]])
+  sample_indices <- match(pop.assign[,1], sample_names) - 1L
+
+  if(any(is.na(sample_indices)))
+    stop("Some sample names in pop.assign not found in alignment data")
+
+  # Native C SFS computation (all loci in one call)
+  total_sfs <- .Call("obs_sfs_call", loci, sample_indices, pop_sizes, one.snp,
+                     PACKAGE = "PipeMaster")
 
   # Format output as data frame (matching sim.sfs() convention)
   if(npop == 1) {
@@ -138,8 +108,7 @@ obs.sfs <- function(model, path.to.fasta, pop.assign, folded = FALSE, ncores = 1
     idx_grid <- expand.grid(lapply(pop_sizes, function(n) 0:n))
     sfs.names <- apply(idx_grid, 1, function(x)
       paste0("sfs_", paste(x, collapse = "_")))
-    sfs_vec <- as.vector(total_sfs)
-    result <- data.frame(matrix(sfs_vec, nrow = 1))
+    result <- data.frame(matrix(total_sfs, nrow = 1))
     colnames(result) <- sfs.names
 
     # Attach matrix attribute for 2-pop models (for plot.2D.sfs)

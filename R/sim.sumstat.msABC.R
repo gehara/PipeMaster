@@ -83,7 +83,8 @@ sim.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.rates=NU
     #cols <- grep("fwh",nam)
     cols <- grep("thomson",nam)
     cols <- c(cols, grep("ZnS",nam))
-    #cols <- c(cols,grep("_FayWuH",nam))
+    cols <- c(cols, grep("FayWuH",nam))
+    cols <- c(cols, grep("fwh",nam))
     if(length(cols)!=0) nam <- nam[-cols]
     #nam <- c(nam, TD_denom)
     nam <- c(com[[2]][1,],"mean.rate","sd.rate",nam)
@@ -174,42 +175,63 @@ sim.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.rates=NU
                round(elapsed_h, 3), " hours (~", round(total_expected / elapsed_h), " sims/h)"), "\n")
 
   } else {
-    # === SINGLE CORE ===
-    sim.func<-function(arg){
+    # === SINGLE CORE (batch: pre-sample params, single .Call per block) ===
+    nloci_rows <- nrow(locfile)
+    npop_loc <- as.numeric(model$I[1,3])
 
-        simulations<-NULL
-        for(i in 1:block.size){
-          if(!(is.null(mu.rates))){
-            rates<-do.call(mu.rates[[1]],args=mu.rates[2:length(mu.rates)])
-            rates<-rep(rates, each=as.numeric(model$I[1,3]))
-            rates<-list(rates,c(0,0))
-          } else {
+    sim.func <- function(arg) {
+      # Pre-sample all parameters for the block (no disk I/O in this loop)
+      commands <- character(block.size)
+      mu_mat <- matrix(0, nrow = nloci_rows, ncol = block.size)
+      rec_mat <- NULL
+      par_list <- vector("list", block.size)
+
+      for(i in 1:block.size) {
+        if(!is.null(mu.rates)) {
+          rates <- do.call(mu.rates[[1]], args = mu.rates[2:length(mu.rates)])
+          rates <- rep(rates, each = npop_loc)
+          rates <- list(rates, c(0, 0))
+        } else {
           rates <- sample.mu.rates(model)
-          }
-          if(!(is.null(rec.rates))){
-            r.rates <- do.call(rec.rates[[1]],args=rec.rates[2:length(rec.rates)])
-            r.rates <- rep(r.rates, each = as.numeric(model$I[1,3]))
-          } else {
-          r.rates <- 0
-          }
-          locfile[,5] <- rates[[1]]
-          locfile[,6] <- r.rates
-
-          write.table(locfile,paste(".",arg,"locfile.txt",sep=""),row.names = F,col.names = T,quote = F,sep=" ")
-          com <- msABC.commander(model, use.alpha=use.alpha,arg=arg)
-          sumstat <- read.table(text=run.msABC(com[[1]]),header=T,sep="\t")
-          sumstat <- subset(sumstat, select=-c(X))
-
-          cols <- grep("thomson",colnames(sumstat))
-          cols <- c(cols,grep("ZnS",colnames(sumstat)))
-
-          if(length(cols)!=0) sumstat <- sumstat[,-cols]
-
-          param <- c(com[[2]][2,],rates[[2]])
-          names(param) <- c(com[[2]][1,],"mean.rate","sd.rate")
-        simulations <- rbind(simulations,c(param,sumstat))
         }
-      return(simulations)
+        mu_mat[, i] <- rates[[1]]
+
+        if(!is.null(rec.rates)) {
+          r.rates <- do.call(rec.rates[[1]], args = rec.rates[2:length(rec.rates)])
+          r.rates <- rep(r.rates, each = npop_loc)
+          if(is.null(rec_mat)) rec_mat <- matrix(0, nrow = nloci_rows, ncol = block.size)
+          rec_mat[, i] <- r.rates
+        }
+
+        com <- msABC.commander(model, use.alpha = use.alpha, arg = arg)
+        commands[i] <- com[[1]]
+        par_list[[i]] <- c(com[[2]][2, ], rates[[2]])
+        names(par_list[[i]]) <- c(com[[2]][1, ], "mean.rate", "sd.rate")
+      }
+
+      # Write locfile ONCE (static data; mu/rec overridden in C)
+      write.table(locfile, paste(".", arg, "locfile.txt", sep = ""),
+                  row.names = FALSE, col.names = TRUE, quote = FALSE, sep = " ")
+
+      # Single C call processes entire block
+      outputs <- .Call("msABC_batch_call", commands, mu_mat, rec_mat,
+                       PACKAGE = "PipeMaster")
+
+      # Parse all outputs (vectorized, no per-iteration rbind)
+      sumstats_list <- lapply(strsplit(outputs, "\n", fixed = TRUE), function(lines) {
+        tab <- read.table(text = lines, header = TRUE, sep = "\t")
+        tab <- subset(tab, select = -c(X))
+        cols <- grep("thomson", colnames(tab))
+        cols <- c(cols, grep("ZnS", colnames(tab)))
+        cols <- c(cols, grep("FayWuH", colnames(tab)))
+        cols <- c(cols, grep("fwh", colnames(tab)))
+        if(length(cols) != 0) tab <- tab[, -cols]
+        tab
+      })
+
+      sumstats_mat <- do.call(rbind, sumstats_list)
+      par_mat <- do.call(rbind, par_list)
+      data.frame(cbind(par_mat, sumstats_mat))
     }
 
     total.sims <- 0
@@ -217,9 +239,9 @@ sim.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.rates=NU
       start.time <- Sys.time()
       simulations <- sim.func(1)
 
-      cat("Writing simulations to file", sep="\n")
-      write.table(simulations, file=paste("SIMS_",output.name,".txt",sep=""),
-                  quote=F, row.names=F, col.names=F, append=T, sep="\t")
+      cat("Writing simulations to file", sep = "\n")
+      write.table(simulations, file = paste("SIMS_", output.name, ".txt", sep = ""),
+                  quote = FALSE, row.names = FALSE, col.names = FALSE, append = TRUE, sep = "\t")
 
       f <- ".1locfile.txt"
       if(file.exists(f)) file.remove(f)
@@ -231,7 +253,7 @@ sim.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.rates=NU
       passed.time <- cycle.time * j
       remaining.time <- round(total.time - passed.time, 3)
       cat(paste("PipeMaster:: ", total.sims, " (~", round(block.size / cycle.time),
-                " sims/h) | ~", remaining.time, " hours remaining", sep=""), "\n")
+                " sims/h) | ~", remaining.time, " hours remaining", sep = ""), "\n")
     }
   }
   setwd(WD)

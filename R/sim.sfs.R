@@ -1,5 +1,6 @@
-#' Simulate Site Frequency Spectra using scrm
-#' @description This function simulates the Site Frequency Spectrum (SFS) using the scrm coalescent simulator.
+#' Simulate Site Frequency Spectra
+#' @description This function simulates the Site Frequency Spectrum (SFS) using the built-in
+#'              coalescent simulator (ms/msABC). SFS computation is performed natively in C for speed.
 #'              For single-population models, it outputs the 1D SFS (unfolded or folded) summed across loci.
 #'              For multi-population models, it computes the joint SFS from segregating sites,
 #'              returning the flattened multi-dimensional array (e.g., (n1+1)*(n2+1) entries for 2 pops).
@@ -15,6 +16,10 @@
 #' @param mu.rates List. Distribution to sample the mutation rates. The first element of the list should be the name of the distribution as a character string.
 #'                 The second element of the list must be the number of loci. The following elements are the parameters of the distribution.
 #'                 Ex.: mu.rates = list("rtnorm", 1000, 1e-9, 1e-9, 0). If NULL, rates are sampled from the model priors. Default is NULL.
+#' @param one.snp Logical. If TRUE, one segregating site is randomly sampled per locus before
+#'                computing the SFS. This reduces variance inflation caused by linkage among
+#'                sites within the same locus. Recommended for short loci where recombination
+#'                is negligible. Default is FALSE.
 #' @param folded Logical. If TRUE the SFS will be folded. Default is FALSE.
 #' @param ncores Number of cores for parallel execution. When ncores > 1, separate R worker processes are spawned. Default is 1.
 #' @return Writes SIM_SFS_{output.name}.txt to the path directory. The file contains a header row followed by one row per replicate, with parameter values (including mean.rate and sd.rate) and SFS bins.
@@ -54,7 +59,7 @@
 #' @export
 sim.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
                           path=getwd(), output.name="model", append.sims=FALSE,
-                          mu.rates=NULL, folded=FALSE, ncores=1) {
+                          mu.rates=NULL, one.snp=FALSE, folded=FALSE, ncores=1) {
 
   WD <- getwd()
 
@@ -65,42 +70,33 @@ sim.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
   # Validate uniform per-population sample sizes across all loci
   npop <- as.numeric(model$I[1, 3])
   pop_cols <- 4:(3 + npop)
-  pop_sizes <- matrix(as.numeric(model$I[, pop_cols]), ncol = npop)
-  if(nrow(unique(pop_sizes)) > 1) {
+  pop_sizes_mat <- matrix(as.numeric(model$I[, pop_cols]), ncol = npop)
+  if(nrow(unique(pop_sizes_mat)) > 1) {
     stop("All loci must have uniform per-population sample sizes for SFS simulation.\n",
          "  Use optimize.sfs.model() to downsample your model to uniform sample sizes first.")
   }
 
+  pop_sizes_vec <- as.integer(pop_sizes_mat[1, ])
+  nsam <- sum(pop_sizes_vec)
   setwd(path)
   on.exit(setwd(WD))
 
   ############### Header: discover SFS dimensions and write column names
   if(append.sims == FALSE) {
-    com <- PipeMaster:::ms.commander2(model, use.alpha = use.alpha)
+    # Get parameter names via msABC.commander (calls ms.string.generator only once)
+    com <- PipeMaster:::msABC.commander(model, use.alpha = use.alpha, arg = 1)
+    par.names <- c(com[[2]][1, ], "mean.rate", "sd.rate")
 
-    # parameter names: keep non-rate params, replace per-locus rates with mean.rate + sd.rate
-    par.names <- com[[nrow(model$loci) + 1]][1, ]
-    par.names <- par.names[-length(par.names)]  # drop scalar
-    rate.idx <- which(par.names %in% model$loci[,1])
-    if(length(rate.idx) > 0) {
-      par.names <- c(par.names[-rate.idx], "mean.rate", "sd.rate")
-    }
-
-    # SFS column names
+    # SFS column names (determined from sample sizes, no test simulation needed)
     if(npop == 1) {
-      # Single pop: discover SFS dimensions from test scrm call
-      nsam <- sum(as.numeric(model$I[1, 4:ncol(model$I)]))
-      test.result <- scrm::scrm(paste(nsam, 1, com[[1]], "-oSFS"))
-      sfs.test <- as.numeric(test.result$sfs)
+      sfs_len <- nsam - 1  # freq bins 1..nsam-1
       if(folded) {
-        folded.sfs <- fold_sfs(sfs.test)
-        sfs.names <- paste0("sfs_fold_", seq(0, length(folded.sfs) - 1))
+        folded_len <- length(fold_sfs(numeric(sfs_len)))
+        sfs.names <- paste0("sfs_fold_", seq(0, folded_len - 1))
       } else {
-        sfs.names <- paste0("sfs_", seq(0, length(sfs.test) - 1))
+        sfs.names <- paste0("sfs_", seq(0, sfs_len - 1))
       }
     } else {
-      # Multi-pop: joint SFS dimensions from per-population sample sizes
-      pop_sizes_vec <- as.integer(model$I[1, pop_cols])
       idx_grid <- expand.grid(lapply(pop_sizes_vec, function(n) 0:n))
       sfs.names <- apply(idx_grid, 1, function(x) paste0("sfs_", paste(x, collapse = "_")))
     }
@@ -114,7 +110,7 @@ sim.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
   ############### Multi-core path
   if(ncores > 1) {
     abs.path <- normalizePath(getwd())
-    save(model, nsim.blocks, block.size, use.alpha, output.name, mu.rates, folded,
+    save(model, nsim.blocks, block.size, use.alpha, output.name, mu.rates, one.snp, folded,
          file = file.path(abs.path, ".PM_worker_params.RData"))
 
     worker_script <- paste(
@@ -126,7 +122,8 @@ sim.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
       'worker_dir <- file.path(base_path, paste0(".worker_", worker_id))',
       'dir.create(worker_dir, showWarnings=FALSE)',
       'sim.sfs(model=model, nsim.blocks=nsim.blocks, block.size=block.size,',
-      '             path=worker_dir, use.alpha=use.alpha, mu.rates=mu.rates, folded=folded,',
+      '             path=worker_dir, use.alpha=use.alpha, mu.rates=mu.rates,',
+      '             one.snp=one.snp, folded=folded,',
       '             append.sims=TRUE,',
       '             output.name=output.name, ncores=1)',
       'write("done", file.path(base_path, paste0(".worker_", worker_id, ".done")))',
@@ -194,74 +191,46 @@ sim.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
                round(elapsed_h, 3), " hours (~", round(total_expected / elapsed_h), " sims/h)"), "\n")
 
   } else {
-    ############### Single-core path
+    ############### Single-core path (native C SFS with msABC fragment mode)
+
+    locfile <- PipeMaster:::get.locfile(model)
+    nloci_rows <- nrow(locfile)
+
     sim.sfs.func <- function() {
-      results <- NULL
+      # Pre-sample all parameters for the block (no disk I/O in this loop)
+      commands <- character(block.size)
+      mu_mat <- matrix(0, nrow = nloci_rows, ncol = block.size)
+      par_list <- vector("list", block.size)
+
       for(i in 1:block.size) {
-        com <- PipeMaster:::ms.commander2(model, use.alpha = use.alpha)
-
-        # override mutation rates if mu.rates is provided
         if(!is.null(mu.rates)) {
-          user.rates <- do.call(mu.rates[[1]], args = mu.rates[2:length(mu.rates)])
-          n_loci <- nrow(model$loci)
-          if(length(user.rates) < n_loci) user.rates <- rep_len(user.rates, n_loci)
-          # get scalar from parameter matrix
-          par.all <- com[[n_loci + 1]]
-          ms.scalar <- as.numeric(par.all[2, ncol(par.all)])
-          # replace -t value in each locus command
-          for(u in 1:n_loci) {
-            bp <- as.numeric(model$loci[u, 2])
-            new.theta <- ms.scalar * user.rates[u] * bp
-            com[[u]] <- sub("-t\\s+[0-9.eE+\\-]+", paste("-t", new.theta), com[[u]])
-          }
-          # replace rate values in parameter matrix
-          rate.rows <- which(par.all[1, ] %in% model$loci[,1])
-          for(r in seq_along(rate.rows)) {
-            par.all[2, rate.rows[r]] <- as.character(user.rates[r])
-          }
-          com[[n_loci + 1]] <- par.all
-        }
-
-        # collect and sum SFS across loci
-        nsam <- sum(as.numeric(model$I[1, 4:ncol(model$I)]))
-        if(npop == 1) {
-          # Single pop: use -oSFS
-          sfs.list <- list()
-          for(u in 1:nrow(model$loci)) {
-            scrm.out <- scrm::scrm(paste(nsam, 1, com[[u]], "-oSFS"))
-            sfs.list[[u]] <- as.numeric(scrm.out$sfs)
-          }
-          sfs.mat <- do.call("rbind", sfs.list)
-          sfs.mean <- colSums(sfs.mat, na.rm = TRUE)
-          if(folded) sfs.mean <- fold_sfs(sfs.mean)
+          rates <- do.call(mu.rates[[1]], args = mu.rates[2:length(mu.rates)])
+          rates <- rep(rates, each = npop)
+          rates <- list(rates, c(0, 0))
         } else {
-          # Multi-pop: compute joint SFS from segregating sites
-          pop_sizes_vec <- as.integer(model$I[1, pop_cols])
-          joint_sfs <- array(0L, dim = pop_sizes_vec + 1L)
-          for(u in 1:nrow(model$loci)) {
-            scrm.out <- scrm::scrm(paste(nsam, 1, com[[u]]))
-            seg <- scrm.out$seg_sites[[1]]
-            if(ncol(seg) > 0) {
-              joint_sfs <- joint_sfs + compute_joint_sfs(seg, pop_sizes_vec)
-            }
-          }
-          sfs.mean <- as.vector(joint_sfs)
+          rates <- PipeMaster:::sample.mu.rates(model)
         }
+        mu_mat[, i] <- rates[[1]]
 
-        # extract parameters (drop scalar column)
-        par <- com[[nrow(model$loci) + 1]][2, ]
-        par <- par[-length(par)]  # drop scalar
-        par.names.tmp <- com[[nrow(model$loci) + 1]][1, ]
-        par.names.tmp <- par.names.tmp[-length(par.names.tmp)]
-        rate.idx <- which(par.names.tmp %in% model$loci[,1])
-        if(length(rate.idx) > 0) {
-          rates <- as.numeric(par[rate.idx])
-          par <- c(par[-rate.idx], mean(rates), sd(rates))
-        }
-
-        results <- rbind(results, c(par, sfs.mean))
+        com <- PipeMaster:::msABC.commander(model, use.alpha = use.alpha, arg = 1)
+        commands[i] <- com[[1]]
+        par_list[[i]] <- c(com[[2]][2, ], rates[[2]][1], rates[[2]][2])
       }
-      data.frame(results)
+
+      # Write locfile ONCE (static data; mu column overridden in C)
+      write.table(locfile, ".1locfile.txt", row.names = FALSE, col.names = TRUE,
+                  quote = FALSE, sep = " ")
+
+      # Single C call processes entire block (no per-sim disk I/O)
+      sfs_mat <- .Call("msABC_sfs_batch_call", commands, mu_mat,
+                       pop_sizes_vec, one.snp, PACKAGE = "PipeMaster")
+
+      if(folded && npop == 1) {
+        sfs_mat <- t(apply(sfs_mat, 1, fold_sfs))
+      }
+
+      par_mat <- do.call(rbind, par_list)
+      data.frame(cbind(par_mat, sfs_mat))
     }
 
     total.sims <- 0
@@ -283,6 +252,8 @@ sim.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
       cat(paste("PipeMaster:: ", total.sims, " (~", round(block.size / cycle.time),
                 " sims/h) | ~", remaining.time, " hours remaining", sep = ""), "\n")
     }
+    f <- ".1locfile.txt"
+    if(file.exists(f)) file.remove(f)
     print("Done!")
   }
 }
@@ -306,6 +277,7 @@ fold_sfs <- function(sfs) {
 }
 
 # Internal helper: compute joint SFS from a seg_sites matrix for multi-pop models
+# Kept for obs.sfs() which still uses R-based computation
 # seg_sites: nsam x n_snps matrix (0/1) with rows ordered by population
 # pop_sizes: integer vector of per-population sample sizes
 # Returns: array of dimensions (n1+1) x (n2+1) x ... with SNP counts per joint frequency bin

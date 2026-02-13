@@ -1,14 +1,16 @@
-#' assignment file example for the Dermatonotus muelleri sequences
+#' Population assignment file for Dermatonotus muelleri sequences (Deprecated)
 #'
-#' assignment file
+#' \lifecycle{deprecated}
+#' This dataset is deprecated and will be replaced in a future version.
+#' Population assignment table mapping samples to populations.
 #'
 #' @docType data
 #'
 #' @usage data(popassign, package = "PipeMaster")
 #'
-#' @format An object of class \code{"cross"}; see \code{\link[qtl]{read.cross}}.
+#' @format A data frame with 88 rows and 2 columns (\code{sample}, \code{pop}).
 #'
-#' @keywords datasets
+#' @keywords datasets internal
 #'
 #' @references Gehara et al. (in review)
 #'
