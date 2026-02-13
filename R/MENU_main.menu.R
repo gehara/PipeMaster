@@ -10,6 +10,7 @@
 #' @export
 main.menu<-function(input = NULL, ms.string = NULL){
 
+  .Deprecated("main.menu.gui", msg = "main.menu() is deprecated. Use main.menu.gui() instead.")
 
   if(is.null(ms.string)==F){
     read.ms.string(ms.string = ms.string)
