@@ -29,6 +29,11 @@ SEXP msABC_sfs_batch_call(SEXP commands_sexp, SEXP mu_rates_sexp,
 /* .Call() entry point for observed SFS from alignment character matrices */
 SEXP obs_sfs_call(SEXP loci_list, SEXP sample_idx_sexp,
                   SEXP pop_sizes_sexp, SEXP one_snp_sexp);
+
+/* .Call() entry point for observed SFS from VCF file */
+SEXP obs_sfs_vcf_call(SEXP vcf_path, SEXP sample_pop_map,
+                       SEXP sample_col_indices, SEXP pop_sizes_sexp,
+                       SEXP npop_sexp);
 #endif
 
 #endif /* SFS_SIM_H */

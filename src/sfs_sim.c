@@ -18,6 +18,7 @@
 #include <Rinternals.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include <setjmp.h>
 #include "sfs_sim.h"
 #include "msABC_capture.h"
@@ -755,6 +756,321 @@ SEXP obs_sfs_call(SEXP loci_list, SEXP sample_idx_sexp,
     free(accum);
     free(snp_cols);
     free(snp_major);
+
+    UNPROTECT(1);
+    return result;
+}
+
+
+/*
+ * obs_sfs_vcf_call - .Call() entry point for observed SFS from VCF data
+ *
+ * Reads a VCF file and computes the SFS directly in C. Needed for
+ * whole-genome VCFs with millions of SNPs. Biallelic only, complete
+ * data only (skip sites with missing genotypes), major allele polarization.
+ *
+ * Arguments:
+ *   vcf_path:         STRSXP - path to VCF file (plain text)
+ *   sample_pop_map:   INTSXP - population number (1-based) for each target sample
+ *   sample_col_indices: INTSXP - 0-based column index from first sample column
+ *   pop_sizes:        INTSXP - haploid sample size per population
+ *   npop_sexp:        INTSXP - number of populations
+ *
+ * Returns: numeric vector of SFS counts
+ *   1-pop:     length nsam+1 (frequency bins 0..nsam, bin 0 starts at 0)
+ *   multi-pop: length prod(pop_sizes + 1)
+ */
+SEXP obs_sfs_vcf_call(SEXP vcf_path, SEXP sample_pop_map, SEXP sample_col_indices,
+                       SEXP pop_sizes_sexp, SEXP npop_sexp) {
+
+    /* Validate inputs */
+    if (!isString(vcf_path) || length(vcf_path) != 1) {
+        Rf_error("obs_sfs_vcf_call: 'vcf_path' must be a single string");
+    }
+    if (!isInteger(sample_pop_map)) {
+        Rf_error("obs_sfs_vcf_call: 'sample_pop_map' must be an integer vector");
+    }
+    if (!isInteger(sample_col_indices)) {
+        Rf_error("obs_sfs_vcf_call: 'sample_col_indices' must be an integer vector");
+    }
+    if (!isInteger(pop_sizes_sexp) || length(pop_sizes_sexp) < 1) {
+        Rf_error("obs_sfs_vcf_call: 'pop_sizes' must be an integer vector");
+    }
+    if (!isInteger(npop_sexp) || length(npop_sexp) != 1) {
+        Rf_error("obs_sfs_vcf_call: 'npop' must be a single integer");
+    }
+
+    const char *filepath = CHAR(STRING_ELT(vcf_path, 0));
+    int n_samples = length(sample_pop_map);
+    int *pop_map = INTEGER(sample_pop_map);       /* 1-based pop number per sample */
+    int *col_indices = INTEGER(sample_col_indices); /* 0-based from first sample col */
+    int npop = INTEGER(npop_sexp)[0];
+    int *pop_sizes = INTEGER(pop_sizes_sexp);
+
+    /* Compute total haploid sample size */
+    int nsam = 0;
+    for (int p = 0; p < npop; p++) {
+        nsam += pop_sizes[p];
+    }
+
+    /* SFS dimensions */
+    int accum_len;
+    if (npop == 1) {
+        accum_len = nsam + 1;  /* freq bins 0..nsam */
+    } else {
+        accum_len = 1;
+        for (int p = 0; p < npop; p++) {
+            accum_len *= (pop_sizes[p] + 1);
+        }
+    }
+
+    /* Strides for multi-pop flat indexing (pop1 varies fastest) */
+    int *strides = (int *)malloc(npop * sizeof(int));
+    if (strides == NULL) Rf_error("obs_sfs_vcf_call: memory allocation failed");
+    strides[0] = 1;
+    for (int p = 1; p < npop; p++) {
+        strides[p] = strides[p - 1] * (pop_sizes[p - 1] + 1);
+    }
+
+    double *accum = (double *)calloc(accum_len, sizeof(double));
+    if (accum == NULL) {
+        free(strides);
+        Rf_error("obs_sfs_vcf_call: failed to allocate SFS accumulator");
+    }
+
+    /* Per-population allele count workspace */
+    int *pop_alt_counts = (int *)calloc(npop, sizeof(int));
+    if (pop_alt_counts == NULL) {
+        free(strides); free(accum);
+        Rf_error("obs_sfs_vcf_call: memory allocation failed");
+    }
+
+    /* Find the maximum column index to know how many fields to track */
+    int max_col_idx = 0;
+    for (int s = 0; s < n_samples; s++) {
+        if (col_indices[s] > max_col_idx) max_col_idx = col_indices[s];
+    }
+
+    /* Open VCF file */
+    FILE *fp = fopen(filepath, "r");
+    if (fp == NULL) {
+        free(strides); free(accum); free(pop_alt_counts);
+        Rf_error("obs_sfs_vcf_call: cannot open VCF file '%s'", filepath);
+    }
+
+    /* Read line buffer */
+    int buf_cap = 65536;
+    char *buf = (char *)malloc(buf_cap);
+    if (buf == NULL) {
+        fclose(fp); free(strides); free(accum); free(pop_alt_counts);
+        Rf_error("obs_sfs_vcf_call: memory allocation failed");
+    }
+
+    long lines_processed = 0;
+
+    /* Process file line by line */
+    while (1) {
+        /* Read a line, handling lines longer than buffer */
+        int line_len = 0;
+        int c;
+        while ((c = fgetc(fp)) != EOF && c != '\n') {
+            if (line_len + 1 >= buf_cap) {
+                buf_cap *= 2;
+                char *new_buf = (char *)realloc(buf, buf_cap);
+                if (new_buf == NULL) {
+                    fclose(fp); free(buf); free(strides); free(accum); free(pop_alt_counts);
+                    Rf_error("obs_sfs_vcf_call: realloc failed");
+                }
+                buf = new_buf;
+            }
+            buf[line_len++] = (char)c;
+        }
+        if (line_len == 0 && c == EOF) break;
+        buf[line_len] = '\0';
+
+        /* Skip meta-information lines (##) */
+        if (line_len >= 2 && buf[0] == '#' && buf[1] == '#') continue;
+
+        /* Skip header line (#CHROM) */
+        if (line_len >= 1 && buf[0] == '#') continue;
+
+        /* ---- Data line ---- */
+        /* Fields: CHROM POS ID REF ALT QUAL FILTER INFO FORMAT sample1 sample2 ... */
+        /* Tab-delimited. We need fields 3(REF), 4(ALT), and 8(FORMAT) + sample columns */
+
+        /* Parse by walking through tab-separated fields */
+        int field = 0;       /* 0-based field index */
+        int pos = 0;
+        int skip_site = 0;
+
+        /* Field pointers */
+        char *ref_start = NULL;
+        int ref_len = 0;
+        char *alt_start = NULL;
+        int alt_len = 0;
+        int format_gt_idx = -1;  /* which sub-field of FORMAT is GT */
+        int first_sample_field = 9;  /* VCF standard: samples start at field 9 */
+
+        /* Reset per-pop counts */
+        memset(pop_alt_counts, 0, npop * sizeof(int));
+
+        int total_alt = 0;
+        int total_ref = 0;
+
+        while (pos <= line_len && !skip_site) {
+            /* Find next tab or end of line */
+            int field_start = pos;
+            while (pos < line_len && buf[pos] != '\t') pos++;
+            int field_end = pos;
+            pos++;  /* skip tab */
+
+            if (field == 3) {
+                /* REF field */
+                ref_start = buf + field_start;
+                ref_len = field_end - field_start;
+                /* Single base REF only */
+                if (ref_len != 1) { skip_site = 1; break; }
+            } else if (field == 4) {
+                /* ALT field */
+                alt_start = buf + field_start;
+                alt_len = field_end - field_start;
+                /* Skip multi-allelic (comma in ALT) or missing ALT (.) */
+                if (alt_len != 1 || alt_start[0] == '.') { skip_site = 1; break; }
+                for (int k = 0; k < alt_len; k++) {
+                    if (alt_start[k] == ',') { skip_site = 1; break; }
+                }
+                if (skip_site) break;
+            } else if (field == 8) {
+                /* FORMAT field - find GT position */
+                /* GT is usually the first sub-field, but check */
+                int sub_field = 0;
+                int k = field_start;
+                int gt_found = 0;
+                while (k <= field_end) {
+                    int sf_start = k;
+                    while (k < field_end && buf[k] != ':') k++;
+                    int sf_len = k - sf_start;
+                    if (sf_len == 2 && buf[sf_start] == 'G' && buf[sf_start + 1] == 'T') {
+                        format_gt_idx = sub_field;
+                        gt_found = 1;
+                        break;
+                    }
+                    k++;  /* skip ':' */
+                    sub_field++;
+                }
+                if (!gt_found) { skip_site = 1; break; }
+            } else if (field >= first_sample_field) {
+                /* Sample column - check if this is a target sample */
+                int sample_col = field - first_sample_field;  /* 0-based */
+
+                /* Check if this sample_col is in our target list */
+                /* For efficiency, check all target samples that match this column */
+                int is_target = 0;
+                for (int s = 0; s < n_samples; s++) {
+                    if (col_indices[s] == sample_col) {
+                        is_target = 1;
+                        break;
+                    }
+                }
+
+                if (is_target) {
+                    /* Extract GT sub-field */
+                    int sub_field = 0;
+                    int k = field_start;
+                    char *gt_start = NULL;
+                    int gt_len = 0;
+
+                    while (k <= field_end) {
+                        int sf_start = k;
+                        while (k < field_end && buf[k] != ':') k++;
+                        if (sub_field == format_gt_idx) {
+                            gt_start = buf + sf_start;
+                            gt_len = k - sf_start;
+                            break;
+                        }
+                        k++;
+                        sub_field++;
+                    }
+
+                    if (gt_start == NULL || gt_len < 3) { skip_site = 1; break; }
+
+                    /* Parse GT: expect X/Y or X|Y where X,Y are single digits */
+                    char a1 = gt_start[0];
+                    char sep = gt_start[1];
+                    char a2 = gt_start[2];
+
+                    /* Check for missing genotype */
+                    if (a1 == '.' || a2 == '.') { skip_site = 1; break; }
+
+                    /* Validate separator */
+                    if (sep != '/' && sep != '|') { skip_site = 1; break; }
+
+                    int allele1 = a1 - '0';
+                    int allele2 = a2 - '0';
+
+                    /* Count ALT alleles for each target sample mapping to this column */
+                    for (int s = 0; s < n_samples; s++) {
+                        if (col_indices[s] == sample_col) {
+                            int pop_idx = pop_map[s] - 1;  /* convert 1-based to 0-based */
+                            pop_alt_counts[pop_idx] += allele1 + allele2;
+                            total_alt += allele1 + allele2;
+                            total_ref += (1 - allele1) + (1 - allele2);
+                        }
+                    }
+                }
+            }
+
+            field++;
+
+            /* Early exit once we've passed all needed columns */
+            if (field > first_sample_field + max_col_idx) break;
+        }
+
+        if (skip_site) continue;
+
+        /* Make sure we processed enough fields */
+        if (field <= first_sample_field + max_col_idx) continue;
+
+        /* Polarize by major allele: if ALT count > REF count, flip */
+        if (total_alt > total_ref) {
+            for (int p = 0; p < npop; p++) {
+                pop_alt_counts[p] = pop_sizes[p] - pop_alt_counts[p];
+            }
+        }
+
+        /* Accumulate into SFS */
+        if (npop == 1) {
+            int freq = pop_alt_counts[0];
+            if (freq >= 0 && freq <= nsam) {
+                accum[freq] += 1.0;
+            }
+        } else {
+            int flat_idx = 0;
+            for (int p = 0; p < npop; p++) {
+                flat_idx += pop_alt_counts[p] * strides[p];
+            }
+            if (flat_idx >= 0 && flat_idx < accum_len) {
+                accum[flat_idx] += 1.0;
+            }
+        }
+
+        lines_processed++;
+        if (lines_processed % 100000 == 0) {
+            R_CheckUserInterrupt();
+        }
+    }
+
+    fclose(fp);
+
+    /* Create R result vector */
+    SEXP result = PROTECT(allocVector(REALSXP, accum_len));
+    memcpy(REAL(result), accum, accum_len * sizeof(double));
+
+    /* Cleanup */
+    free(buf);
+    free(strides);
+    free(accum);
+    free(pop_alt_counts);
 
     UNPROTECT(1);
     return result;

@@ -1270,6 +1270,7 @@ int msABC_main(int argc, char** argv){
 	   input file, number of fragments, number of columns
 	*/
 	getfragpars( fragin, nofragments, fcolumns );
+	fclose(fragin);
 
 	/* Override mu/rec values if set by batch caller */
 	if (frag_mu_override != NULL) {
@@ -6486,7 +6487,8 @@ int getmissing(FILE* missingin, int*** misseq, double*** misstart, double*** mis
       }
     }
     //fprintf(stderr, "fragment %d contains %d missing\n", j, (*missingdata)[j]);
-    
+    fclose(fragmissing);
+
     /* for(i=0; i<90; i++){ */
 /*       fprintf(stderr, "** misseq[%d][%d]: %d\n", j, i, (*misseq)[j][i]); */
 /*     } */

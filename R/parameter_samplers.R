@@ -70,12 +70,17 @@ eval.condition<-function(x,y){
 
 # internal function to generate the locus file
 get.locfile<-function(model){
-  locfile<-NULL
-  for(i in 1:nrow(model$loci)){
-    for(j in 1:model$I[1,3]){
-      locfile<-rbind(locfile,c(model$I[i,1],model$I[i,j+3],j,model$loci[i,2],model$loci[i,4],0))
+  nloci <- nrow(model$loci)
+  npop <- as.numeric(model$I[1,3])
+  nrows <- nloci * npop
+  locfile <- matrix(NA_character_, nrow = nrows, ncol = 6)
+  colnames(locfile) <- c("id","n","pop","length","mu","rec")
+  idx <- 1L
+  for(i in 1:nloci){
+    for(j in 1:npop){
+      locfile[idx, ] <- c(model$I[i,1], model$I[i,j+3], j, model$loci[i,2], model$loci[i,4], 0)
+      idx <- idx + 1L
     }
-    colnames(locfile)<-c("id","n","pop","length","mu","rec")
   }
   return(locfile)
 }
