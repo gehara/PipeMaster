@@ -120,6 +120,14 @@ sim.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
   ############### Multi-core path
   if(ncores > 1) {
     abs.path <- normalizePath(getwd())
+
+    # Clean up stale worker dirs and done files from previous (possibly killed) runs
+    for(w in 1:ncores) {
+      unlink(file.path(abs.path, paste0(".worker_", w)), recursive = TRUE)
+      f <- file.path(abs.path, paste0(".worker_", w, ".done"))
+      if(file.exists(f)) file.remove(f)
+    }
+
     save(model, nsim.blocks, block.size, use.alpha, output.name, mu.rates, one.snp, folded, method,
          file = file.path(abs.path, ".PM_worker_params.RData"))
 
@@ -142,6 +150,7 @@ sim.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
     writeLines(worker_script, file.path(abs.path, ".PM_worker.R"))
 
     start.time <- Sys.time()
+    first_result_time <- NULL
     for(w in 1:ncores) {
       system(paste("Rscript", file.path(abs.path, ".PM_worker.R"), w,
                    ">", file.path(abs.path, paste0(".worker_", w, ".log")), "2>&1"),
@@ -154,22 +163,36 @@ sim.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
       Sys.sleep(5)
       done_count <- sum(file.exists(file.path(abs.path, paste0(".worker_", 1:ncores, ".done"))))
 
+      # Count lines efficiently without loading file contents into memory
       total_sims <- 0
       for(w in 1:ncores) {
         wf <- file.path(abs.path, paste0(".worker_", w), paste0("SIM_SFS_", output.name, ".txt"))
         if(file.exists(wf)) {
-          n <- length(readLines(wf))
-          if(n > 0) total_sims <- total_sims + n
+          n <- as.integer(system(paste("wc -l <", shQuote(wf)), intern = TRUE))
+          if(!is.na(n) && n > 0) total_sims <- total_sims + n
         }
       }
 
       elapsed_h <- as.numeric(difftime(Sys.time(), start.time, units = "hours"))
-      if(total_sims > 0 && elapsed_h > 0) {
-        rate <- total_sims / elapsed_h
-        remaining <- round(max(0, (total_expected - total_sims) / rate), 3)
+      if(total_sims > 0) {
+        # Start rate timer from first result, not from launch
+        if(is.null(first_result_time)) first_result_time <- Sys.time()
+        sim_elapsed_h <- as.numeric(difftime(Sys.time(), first_result_time, units = "hours"))
+        if(sim_elapsed_h > 0.001) {
+          rate <- total_sims / sim_elapsed_h
+          remaining <- round(max(0, (total_expected - total_sims) / rate), 3)
+        } else {
+          rate <- NA
+          remaining <- NA
+        }
         cat(paste0("PipeMaster:: ", total_sims, " of ", total_expected,
-                   " (~", round(rate), " sims/h) | ~", remaining,
+                   " (~", if(is.na(rate)) "..." else round(rate), " sims/h) | ~",
+                   if(is.na(remaining)) "..." else remaining,
                    " hours remaining | ", done_count, "/", ncores, " workers done"), "\n")
+      } else {
+        cat(paste0("PipeMaster:: Waiting for first results... (",
+                   round(elapsed_h * 60, 1), " min elapsed, ",
+                   done_count, "/", ncores, " workers done)"), "\n")
       }
       if(done_count >= ncores) break
     }
