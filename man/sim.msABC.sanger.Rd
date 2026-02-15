@@ -16,7 +16,7 @@ sim.msABC.sanger(
 )
 }
 \arguments{
-\item{model}{A model object built by the main.menu function.}
+\item{model}{A model object built by the main.menu.gui() function.}
 
 \item{use.alpha}{Logical. If TRUE the most recent population size change will be exponential. If FALSE sudden demographic changes. Default is FALSE.}
 

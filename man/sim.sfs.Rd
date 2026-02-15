@@ -15,11 +15,13 @@ sim.sfs(
   mu.rates = NULL,
   one.snp = FALSE,
   folded = FALSE,
+  method = c("stochastic", "expected"),
+  monomorphic = FALSE,
   ncores = 1
 )
 }
 \arguments{
-\item{model}{A model object built by the main.menu function.}
+\item{model}{A model object built by the main.menu.gui() function.}
 
 \item{use.alpha}{Logical. If TRUE the most recent population size change will be exponential. If FALSE sudden demographic changes. Default is FALSE.}
 
@@ -44,6 +46,19 @@ sites within the same locus. Recommended for short loci where recombination
 is negligible. Default is FALSE.}
 
 \item{folded}{Logical. If TRUE the SFS will be folded. Default is FALSE.}
+
+\item{method}{Character string specifying how to compute the SFS. Either \code{"stochastic"} (default) or
+\code{"expected"}. The stochastic method draws Poisson-distributed mutations and places them on
+branches to build a haplotype matrix (standard ms approach). The expected method computes
+the expected SFS directly from tree branch lengths: for each branch with \code{ndes} descendants
+and length \code{b}, it adds \code{theta_seg * b} to \code{SFS[ndes]}. This removes mutation
+noise while preserving coalescent stochasticity, producing smoother SFS estimates per simulation
+(the same approach used by fastsimcoal2). Both methods produce the same expected SFS on average.}
+
+\item{monomorphic}{Logical. If TRUE, a monomorphic bin (sfs_mono) is prepended to the SFS:
+sfs_mono = total_sites - sum(segregating bins), where total_sites is derived
+from sum(model$loci[,2]). This follows the fastsimcoal2 convention for Poisson
+random field likelihood with whole-genome data. Default is FALSE.}
 
 \item{ncores}{Number of cores for parallel execution. When ncores > 1, separate R worker processes are spawned. Default is 1.}
 }

@@ -4,14 +4,33 @@
 \alias{get.data.structure}
 \title{Read the observed data to get the simulation parameters; base pairs and number of individuals per population.}
 \usage{
-get.data.structure(model, path.to.fasta, pop.assign, sanger = F)
+get.data.structure(
+  model,
+  path.to.fasta = NULL,
+  path.to.phylip = NULL,
+  path.to.vcf = NULL,
+  pop.assign,
+  chrom.sizes = NULL,
+  sanger = FALSE
+)
 }
 \arguments{
-\item{model}{A model object generated with main.menu function.}
+\item{model}{A model object generated with main.menu.gui function.}
 
-\item{path.to.fasta}{path to the fasta alignments directory.}
+\item{path.to.fasta}{Path to the fasta alignments directory. Exactly one of path.to.fasta,
+path.to.phylip, or path.to.vcf must be provided.}
 
-\item{pop.assign}{a two column data frame with population assignment of individuals. First column must have the samples name, the second column the population in numbers, 1 for pop1, 2 for pop2 etc.}
+\item{path.to.phylip}{Path to a multi-locus sequential PHYLIP file.}
+
+\item{path.to.vcf}{Path to a VCF file (whole-genome data only). The CHROM column is used to
+define loci (one locus per chromosome/scaffold). Requires chrom.sizes.}
+
+\item{pop.assign}{A two-column data frame with population assignment of individuals. First column
+must have the sample names, the second column the population in numbers (1, 2, etc.).}
+
+\item{chrom.sizes}{A two-column data frame with chromosome/scaffold names in the first column and
+total callable base pairs in the second column. Required when using VCF input.
+Only chromosomes present in both chrom.sizes and the VCF are included.}
 
 \item{sanger}{logical. If TRUE the inheritance scalar and mutation rates set up in the main.menu are kept. If FALSE the mutation rate is propagated to all loci. Default is FALSE.}
 }

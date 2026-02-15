@@ -2,7 +2,7 @@
 #' @description This function calculates the observed summary statistics from an empirical data.
 #'              This summary statistics are the same as those simulated by the sim.sumstat function.
 #'              It is optimized for sanger data.
-#' @param model A model object bult by the main.menu function.
+#' @param model A model object built by the main.menu.gui() function.
 #' @param path.to.fasta Path to the folder containing all fastas to be included in the calculation.
 #' @param list.files A list of fasta files to be included in the calculation. By default all fastas present in the folder are included.
 #' @param moments Logical. If TRUE computes the four moments (mean, variance, kurtosis, skewness) of each summary statistics across loci. If False only mean is computed. Defalt is FALSE.

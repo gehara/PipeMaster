@@ -14,7 +14,7 @@ observed.sumstat(
 )
 }
 \arguments{
-\item{model}{A model object bult by the main.menu function.}
+\item{model}{A model object built by the main.menu.gui() function.}
 
 \item{path.to.fasta}{Path to the folder containing all fastas to be included in the calculation.}
 

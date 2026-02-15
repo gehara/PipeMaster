@@ -14,7 +14,7 @@ obs.sumstat.ngs(
 )
 }
 \arguments{
-\item{model}{A model object built by the main.menu function. Any model with the same number of populations of your empirical data will work. This is just to build the sumstats names correctly.}
+\item{model}{A model object built by the main.menu.gui() function. Any model with the same number of populations of your empirical data will work. This is just to build the sumstats names correctly.}
 
 \item{path.to.fasta}{Path to the folder containing all fastas to be included in the calculation.
 Invariable sites must be included in the fasta alignments.

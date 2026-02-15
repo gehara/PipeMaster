@@ -1,5 +1,5 @@
 #' Simulate summary statistics using msABC
-#' @param model A model object built by the main.menu function.
+#' @param model A model object built by the main.menu.gui() function.
 #' @param use.alpha Logical. If TRUE the most recent population size change will be exponential. If FALSE sudden demographic changes. Default is FALSE.
 #' @param nsim.blocks Number of blocks to simulate. The total number of simulations is: nsim.blocks x block.size (x ncores when ncores > 1).
 #' @param block.size Simulations are performed in blocks. This argument defines the size of the block in number of simulations, i.e. how many simulations to run per block.

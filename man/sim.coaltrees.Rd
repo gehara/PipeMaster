@@ -14,7 +14,7 @@ sim.coaltrees(
 )
 }
 \arguments{
-\item{model}{A model object bult by the main.menu function.}
+\item{model}{A model object built by the main.menu.gui() function.}
 
 \item{nsim.blocks}{Number of blocks to simulate. The total number of simulations is: nsim.blocks x sim.block.size.}
 

@@ -1,6 +1,6 @@
 #' Calls PopPlanner, a java application with GUI to build ms population models generating the corresponding ms string.
 #' @description When you run this function PopPlanner will pop up. PopPlanner has an easy to use interface to build diversification models.
-#'            The resulting ms string will be generated in the bottom of the PopPlanner window. This can be used as an input to the main.menu function.
+#'            The resulting ms string will be generated in the bottom of the PopPlanner window. This can be used as an input to the main.menu.gui() function.
 #' @export
 PopPlanner<-function(){
   x<-getwd()

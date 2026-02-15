@@ -7,7 +7,7 @@
 optimize.sfs.model(model, target = NULL)
 }
 \arguments{
-\item{model}{A model object built by the main.menu function.}
+\item{model}{A model object built by the main.menu.gui() function.}
 
 \item{target}{Optional numeric vector of per-population target sample sizes.
 Length must equal the number of populations. If NULL (default), the optimal

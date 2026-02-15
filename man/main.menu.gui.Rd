@@ -13,7 +13,7 @@ main.menu.gui(input = NULL)
 A Model object when the user clicks "Build Model", or NULL if cancelled.
 }
 \description{
-Launches a Shiny web app as a graphical alternative to main.menu().
+Launches a Shiny web app for building demographic models.
   Uses a shinydashboard layout with sidebar navigation.
 }
 \examples{

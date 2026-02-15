@@ -18,7 +18,7 @@ sim.sumstat(
 )
 }
 \arguments{
-\item{model}{A model object built by the main.menu function. Both genomic and sanger-type models are allowed.}
+\item{model}{A model object built by the main.menu.gui() function. Both genomic and sanger-type models are allowed.}
 
 \item{nsim.blocks}{Number of blocks to simulate. The total number of simulations is: nsim.blocks x block.size (x ncores when ncores > 1).}
 

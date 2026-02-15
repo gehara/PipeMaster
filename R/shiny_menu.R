@@ -1,5 +1,5 @@
 #' Shiny GUI for Model Builder
-#' @description Launches a Shiny web app as a graphical alternative to main.menu().
+#' @description Launches a Shiny web app for building demographic models.
 #'   Uses a shinydashboard layout with sidebar navigation.
 #' @param input An optional existing Model object to load as template. Default NULL.
 #' @return A Model object when the user clicks "Build Model", or NULL if cancelled.
