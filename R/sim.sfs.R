@@ -174,35 +174,28 @@ sim.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
       done_count <- sum(file.exists(file.path(abs.path, paste0(".worker_", 1:ncores, ".done"))))
       active_count <- ncores - done_count
 
-      if(done_count > prev_done_count) {
-        # A worker finished — report sims update
-        total_sims <- 0
-        for(w in 1:ncores) {
-          wf <- file.path(abs.path, paste0(".worker_", w), paste0("SIM_SFS_", output.name, ".txt"))
-          if(file.exists(wf)) {
-            n <- as.integer(system(paste("wc -l <", shQuote(wf)), intern = TRUE))
-            if(!is.na(n) && n > 0) total_sims <- total_sims + n
-          }
+      # Count sims across all workers
+      total_sims <- 0
+      for(w in 1:ncores) {
+        wf <- file.path(abs.path, paste0(".worker_", w), paste0("SIM_SFS_", output.name, ".txt"))
+        if(file.exists(wf)) {
+          n <- as.integer(system(paste("wc -l <", shQuote(wf)), intern = TRUE))
+          if(!is.na(n) && n > 0) total_sims <- total_sims + n
         }
-        if(is.null(first_result_time)) first_result_time <- Sys.time()
-        sim_elapsed_h <- as.numeric(difftime(Sys.time(), first_result_time, units = "hours"))
-        if(sim_elapsed_h > 0.001) {
-          rate <- round(total_sims / sim_elapsed_h)
-          remaining <- round(max(0, (total_expected - total_sims) / rate), 2)
-        } else {
-          rate <- "..."
-          remaining <- "..."
-        }
-        cat(sprintf("PipeMaster:: %d/%d sims done (~%s sims/h) | ~%s h remaining | %d/%d workers done\n",
-                    total_sims, total_expected, rate, remaining, done_count, ncores))
-        prev_done_count <- done_count
-        prev_total_sims <- total_sims
-      } else {
-        # No change in done workers — report worker status
-        elapsed_min <- round(as.numeric(difftime(Sys.time(), start.time, units = "mins")), 1)
-        cat(sprintf("PipeMaster:: %d/%d workers active | %.1f min elapsed\n",
-                    active_count, ncores, elapsed_min))
       }
+
+      elapsed_h <- as.numeric(difftime(Sys.time(), start.time, units = "hours"))
+      if(elapsed_h > 0.001 && total_sims > 0) {
+        rate <- round(total_sims / elapsed_h)
+        remaining <- round(max(0, (total_expected - total_sims) / rate), 2)
+      } else {
+        rate <- "..."
+        remaining <- "..."
+      }
+      cat(sprintf("PipeMaster:: %d/%d sims (~%s sims/h) | ~%s h remaining | %d/%d workers done\n",
+                  total_sims, total_expected, rate, remaining, done_count, ncores))
+
+      if(done_count > prev_done_count) prev_done_count <- done_count
       if(done_count >= ncores) break
     }
 
