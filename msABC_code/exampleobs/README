@@ -1,0 +1,2 @@
+example1 contains "observed data" that are actually simulated with ms.
+example2 contains observed data, from fasta file, and then transformed to ms format using a perl script.

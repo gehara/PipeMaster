@@ -1,0 +1,4 @@
+errors in the migration rates -ma option. 20100201
+Thanks to R. Piskol who detected the error. 
+Migration rates were read incorrectly from the command line,
+especially when priors were given.

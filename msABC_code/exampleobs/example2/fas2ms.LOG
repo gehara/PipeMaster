@@ -1,0 +1,29 @@
+# out
+****  ****
+Eventually, there are 10 sequences
+Length: 1000
+0	out	out
+OUTGROUP SEQUENCE out is found (match: out-out)
+1	out	seq6
+1	out	seq3
+1	out	seq7
+1	out	seq9
+1	out	seq2
+1	out	seq8
+1	out	seq1
+1	out	seq4
+1	out	seq5
+-----------------------------------------
+ Final Position is 1000
+Final Position is : 1000
+
+1	seq1
+2	seq2
+3	seq3
+4	seq4
+5	seq5
+6	seq6
+7	seq7
+8	seq8
+9	seq9
+theta_watterson_per_nucleotide: 0.230696452036794

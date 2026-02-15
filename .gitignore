@@ -1,12 +1,47 @@
+# R project files
 .Rproj.user
 .Rhistory
 .RData
 .Ruserdata
+R/.Rhistory
+
+# Auto-generated R files
 R/Rcpp.R
 R/cpp.cpp
+
+# Old/unused files
 test.R
-R/.Rhistory
 example_of_datadocumentation.R
+
+# Build artifacts
+src/*.o
+src/*.so
+*.tar.gz
+
+# Compiled binaries
+msABC
 msABClinux
+seedms
+
+# PipeMaster temp files (generated during sim runs)
+.1locfile.txt
+.PM_objects.RData
+.model
+.msABC.R
+.objects
+log.txt
+epoch2.txt
+model_param.txt
+model_stats.txt
+SIMS_model.txt
+msdoc.pdf
+
+# Dropbox conflicted copies
+*conflicted copy*
+
+# Development notes (tracked locally only)
 TODO.md
 context.md
+
+# Test data and analysis scripts (kept locally only)
+data_to_test/

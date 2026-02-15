@@ -1,0 +1,42 @@
+Compilation
+------------
+The compiled executable is included in this directory. 
+We used gcc 4.2.4 in a 32-bit ubuntu 8.04 Linux machine to compile the source code.
+
+
+
+
+!!!! Please remember to remove the *.o files (if any), i.e. make clean, if you compile in different architecture than 32-bits !!!!
+**********************************************************************************************************
+
+If you need to compile it again just run in the terminal:
+
+make clean
+make
+
+
+We have tested the code in 32-bit ubuntu 8.04, 64-bit debian (with gcc 4.1.2) and 64-bit ubuntu. 
+
+
+--> Please try out the demonstration code (see below). It contains some detailed examples that you may run using msABC.
+
+----------- D E M O N S T R A T I O N -----------------------
+
+
+In the directory there is a demo.sh file
+ which will run 8 different examples of msABC. 
+
+***** please type ./demo.sh (or bash demo.sh) to create the examples ***
+
+8 directories (example1 - example8) will be created, which contain:
+
+readme.txt: the readme file for the example
+out.txt: output of summary statistics
+log.txt: the command line used to generate data
+tempoutput_ms.txt: the polymorphic data
+seedms: the seeds used to generate data (also in the command line)
+
+
+-----------------------------------------------------------------------------------------------------------------
+
+

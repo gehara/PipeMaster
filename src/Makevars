@@ -1,0 +1,3 @@
+PKG_CFLAGS = -DR_PACKAGE_BUILD -std=gnu99 -Wno-implicit-function-declaration
+PKG_LIBS = -lm
+OBJECTS = ms.o data_sumstat.o rand1.o streec.o msABC_wrapper.o sfs_sim.o init.o

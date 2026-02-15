@@ -1,0 +1,6 @@
+id n pop length mu rec
+locus1 10 1 500 1e-08 0
+locus2 10 1 500 1e-08 0
+locus3 10 1 500 1e-08 0
+locus4 10 1 500 1e-08 0
+locus5 10 1 500 1e-08 0

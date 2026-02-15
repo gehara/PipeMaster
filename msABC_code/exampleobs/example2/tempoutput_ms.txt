@@ -1,0 +1,1 @@
+../../msABC 9 1 --obs seq.ms 

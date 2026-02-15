@@ -1,0 +1,13 @@
+#First create an "observed data file". Here, I create that using ms,
+# but I pretend that the data is observed. THe data is stored in
+# obs.out
+
+ms 10 5 -t 10 > obs.out
+
+#Now use the msABC but instead of simulating data, 
+#calculate summary statistics from the obs.out.
+#Notice that the command line is the same like the normal msABC
+#There is no need to give theta, rho, effective population size
+
+msABC
+

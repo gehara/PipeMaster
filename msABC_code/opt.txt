@@ -1,0 +1,21 @@
+tajd 0 // if 1 then Tajima's 1983 D is calculated
+segs 0 // if 1 then segregating sites are calculated
+thetaw 0 // Theta Watterson
+thetapi 0 // Pi estimation
+zns 0 // The ZnS statistic (REF)
+shared 0 // percentage of shared polymorphisms for subpopulations
+private 0 // percentage of private polymorphisms for subpopulations
+fixed 0 // percentage of fixed polymorphisms for subpopulations
+fst 1 // fst calculation for all the subpopulations
+fwh 0
+pairfst 0
+
+fwh 0 // Fay and Wu H
+pri-stats 0 // statistics for each subpopulation separately will be calculated. When this is active then global statistics will be calcuated as well
+pri-segs 0 // segs for each subpopulation
+pri-thetaw 0 // thetaw for each subpopulation
+pri-thetapi 1 // thetapi for each subpopulation
+pri-tajd 1 // tajd for each subpopulation
+pri-ZnS 0 // zns for each subpopulation
+pri-fwh 0 // fwh for each subpopulation
+thomson 0
