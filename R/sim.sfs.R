@@ -167,12 +167,11 @@ sim.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
     cat(paste("PipeMaster:: Launched", ncores, "worker processes"), "\n")
 
     total_expected <- nsim.blocks * block.size * ncores
-    prev_done_count <- 0
-    prev_total_sims <- 0
+    prev_done_count <- -1
+    prev_total_sims <- -1
     while(TRUE) {
       Sys.sleep(5)
       done_count <- sum(file.exists(file.path(abs.path, paste0(".worker_", 1:ncores, ".done"))))
-      active_count <- ncores - done_count
 
       # Count sims across all workers
       total_sims <- 0
@@ -184,18 +183,22 @@ sim.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
         }
       }
 
-      elapsed_h <- as.numeric(difftime(Sys.time(), start.time, units = "hours"))
-      if(elapsed_h > 0.001 && total_sims > 0) {
-        rate <- round(total_sims / elapsed_h)
-        remaining <- round(max(0, (total_expected - total_sims) / rate), 2)
-      } else {
-        rate <- "..."
-        remaining <- "..."
+      # Only print when progress changes
+      if(total_sims != prev_total_sims || done_count != prev_done_count) {
+        elapsed_h <- as.numeric(difftime(Sys.time(), start.time, units = "hours"))
+        if(elapsed_h > 0.001 && total_sims > 0) {
+          rate <- round(total_sims / elapsed_h)
+          remaining <- round(max(0, (total_expected - total_sims) / rate), 2)
+        } else {
+          rate <- "..."
+          remaining <- "..."
+        }
+        cat(sprintf("PipeMaster:: %d/%d sims (~%s sims/h) | ~%s h remaining | %d/%d workers done\n",
+                    total_sims, total_expected, rate, remaining, done_count, ncores))
+        prev_total_sims <- total_sims
+        prev_done_count <- done_count
       }
-      cat(sprintf("PipeMaster:: %d/%d sims (~%s sims/h) | ~%s h remaining | %d/%d workers done\n",
-                  total_sims, total_expected, rate, remaining, done_count, ncores))
 
-      if(done_count > prev_done_count) prev_done_count <- done_count
       if(done_count >= ncores) break
     }
 
