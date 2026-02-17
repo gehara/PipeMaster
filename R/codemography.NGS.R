@@ -1,16 +1,19 @@
 #' Simulation of codemographic models with ngs data
-#' @description Simulation of codemographic models
-#' @param nsims Total number of simulations
-#' @param var.zeta Variation on zeta parameter. Can be "FREE" to vary or be set to a specific value (between 0-1).
-#' @param coexp.prior Uniform prior for the coexpansion time. Vector of two numbers with the lower and upper boundary of the prior.
-#' @param th Threshold. Minimum time difference between Ts, time of simultaneous change and population specific times.
-#' @param Ne.prior Data frame with the prior values for the Ne of each population.
-#' @param NeA.prior Data frame with the prior values for the ancestral Ne of each population.
-#' @param time.prior Data frame with parameter values for the priors of the time of demographic change of each population.
-#' @param gene.prior Data frame with parameter values for the priors of the mutation rate of each species.
-#' @param alpha logical. If TRUE all demographic changes are exponential. If FALSE sudden changes. Default is FALSE.
+#' @description Simulation of codemographic models. Accepts either an hModel object
+#'   (created by \code{hModel()} or \code{h.menu.gui()}) or individual parameters.
+#' @param nsims_or_hmodel Either: (1) an hModel object, in which case \code{nsims} is required;
+#'   or (2) a numeric value specifying the total number of simulations (legacy mode).
+#' @param nsims Total number of simulations (required when first argument is an hModel).
+#' @param var.zeta Variation on zeta parameter. Can be "FREE" to vary or be set to a specific value (between 0-1). Overrides hModel value if provided.
+#' @param coexp.prior Uniform prior for the coexpansion time. Vector of two numbers with the lower and upper boundary of the prior. Overrides hModel value if provided.
+#' @param th Threshold. Minimum time difference between Ts, time of simultaneous change and population specific times. Overrides hModel value if provided.
+#' @param Ne.prior Data frame with the prior values for the Ne of each population. Overrides hModel value if provided.
+#' @param NeA.prior Data frame with the prior values for the ancestral Ne of each population. Overrides hModel value if provided.
+#' @param time.prior Data frame with parameter values for the priors of the time of demographic change of each population. Overrides hModel value if provided.
+#' @param gene.prior Data frame with parameter values for the priors of the mutation rate of each species. Overrides hModel value if provided.
+#' @param alpha logical. If TRUE all demographic changes are exponential. If FALSE sudden changes. Overrides hModel value if provided.
 #' @param append.sims logical. If TRUE simulations are appended to the simulations file. Default is FALSE.
-#' @param mu.rates list. A list of parameters of mutation rate prior distribution. First parameter: the type of distribution. Second element should be NA. Third and remaining elements are parameters of the distribution which should be given in order. For instance if using the rnorm distribution the third parameter is the mean and the fourth the SD.
+#' @param mu.rates list. A list of parameters of mutation rate prior distribution. First parameter: the type of distribution. Second element should be NA. Third and remaining elements are parameters of the distribution which should be given in order. For instance if using the rnorm distribution the third parameter is the mean and the fourth the SD. Overrides hModel value if provided.
 #' @param block.size Number of simulations to process per batch. Default is 100.
 #' @param path Path to the directory to write the simulations. Default is the working directory.
 #' @details To simulate the model of Chan et al. (2014) the th parameter should be set to zero and the time.prior should have the same value of the coexp.prior.
@@ -19,20 +22,46 @@
 #' @references Gehara M., Garda A.A., Werneck F.P. et al. (2017) Estimating synchronous demographic changes across populations using hABC and its application for a herpetological community from northeastern Brazil. Molecular Ecology, 26, 4756–4771.
 #' @references Chan Y.L., Schanzenbach D., & Hickerson M.J. (2014) Detecting concerted demographic response across community assemblages using hierarchical approximate Bayesian computation. Molecular Biology and Evolution, 31, 2501–2515.
 #' @export
-sim.coexp.ngs<-function(nsims,
-                    var.zeta,
-                    coexp.prior,
-                    th,
-                    Ne.prior,
-                    NeA.prior,
-                    time.prior,
-                    gene.prior,
-                    mu.rates,
-                    alpha=FALSE,
+sim.coexp.ngs<-function(nsims_or_hmodel,
+                    nsims = NULL,
+                    var.zeta = NULL,
+                    coexp.prior = NULL,
+                    th = NULL,
+                    Ne.prior = NULL,
+                    NeA.prior = NULL,
+                    time.prior = NULL,
+                    gene.prior = NULL,
+                    mu.rates = NULL,
+                    alpha = NULL,
                     append.sims=FALSE,
                     block.size=100,
                     path=getwd())
 {
+  # --- Dispatch: hModel vs legacy numeric ---
+  if (inherits(nsims_or_hmodel, "hModel")) {
+    hm <- nsims_or_hmodel
+    if (is.null(nsims)) stop("'nsims' is required when using an hModel object")
+    # Extract from hModel, allow explicit overrides
+    if (is.null(var.zeta))   var.zeta   <- hm$var.zeta
+    if (is.null(coexp.prior)) coexp.prior <- hm$coexp.prior
+    if (is.null(th))         th         <- hm$th
+    if (is.null(Ne.prior))   Ne.prior   <- hm$Ne.prior
+    if (is.null(NeA.prior))  NeA.prior  <- hm$NeA.prior
+    if (is.null(time.prior)) time.prior <- hm$time.prior
+    if (is.null(gene.prior)) gene.prior <- hm$gene.prior
+    if (is.null(mu.rates))   mu.rates   <- hm$mu.rates
+    if (is.null(alpha))      alpha      <- hm$alpha
+  } else if (is.numeric(nsims_or_hmodel)) {
+    # Legacy mode: first arg is nsims
+    nsims <- nsims_or_hmodel
+    if (is.null(var.zeta) || is.null(coexp.prior) || is.null(th) ||
+        is.null(Ne.prior) || is.null(NeA.prior) || is.null(time.prior) ||
+        is.null(gene.prior) || is.null(mu.rates))
+      stop("All prior arguments are required in legacy mode (when first argument is numeric nsims)")
+    if (is.null(alpha)) alpha <- FALSE
+  } else {
+    stop("First argument must be an hModel object or a numeric nsims value")
+  }
   WD <- getwd()
   setwd(path)
   on.exit(setwd(WD))
@@ -176,14 +205,21 @@ coexp.msABC.batch<-function(MS.par, gene.prior, alpha, pop.par, mu.rates) {
     nloci <- nrow(locfile)
     nsamp <- gene.prior[[sp]][1, 2]
 
+    # Per-species mu.rates: support both list-of-lists (hModel) and single list (legacy)
+    if (is.list(mu.rates[[1]])) {
+      sp_mu <- mu.rates[[sp]]
+    } else {
+      sp_mu <- mu.rates
+    }
+
     # Build commands and mu_mat for entire block
     commands <- character(block_size)
     mu_mat <- matrix(0, nrow=nloci, ncol=block_size)
 
     for(i in 1:block_size) {
-      # Sample mu rates for this sim
-      mu.rates[[2]] <- nloci
-      mu_mat[, i] <- do.call(mu.rates[[1]], args=mu.rates[2:length(mu.rates)])
+      # Sample mu rates for this sim using this species' distribution
+      sp_mu[[2]] <- nloci
+      mu_mat[, i] <- do.call(sp_mu[[1]], args=sp_mu[2:length(sp_mu)])
 
       # Build command string
       if(alpha) {
@@ -201,8 +237,9 @@ coexp.msABC.batch<-function(MS.par, gene.prior, alpha, pop.par, mu.rates) {
       }
     }
 
-    # Write locfile ONCE for this species
-    write.table(locfile, ".1locfile.txt", row.names=FALSE, col.names=TRUE,
+    # Write locfile for msABC (needs mu and rec columns even though mu is overridden)
+    msabc_locfile <- data.frame(locfile, mu = 0, rec = 0, stringsAsFactors = FALSE)
+    write.table(msabc_locfile, ".1locfile.txt", row.names=FALSE, col.names=TRUE,
                 quote=FALSE, sep=" ")
 
     # Single batch C call for all sims of this species
@@ -256,11 +293,20 @@ coexp.msABC.legacy<-function(MS.par, gene.prior, alpha, pop.par, mu.rates) {
 
       locfile <- gene.prior[[xx]]
 
-      mu.rates[[2]] <- nrow(locfile)
+      # Per-species mu.rates: support both list-of-lists (hModel) and single list (legacy)
+      if (is.list(mu.rates[[1]])) {
+        sp_mu <- mu.rates[[xx]]
+      } else {
+        sp_mu <- mu.rates
+      }
 
-      locfile[,5] <- do.call(mu.rates[[1]],args=mu.rates[2:length(mu.rates)])
+      sp_mu[[2]] <- nrow(locfile)
+      mu_vals <- do.call(sp_mu[[1]], args=sp_mu[2:length(sp_mu)])
 
-      write.table(locfile,paste(".locfile.txt",sep=""),row.names = F,col.names = T,quote = F,sep=" ")
+      # Build locfile with mu and rec columns for msABC
+      msabc_locfile <- data.frame(locfile, mu = mu_vals, rec = 0, stringsAsFactors = FALSE)
+
+      write.table(msabc_locfile, paste(".locfile.txt", sep=""), row.names = F, col.names = T, quote = F, sep=" ")
 
       sims <- read.table(text=run.msABC(paste(gene.prior[[xx]][1,2],1,"-eN",MS.par[[xx]][ii,2],MS.par[[xx]][ii,3],
                                               "--frag-begin --finp .locfile.txt --N",pop.par[[xx]][ii,1],"--frag-end")), sep="\t", header=T)

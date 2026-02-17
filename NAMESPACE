@@ -2,8 +2,11 @@
 
 S3method(plot,priors)
 S3method(plot,sim.obs)
+S3method(print,hModel)
 S3method(update,priors)
 export(H.div)
+export(h.menu.gui)
+export(hModel)
 export(PlotModel)
 export(PopPlanner)
 export(get.data.structure)
