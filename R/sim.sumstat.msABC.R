@@ -68,6 +68,7 @@ sim.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.rates=NU
   }
   # set working directory
   setwd(path)
+  on.exit(setwd(WD))
 
   locfile <- PipeMaster:::get.locfile(model)
   msABC.path <- find.package("PipeMaster")
@@ -95,6 +96,14 @@ sim.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.rates=NU
   if(ncores > 1) {
     # === MULTI-CORE: spawn separate R processes ===
     abs.path <- normalizePath(getwd())
+
+    # Clean up stale worker dirs and done files from previous (possibly killed) runs
+    for(w in 1:ncores) {
+      unlink(file.path(abs.path, paste0(".worker_", w)), recursive = TRUE)
+      f <- file.path(abs.path, paste0(".worker_", w, ".done"))
+      if(file.exists(f)) file.remove(f)
+    }
+
     save(model, nsim.blocks, block.size, use.alpha, mu.rates, rec.rates, output.name,
          file = file.path(abs.path, ".PM_worker_params.RData"))
 
@@ -112,13 +121,13 @@ sim.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.rates=NU
       '                  output.name=output.name, ncores=1)',
       'write("done", file.path(base_path, paste0(".worker_", worker_id, ".done")))',
       'quit(save="no")',
-      sep="\n")
+      sep = "\n")
     writeLines(worker_script, file.path(abs.path, ".PM_worker.R"))
 
     start.time <- Sys.time()
     for(w in 1:ncores) {
       system(paste("Rscript", file.path(abs.path, ".PM_worker.R"), w,
-                    ">", file.path(abs.path, paste0(".worker_", w, ".log")), "2>&1"),
+                   ">", file.path(abs.path, paste0(".worker_", w, ".log")), "2>&1"),
              wait = FALSE)
     }
     cat(paste("PipeMaster:: Launched", ncores, "worker processes"), "\n")
@@ -128,37 +137,41 @@ sim.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.rates=NU
       Sys.sleep(5)
       done_count <- sum(file.exists(file.path(abs.path, paste0(".worker_", 1:ncores, ".done"))))
 
+      # Count sims across all workers
       total_sims <- 0
       for(w in 1:ncores) {
         wf <- file.path(abs.path, paste0(".worker_", w), paste0("SIMS_", output.name, ".txt"))
         if(file.exists(wf)) {
-          n <- length(readLines(wf))
-          if(n > 0) total_sims <- total_sims + n
+          n <- as.integer(system(paste("wc -l <", shQuote(wf)), intern = TRUE))
+          if(!is.na(n) && n > 0) total_sims <- total_sims + n
         }
       }
 
-      elapsed_h <- as.numeric(difftime(Sys.time(), start.time, units="hours"))
-      if(total_sims > 0 && elapsed_h > 0) {
-        rate <- total_sims / elapsed_h
-        remaining <- round(max(0, (total_expected - total_sims) / rate), 3)
-        cat(paste0("PipeMaster:: ", total_sims, " of ", total_expected,
-                   " (~", round(rate), " sims/h) | ~", remaining,
-                   " hours remaining | ", done_count, "/", ncores, " workers done"), "\n")
+      elapsed_h <- as.numeric(difftime(Sys.time(), start.time, units = "hours"))
+      if(elapsed_h > 0.001 && total_sims > 0) {
+        rate <- round(total_sims / elapsed_h)
+        remaining <- round(max(0, (total_expected - total_sims) / rate), 2)
+      } else {
+        rate <- "..."
+        remaining <- "..."
       }
+      cat(sprintf("PipeMaster:: %d/%d sims (~%s sims/h) | ~%s h remaining | %d/%d workers done\n",
+                  total_sims, total_expected, rate, remaining, done_count, ncores))
+
       if(done_count >= ncores) break
     }
 
-    cat("Compiling results from workers", sep="\n")
+    cat("Compiling results from workers", sep = "\n")
     outfile <- file.path(abs.path, paste0("SIMS_", output.name, ".txt"))
     for(w in 1:ncores) {
       wf <- file.path(abs.path, paste0(".worker_", w), paste0("SIMS_", output.name, ".txt"))
       if(file.exists(wf)) {
         worker_data <- readLines(wf)
         if(length(worker_data) > 0) {
-          cat(paste(worker_data, collapse="\n"), "\n", file=outfile, append=TRUE, sep="")
+          cat(paste(worker_data, collapse = "\n"), "\n", file = outfile, append = TRUE, sep = "")
         }
       }
-      unlink(file.path(abs.path, paste0(".worker_", w)), recursive=TRUE)
+      unlink(file.path(abs.path, paste0(".worker_", w)), recursive = TRUE)
       f <- file.path(abs.path, paste0(".worker_", w, ".done"))
       if(file.exists(f)) file.remove(f)
     }
@@ -170,7 +183,7 @@ sim.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.rates=NU
     }
 
     end.time <- Sys.time()
-    elapsed_h <- as.numeric(difftime(end.time, start.time, units="hours"))
+    elapsed_h <- as.numeric(difftime(end.time, start.time, units = "hours"))
     cat(paste0("PipeMaster:: Done! ", total_expected, " simulations in ",
                round(elapsed_h, 3), " hours (~", round(total_expected / elapsed_h), " sims/h)"), "\n")
 
@@ -243,9 +256,6 @@ sim.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.rates=NU
       write.table(simulations, file = paste("SIMS_", output.name, ".txt", sep = ""),
                   quote = FALSE, row.names = FALSE, col.names = FALSE, append = TRUE, sep = "\t")
 
-      f <- ".1locfile.txt"
-      if(file.exists(f)) file.remove(f)
-
       end.time <- Sys.time()
       total.sims <- total.sims + block.size
       cycle.time <- (as.numeric(end.time) - as.numeric(start.time)) / 60 / 60
@@ -255,7 +265,9 @@ sim.sumstat<-function(model, nsim.blocks, path=getwd(), use.alpha=F, mu.rates=NU
       cat(paste("PipeMaster:: ", total.sims, " (~", round(block.size / cycle.time),
                 " sims/h) | ~", remaining.time, " hours remaining", sep = ""), "\n")
     }
+    f <- ".1locfile.txt"
+    if(file.exists(f)) file.remove(f)
+    print("Done!")
   }
-  setwd(WD)
 }
 
