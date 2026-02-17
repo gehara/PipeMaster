@@ -11,6 +11,7 @@
 #' @param alpha logical. If TRUE all demographic changes are exponential. If FALSE sudden changes. Default is FALSE.
 #' @param append.sims logical. If TRUE simulations are appended to the simulations file. Default is FALSE.
 #' @param mu.rates list. A list of parameters of mutation rate prior distribution. First parameter: the type of distribution. Second element should be NA. Third and remaining elements are parameters of the distribution which should be given in order. For instance if using the rnorm distribution the third parameter is the mean and the fourth the SD.
+#' @param block.size Number of simulations to process per batch. Default is 100.
 #' @param path Path to the directory to write the simulations. Default is the working directory.
 #' @details To simulate the model of Chan et al. (2014) the th parameter should be set to zero and the time.prior should have the same value of the coexp.prior.
 #' @details To simulate the Threshold model the th argument need to be higher than zero. To simulate the Narrow Coexpansion Time model the th argument need to be higher than zero and the boundaries of coexp.time should be narrower than the time.prior values.
@@ -27,15 +28,16 @@ sim.coexp.ngs<-function(nsims,
                     time.prior,
                     gene.prior,
                     mu.rates,
-                    alpha=F,
-                    append.sims=F,
+                    alpha=FALSE,
+                    append.sims=FALSE,
+                    block.size=100,
                     path=getwd())
 {
-
+  WD <- getwd()
   setwd(path)
+  on.exit(setwd(WD))
 
-
-  if(append.sims==F){
+  if(!append.sims){
     simulations<-matrix(nrow=1,ncol=28)
     simulations[1,]<-c("zeta","ts","E(t)","DI",
                        "s_mean_segs", "s_mean_pi", "s_mean_w", "s_mean_tajd", "s_mean_dvk", "s_mean_dvh",
@@ -43,23 +45,29 @@ sim.coexp.ngs<-function(nsims,
                        "s_kurt_segs", "s_kurt_pi", "s_kurt_w", "s_kurt_tajd", "s_kurt_dvk", "s_kurt_dvh",
                        "s_skew_segs", "s_skew_pi", "s_skew_w", "s_skew_tajd", "s_skew_dvk", "s_skew_dvh")
 
-    write.table(simulations,file="simulations.txt", quote=F,row.names=F, col.names=F, sep="\t")
-    }
+    write.table(simulations, file="simulations.txt", quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
+  }
 
+  nsim.blocks <- ceiling(nsims / block.size)
 
-  TIME <- system.time(for (i in 1:nsims){
+  for(j in 1:nsim.blocks){
+    bs <- min(block.size, nsims - (j-1) * block.size)
 
-    x <- coexp.sample.pars.msABC(nruns=1,var.zeta = var.zeta, coexp.prior = coexp.prior, th = th, Ne.prior = Ne.prior,
-                         NeA.prior = NeA.prior, time.prior = time.prior, gene.prior = gene.prior)
+    x <- coexp.sample.pars.msABC(nruns=bs, var.zeta=var.zeta, coexp.prior=coexp.prior, th=th,
+                                  Ne.prior=Ne.prior, NeA.prior=NeA.prior, time.prior=time.prior,
+                                  gene.prior=gene.prior)
 
-    y <- coexp.msABC(MS.par = x$MS.par, gene.prior = gene.prior, alpha = alpha, pop.par = x$pop.par, mu.rates = mu.rates)
+    y <- coexp.msABC.batch(MS.par=x$MS.par, gene.prior=gene.prior, alpha=alpha,
+                           pop.par=x$pop.par, mu.rates=mu.rates)
 
-    simulations <- c(x$coexp.par,y)
+    simulations <- cbind(x$coexp.par, y)
 
-    write.table(t(simulations), file="simulations.txt", quote=F,row.names=F, col.names=F, append=T, sep="\t")
-    print(paste(i,"sims of",nsims,"| zeta = ",x$coexp.par[,1]))
-  })
-  print(TIME)
+    write.table(simulations, file="simulations.txt", quote=FALSE, row.names=FALSE,
+                col.names=FALSE, append=TRUE, sep="\t")
+
+    total.sims <- min(j * block.size, nsims)
+    cat(sprintf("PipeMaster:: %d/%d sims\n", total.sims, nsims))
+  }
 }
 
 # Internal function of the sim.coexp function
@@ -153,9 +161,90 @@ coexp.sample.pars.msABC<-function(nruns,
 }
 
 # internal function
-# @description control ms simulations
+# @description Batch version of coexp.msABC using msABC_batch_call
+# @return matrix (block_size x 24) of hypersummary statistics
+coexp.msABC.batch<-function(MS.par, gene.prior, alpha, pop.par, mu.rates) {
+
+  nspecies <- length(MS.par)
+  block_size <- nrow(MS.par[[1]])
+
+  # Per-species batch simulation
+  species_stats <- vector("list", nspecies)
+
+  for(sp in 1:nspecies) {
+    locfile <- gene.prior[[sp]]
+    nloci <- nrow(locfile)
+    nsamp <- gene.prior[[sp]][1, 2]
+
+    # Build commands and mu_mat for entire block
+    commands <- character(block_size)
+    mu_mat <- matrix(0, nrow=nloci, ncol=block_size)
+
+    for(i in 1:block_size) {
+      # Sample mu rates for this sim
+      mu.rates[[2]] <- nloci
+      mu_mat[, i] <- do.call(mu.rates[[1]], args=mu.rates[2:length(mu.rates)])
+
+      # Build command string
+      if(alpha) {
+        commands[i] <- paste(nsamp, 1,
+                             "-G", MS.par[[sp]][i, 4],
+                             "-eG", MS.par[[sp]][i, 2], 0,
+                             "-eN", MS.par[[sp]][i, 2], MS.par[[sp]][i, 3],
+                             "--frag-begin --finp .1locfile.txt --N", pop.par[[sp]][i, 1],
+                             "--frag-end")
+      } else {
+        commands[i] <- paste(nsamp, 1,
+                             "-eN", MS.par[[sp]][i, 2], MS.par[[sp]][i, 3],
+                             "--frag-begin --finp .1locfile.txt --N", pop.par[[sp]][i, 1],
+                             "--frag-end")
+      }
+    }
+
+    # Write locfile ONCE for this species
+    write.table(locfile, ".1locfile.txt", row.names=FALSE, col.names=TRUE,
+                quote=FALSE, sep=" ")
+
+    # Single batch C call for all sims of this species
+    outputs <- .Call("msABC_batch_call", commands, mu_mat, NULL,
+                     PACKAGE = "PipeMaster")
+
+    # Parse outputs -> extract s_mean_* columns
+    species_stats[[sp]] <- t(sapply(strsplit(outputs, "\n", fixed=TRUE), function(lines) {
+      tab <- read.table(text=lines, header=TRUE, sep="\t")
+      tab <- tab[, grep("^s_mean_", colnames(tab))]
+      cols_rm <- c(grep("thomson", colnames(tab)),
+                   grep("ZnS", colnames(tab)),
+                   grep("FayWuH", colnames(tab)))
+      if(length(cols_rm) > 0) tab <- tab[, -cols_rm]
+      as.numeric(tab)
+    }))
+  }
+
+  # Clean up locfile
+  if(file.exists(".1locfile.txt")) file.remove(".1locfile.txt")
+
+  # Compute hypersummary for each sim across species
+  result <- matrix(0, nrow=block_size, ncol=24)
+
+  for(i in 1:block_size) {
+    # Stack species stats for this sim: nspecies x 6
+    sp_mat <- do.call(rbind, lapply(species_stats, function(m) m[i, ]))
+
+    average <- colMeans(sp_mat)
+    vari <- apply(sp_mat, 2, var, na.rm=TRUE)
+    kur <- apply(sp_mat, 2, kurtosis, na.rm=TRUE)
+    skew <- apply(sp_mat, 2, skewness, na.rm=TRUE)
+    result[i, ] <- c(average, vari, kur, skew)
+  }
+
+  result
+}
+
+# internal function (legacy, kept for reference)
+# @description control ms simulations - single-call-per-sim version
 # @return ms simulations
-coexp.msABC<-function(MS.par, gene.prior, alpha, pop.par, mu.rates) {
+coexp.msABC.legacy<-function(MS.par, gene.prior, alpha, pop.par, mu.rates) {
 
   nspecies <- length(MS.par)
   nruns<-nrow(MS.par[[1]])
