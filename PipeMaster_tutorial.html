@@ -2058,7 +2058,7 @@ Vaquita2Epoch &lt;- update.priors(tab, Vaquita2Epoch)</code></pre>
 <div id="loading-pre-built-test-models" class="section level3">
 <h3>3.4 Loading pre-built test models</h3>
 <p>All models in this tutorial are included in the test data:</p>
-<pre class="r"><code>load(&quot;data_to_test/test_models.RData&quot;)
+<pre class="r"><code>load(&quot;tests/data/test_models.RData&quot;)
 # Available: Africa_1T12, OutOfAfrica_2T12, OutOfAfrica_3G09,
 #            Vaquita2Epoch, PonAbe_TwoSpecies</code></pre>
 <hr />
@@ -2071,8 +2071,8 @@ Vaquita2Epoch &lt;- update.priors(tab, Vaquita2Epoch)</code></pre>
 <p>The pseudo-observed data for this tutorial was generated with <a href="https://popsim-consortium.github.io/stdpopsim-docs/stable/">stdpopsim</a>
 (Adrion et al. 2020) — 10,000 independent loci of 100bp each per model.
 The pre-computed observed SFS and summary statistics are included in
-<code>data_to_test/test_models.RData</code>, which is loaded with:</p>
-<pre class="r"><code>load(&quot;data_to_test/test_models.RData&quot;)</code></pre>
+<code>tests/data/test_models.RData</code>, which is loaded with:</p>
+<pre class="r"><code>load(&quot;tests/data/test_models.RData&quot;)</code></pre>
 <p>This provides the model objects and the following observed data:</p>
 <table style="width:100%;">
 <colgroup>
@@ -2166,7 +2166,7 @@ estimation, especially for recent bottlenecks and small populations.</p>
 <h3>5.1 Single-pop SFS: Vaquita2Epoch</h3>
 <pre class="r"><code>library(PipeMaster)
 library(abc)
-load(&quot;data_to_test/test_models.RData&quot;)
+load(&quot;tests/data/test_models.RData&quot;)
 
 # Step 1: Simulate SFS reference table (100,000 simulations)
 sim.sfs(model = Vaquita2Epoch,
@@ -2228,7 +2228,7 @@ sim.sfs(model = Africa_1T12,
 
 # Observed folded SFS
 obs_folded &lt;- obs.sfs(model = Africa_1T12,
-                      path.to.phylip = &quot;data_to_test/phylip_Africa_1T12.phy&quot;,
+                      path.to.phylip = &quot;tests/data/Africa_1T12/phylip_Africa_1T12.phy&quot;,
                       pop.assign = pop_assign_afr,
                       one.snp = TRUE,
                       folded = TRUE)</code></pre>
@@ -2455,7 +2455,7 @@ plot.2D.sfs(as.numeric(observed_sfs_PonAbe[1, sfs_cols]),
 
 # From a matrix
 sfs_matrix &lt;- as.matrix(read.table(
-  &quot;data_to_test/observed_joint_sfs_matrix_PonAbe.txt&quot;))
+  &quot;tests/data/PonAbe_TwoSpecies/observed_joint_sfs_matrix_PonAbe.txt&quot;))
 plot.2D.sfs(sfs_matrix,
             pop_names = c(&quot;Sumatran&quot;, &quot;Bornean&quot;))
 

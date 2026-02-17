@@ -102,7 +102,7 @@ A single-population bottleneck model for the vaquita porpoise (*Phocoena sinus*)
 
 **Tree:** `(1);`
 
-![Vaquita2Epoch model](data_to_test/model_Vaquita2Epoch.png)
+![Vaquita2Epoch model](tests/data/Vaquita2Epoch/vaquita_10K/model_Vaquita2Epoch.png)
 
 ### 2.2 Africa_1T12 (Tennessen et al. 2012)
 
@@ -119,7 +119,7 @@ A single African population with three size epochs (ancient, middle, recent expa
 
 **Tree:** `(1);`
 
-![Africa_1T12 model](data_to_test/model_Africa_1T12.png)
+![Africa_1T12 model](tests/data/Africa_1T12/model_Africa_1T12.png)
 
 ### 2.3 PonAbe TwoSpecies (Locke et al. 2011)
 
@@ -137,7 +137,7 @@ Two orangutan species (Sumatran and Bornean) with isolation-with-migration and e
 
 **Tree:** `(1,2);`
 
-![PonAbe model](data_to_test/model_PonAbe_TwoSpecies.png)
+![PonAbe model](tests/data/PonAbe_TwoSpecies/model_PonAbe_TwoSpecies.png)
 
 ### 2.4 OutOfAfrica_3G09 (Gutenkunst et al. 2009)
 
@@ -158,7 +158,7 @@ The classic three-population Out-of-Africa model (YRI, CEU, CHB) with migration 
 
 **Tree:** `((1,2),3);`
 
-![OutOfAfrica_3G09 model](data_to_test/model_OutOfAfrica_3G09.png)
+![OutOfAfrica_3G09 model](tests/data/OutOfAfrica_3G09/model_OutOfAfrica_3G09.png)
 
 ---
 
@@ -179,7 +179,7 @@ This launches a web-based GUI where you can:
 - Configure loci and sample sizes
 - Preview the model plot
 
-![Shiny GUI](data_to_test/shiny_gui.png)
+![Shiny GUI](tests/data/shiny_gui.png)
 
 ### 3.2 Building models programmatically
 
@@ -260,7 +260,7 @@ Vaquita2Epoch <- update.priors(tab, Vaquita2Epoch)
 All models in this tutorial are included in the test data:
 
 ```r
-load("data_to_test/test_models.RData")
+load("tests/data/test_models.RData")
 # Available: Africa_1T12, OutOfAfrica_2T12, OutOfAfrica_3G09,
 #            Vaquita2Epoch, PonAbe_TwoSpecies
 ```
@@ -271,10 +271,10 @@ load("data_to_test/test_models.RData")
 
 ### 4.1 Pre-computed data
 
-The pseudo-observed data for this tutorial was generated with [stdpopsim](https://popsim-consortium.github.io/stdpopsim-docs/stable/) (Adrion et al. 2020) — 10,000 independent loci of 100bp each per model. The pre-computed observed SFS and summary statistics are included in `data_to_test/test_models.RData`, which is loaded with:
+The pseudo-observed data for this tutorial was generated with [stdpopsim](https://popsim-consortium.github.io/stdpopsim-docs/stable/) (Adrion et al. 2020) — 10,000 independent loci of 100bp each per model. The pre-computed observed SFS and summary statistics are included in `tests/data/test_models.RData`, which is loaded with:
 
 ```r
-load("data_to_test/test_models.RData")
+load("tests/data/test_models.RData")
 ```
 
 This provides the model objects and the following observed data:
@@ -333,7 +333,7 @@ The SFS workflow uses `sim.sfs()` to simulate site frequency spectra and the `ab
 ```r
 library(PipeMaster)
 library(abc)
-load("data_to_test/test_models.RData")
+load("tests/data/test_models.RData")
 
 # Step 1: Simulate SFS reference table (100,000 simulations)
 sim.sfs(model = Vaquita2Epoch,
@@ -400,7 +400,7 @@ sim.sfs(model = Africa_1T12,
 
 # Observed folded SFS
 obs_folded <- obs.sfs(model = Africa_1T12,
-                      path.to.phylip = "data_to_test/phylip_Africa_1T12.phy",
+                      path.to.phylip = "tests/data/Africa_1T12/phylip_Africa_1T12.phy",
                       pop.assign = pop_assign_afr,
                       one.snp = TRUE,
                       folded = TRUE)
@@ -606,7 +606,7 @@ plot.2D.sfs(as.numeric(observed_sfs_PonAbe[1, sfs_cols]),
 
 # From a matrix
 sfs_matrix <- as.matrix(read.table(
-  "data_to_test/observed_joint_sfs_matrix_PonAbe.txt"))
+  "tests/data/PonAbe_TwoSpecies/observed_joint_sfs_matrix_PonAbe.txt"))
 plot.2D.sfs(sfs_matrix,
             pop_names = c("Sumatran", "Bornean"))
 

@@ -44,4 +44,20 @@ TODO.md
 context.md
 
 # Test data and analysis scripts (kept locally only)
-data_to_test/
+tests/data/*
+# But keep tutorial images tracked
+!tests/data/shiny_gui.png
+!tests/data/Vaquita2Epoch/
+tests/data/Vaquita2Epoch/*
+!tests/data/Vaquita2Epoch/vaquita_10K/
+tests/data/Vaquita2Epoch/vaquita_10K/*
+!tests/data/Vaquita2Epoch/vaquita_10K/model_Vaquita2Epoch.png
+!tests/data/Africa_1T12/
+tests/data/Africa_1T12/*
+!tests/data/Africa_1T12/model_Africa_1T12.png
+!tests/data/PonAbe_TwoSpecies/
+tests/data/PonAbe_TwoSpecies/*
+!tests/data/PonAbe_TwoSpecies/model_PonAbe_TwoSpecies.png
+!tests/data/OutOfAfrica_3G09/
+tests/data/OutOfAfrica_3G09/*
+!tests/data/OutOfAfrica_3G09/model_OutOfAfrica_3G09.png
