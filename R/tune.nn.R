@@ -77,31 +77,58 @@ tune.nn <- function(reftable, param.cols,
     verbose      = verbose
   )
 
-  # --- Retrain best config for max_epochs ---
-  if (verbose) {
+  # --- Retrain best config (warm-start from saved weights) ---
+  if (verbose)
     cat(sprintf("\nPipeMaster:: Best config: %s\n", .hp.to.string(hb$best_hp, type)))
-    cat(sprintf("PipeMaster:: Retraining best for %d epochs...\n", max_epochs))
-  }
 
   tensorflow::tf$random$set_seed(as.integer(seed))
   best_model <- .build.nn(hb$best_hp, data, type, sfs.dims)
 
-  bs <- as.integer(hb$best_hp$batch_size)
-  retrain_history <- best_model %>% keras::fit(
-    x = data$X_train, y = data$Y_train,
-    validation_data = list(data$X_val, data$Y_val),
-    epochs     = as.integer(max_epochs),
-    batch_size = bs,
-    callbacks  = list(
-      keras::callback_early_stopping(monitor = "val_loss", patience = 30L,
-                                     restore_best_weights = TRUE),
-      keras::callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 15L,
-                                           factor = 0.5, min_lr = 1e-6, verbose = 0L)
-    ),
-    verbose = 0L
-  )
+  # Load weights from best Hyperband model
+  weights_loaded <- tryCatch({
+    keras::load_model_weights_tf(best_model, hb$best_weights_path)
+    TRUE
+  }, error = function(e) {
+    if (verbose) cat("PipeMaster:: [warn] Could not load saved weights, training from scratch\n")
+    FALSE
+  })
 
-  final_val_loss <- min(unlist(retrain_history$history$val_loss))
+  # Continue training if there are remaining epochs
+  start_epoch <- if (weights_loaded) as.integer(hb$best_epochs) else 0L
+  final_val_loss <- hb$best_val_loss
+
+  if (start_epoch < as.integer(max_epochs)) {
+    if (verbose)
+      cat(sprintf("PipeMaster:: Retraining best for %d epochs (warm-start from epoch %d)...\n",
+                  max_epochs, start_epoch))
+
+    bs <- as.integer(hb$best_hp$batch_size)
+    retrain_history <- best_model |> keras::fit(
+      x = data$X_train, y = data$Y_train,
+      validation_data = list(data$X_val, data$Y_val),
+      epochs        = as.integer(max_epochs),
+      initial_epoch = as.integer(start_epoch),
+      batch_size    = bs,
+      callbacks  = list(
+        keras::callback_early_stopping(monitor = "val_loss", patience = 30L,
+                                       restore_best_weights = TRUE),
+        keras::callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 15L,
+                                             factor = 0.5, min_lr = 1e-6, verbose = 0L)
+      ),
+      verbose = 0L
+    )
+
+    retrain_vl <- retrain_history$metrics$val_loss
+    if (is.null(retrain_vl)) retrain_vl <- retrain_history$history$val_loss
+    retrain_vl <- unlist(retrain_vl)
+    if (length(retrain_vl) > 0 && any(is.finite(retrain_vl)))
+      final_val_loss <- min(final_val_loss, min(retrain_vl[is.finite(retrain_vl)]))
+  } else {
+    if (verbose) cat("PipeMaster:: Best model already trained to max_epochs, skipping retrain\n")
+  }
+
+  # Clean up temp weights
+  unlink(hb$best_weights_path, recursive = TRUE)
   if (verbose) cat(sprintf("PipeMaster:: Final val_loss: %.6f\n", final_val_loss))
 
   list(
@@ -226,12 +253,12 @@ tune.nn <- function(reftable, param.cols,
   # Residual block helper
   res_block <- function(x, units) {
     skip <- x
-    x <- x %>%
+    x <- x |>
       keras::layer_dense(units = as.integer(units), activation = "relu",
-                         kernel_regularizer = l2) %>%
-      keras::layer_batch_normalization() %>%
+                         kernel_regularizer = l2) |>
+      keras::layer_batch_normalization() |>
       keras::layer_dense(units = as.integer(units), activation = "linear",
-                         kernel_regularizer = l2) %>%
+                         kernel_regularizer = l2) |>
       keras::layer_batch_normalization()
     x <- keras::layer_add(list(x, skip))
     x <- keras::layer_activation(x, activation = "relu")
@@ -241,17 +268,17 @@ tune.nn <- function(reftable, param.cols,
   inp <- keras::layer_input(shape = n_features)
 
   # First dense + residual group
-  x <- inp %>%
+  x <- inp |>
     keras::layer_dense(units = as.integer(hp$units_1), activation = "relu",
-                       kernel_regularizer = l2) %>%
+                       kernel_regularizer = l2) |>
     keras::layer_batch_normalization()
   for (i in seq_len(hp$n_resblocks_1))
     x <- res_block(x, hp$units_1)
 
   # Middle transition + optional dropout
-  x <- x %>%
+  x <- x |>
     keras::layer_dense(units = as.integer(hp$units_2), activation = "relu",
-                       kernel_regularizer = l2) %>%
+                       kernel_regularizer = l2) |>
     keras::layer_batch_normalization()
   if (isTRUE(hp$use_dropout) && hp$dropout > 0)
     x <- keras::layer_dropout(x, rate = hp$dropout)
@@ -262,17 +289,17 @@ tune.nn <- function(reftable, param.cols,
       x <- res_block(x, hp$units_2)
 
   # Final dense + optional dropout
-  x <- x %>%
+  x <- x |>
     keras::layer_dense(units = as.integer(hp$units_3), activation = "relu",
-                       kernel_regularizer = l2) %>%
+                       kernel_regularizer = l2) |>
     keras::layer_batch_normalization()
   if (isTRUE(hp$use_dropout) && hp$dropout > 0)
     x <- keras::layer_dropout(x, rate = hp$dropout)
 
-  out <- x %>% keras::layer_dense(units = n_targets, activation = "linear")
+  out <- x |> keras::layer_dense(units = n_targets, activation = "linear")
 
   model <- keras::keras_model(inp, out)
-  model %>% keras::compile(
+  model |> keras::compile(
     loss      = keras::loss_huber(delta = hp$huber_delta),
     optimizer = keras::optimizer_adam(learning_rate = hp$learning_rate)
   )
@@ -292,42 +319,42 @@ tune.nn <- function(reftable, param.cols,
     filters <- as.integer(hp$base_filters * (2 ^ min(b - 1, 2)))
     ks <- as.integer(max(3L, hp$kernel_start - (b - 1) * 2))
 
-    x <- x %>%
+    x <- x |>
       keras::layer_conv_1d(filters = filters, kernel_size = ks,
-                           padding = "same", kernel_regularizer = l2) %>%
-      keras::layer_batch_normalization() %>%
+                           padding = "same", kernel_regularizer = l2) |>
+      keras::layer_batch_normalization() |>
       keras::layer_activation("relu")
 
     if (isTRUE(hp$use_residual) && b > 1 && b < hp$n_blocks) {
       skip <- x
-      x <- x %>%
+      x <- x |>
         keras::layer_conv_1d(filters = filters, kernel_size = ks,
-                             padding = "same", kernel_regularizer = l2) %>%
-        keras::layer_batch_normalization() %>%
-        keras::layer_activation("relu") %>%
+                             padding = "same", kernel_regularizer = l2) |>
+        keras::layer_batch_normalization() |>
+        keras::layer_activation("relu") |>
         keras::layer_conv_1d(filters = filters, kernel_size = ks,
-                             padding = "same", kernel_regularizer = l2) %>%
+                             padding = "same", kernel_regularizer = l2) |>
         keras::layer_batch_normalization()
-      x <- keras::layer_add(list(x, skip)) %>% keras::layer_activation("relu")
+      x <- keras::layer_add(list(x, skip)) |> keras::layer_activation("relu")
     }
   }
 
-  x <- x %>% keras::layer_global_average_pooling_1d()
+  x <- x |> keras::layer_global_average_pooling_1d()
 
   for (d in seq_len(hp$n_dense)) {
     units <- as.integer(hp$dense_units / (2 ^ (d - 1)))
-    x <- x %>%
+    x <- x |>
       keras::layer_dense(units = units, activation = "relu",
-                         kernel_regularizer = l2) %>%
-      keras::layer_batch_normalization() %>%
+                         kernel_regularizer = l2) |>
+      keras::layer_batch_normalization() |>
       keras::layer_dropout(rate = hp$dropout)
   }
 
-  output <- x %>% keras::layer_dense(units = n_targets, activation = "linear")
+  output <- x |> keras::layer_dense(units = n_targets, activation = "linear")
   model <- keras::keras_model(input, output)
 
   loss_fn <- if (identical(hp$loss, "huber")) keras::loss_huber(delta = 1.0) else "mse"
-  model %>% keras::compile(
+  model |> keras::compile(
     loss      = loss_fn,
     optimizer = keras::optimizer_adam(learning_rate = hp$learning_rate),
     metrics   = list("mae")
@@ -348,10 +375,10 @@ tune.nn <- function(reftable, param.cols,
     filters <- as.integer(hp$base_filters * (2 ^ min(b - 1, 2)))
     ks <- as.integer(max(3L, hp$kernel_start - (b - 1) * 2))
 
-    x <- x %>%
+    x <- x |>
       keras::layer_conv_2d(filters = filters, kernel_size = c(ks, ks),
-                           padding = "same", kernel_regularizer = l2) %>%
-      keras::layer_batch_normalization() %>%
+                           padding = "same", kernel_regularizer = l2) |>
+      keras::layer_batch_normalization() |>
       keras::layer_activation("relu")
 
     # Max pooling on first and middle blocks
@@ -360,34 +387,34 @@ tune.nn <- function(reftable, param.cols,
 
     if (isTRUE(hp$use_residual) && b > 1 && b < hp$n_blocks) {
       skip <- x
-      x <- x %>%
+      x <- x |>
         keras::layer_conv_2d(filters = filters, kernel_size = c(ks, ks),
-                             padding = "same", kernel_regularizer = l2) %>%
-        keras::layer_batch_normalization() %>%
-        keras::layer_activation("relu") %>%
+                             padding = "same", kernel_regularizer = l2) |>
+        keras::layer_batch_normalization() |>
+        keras::layer_activation("relu") |>
         keras::layer_conv_2d(filters = filters, kernel_size = c(ks, ks),
-                             padding = "same", kernel_regularizer = l2) %>%
+                             padding = "same", kernel_regularizer = l2) |>
         keras::layer_batch_normalization()
-      x <- keras::layer_add(list(x, skip)) %>% keras::layer_activation("relu")
+      x <- keras::layer_add(list(x, skip)) |> keras::layer_activation("relu")
     }
   }
 
-  x <- x %>% keras::layer_global_average_pooling_2d()
+  x <- x |> keras::layer_global_average_pooling_2d()
 
   for (d in seq_len(hp$n_dense)) {
     units <- as.integer(hp$dense_units / (2 ^ (d - 1)))
-    x <- x %>%
+    x <- x |>
       keras::layer_dense(units = units, activation = "relu",
-                         kernel_regularizer = l2) %>%
-      keras::layer_batch_normalization() %>%
+                         kernel_regularizer = l2) |>
+      keras::layer_batch_normalization() |>
       keras::layer_dropout(rate = hp$dropout)
   }
 
-  output <- x %>% keras::layer_dense(units = n_targets, activation = "linear")
+  output <- x |> keras::layer_dense(units = n_targets, activation = "linear")
   model <- keras::keras_model(input, output)
 
   loss_fn <- if (identical(hp$loss, "huber")) keras::loss_huber(delta = 1.0) else "mse"
-  model %>% keras::compile(
+  model |> keras::compile(
     loss      = loss_fn,
     optimizer = keras::optimizer_adam(learning_rate = hp$learning_rate),
     metrics   = list("mae")
@@ -564,8 +591,10 @@ tune.nn <- function(reftable, param.cols,
     bracket = integer(), round = integer(),
     stringsAsFactors = FALSE
   )
-  global_best_loss <- Inf
-  global_best_hp   <- NULL
+  global_best_loss   <- Inf
+  global_best_hp     <- NULL
+  global_best_epochs <- 0L
+  best_weights_path  <- tempfile("hb_best_weights_")
 
   for (iter in seq_len(n_iter)) {
     if (verbose && n_iter > 1) cat(sprintf("=== Iteration %d ===\n", iter))
@@ -582,9 +611,13 @@ tune.nn <- function(reftable, param.cols,
       configs <- lapply(seq_len(n), function(i) .sample.config(search_space))
 
       tensorflow::tf$random$set_seed(as.integer(seed + iter * 1000 + s))
-      models <- lapply(configs, function(hp) {
-        tryCatch(.build.nn(hp, data, type, sfs.dims),
-                 error = function(e) NULL)
+      models <- lapply(seq_along(configs), function(k) {
+        tryCatch(.build.nn(configs[[k]], data, type, sfs.dims),
+                 error = function(e) {
+                   if (verbose) cat(sprintf("    [warn] config %d failed to build: %s\n",
+                                            k, conditionMessage(e)))
+                   NULL
+                 })
       })
 
       # Track how many epochs each model has been trained
@@ -602,7 +635,7 @@ tune.nn <- function(reftable, param.cols,
           if (is.null(models[[j]])) next
 
           tryCatch({
-            history <- models[[j]] %>% keras::fit(
+            history <- models[[j]] |> keras::fit(
               x = data$X_train, y = data$Y_train,
               validation_data = list(data$X_val, data$Y_val),
               epochs        = as.integer(r_i),
@@ -620,8 +653,12 @@ tune.nn <- function(reftable, param.cols,
               ),
               verbose = 0L
             )
-            val_losses[j] <- min(unlist(history$history$val_loss))
+            vl <- history$metrics$val_loss
+            if (is.null(vl)) vl <- history$history$val_loss
+            val_losses[j] <- min(unlist(vl))
           }, error = function(e) {
+            if (verbose) cat(sprintf("    [warn] config %d train error: %s\n",
+                                     j, conditionMessage(e)))
             val_losses[j] <<- Inf
           })
         }
@@ -646,11 +683,16 @@ tune.nn <- function(reftable, param.cols,
           cat(sprintf("    Round %d: %d configs, %d ep \u2192 best val_loss=%.4f",
                       i, sum(!sapply(models, is.null)), r_i, best_round_loss))
 
-        # Update global best
+        # Update global best — save weights so we can resume after k_clear_session
         best_idx <- which.min(val_losses)
         if (val_losses[best_idx] < global_best_loss) {
-          global_best_loss <- val_losses[best_idx]
-          global_best_hp   <- configs[[best_idx]]
+          global_best_loss   <- val_losses[best_idx]
+          global_best_hp     <- configs[[best_idx]]
+          global_best_epochs <- as.integer(r_i)
+          tryCatch(
+            keras::save_model_weights_tf(models[[best_idx]], best_weights_path),
+            error = function(e) NULL
+          )
         }
 
         # Prune: keep top n_keep
@@ -661,15 +703,7 @@ tune.nn <- function(reftable, param.cols,
 
           if (verbose) cat(sprintf(" | pruning to %d\n", length(keep)))
 
-          # Free memory for eliminated models
-          for (d in discard) {
-            if (!is.null(models[[d]])) {
-              tryCatch(keras::k_clear_session(), error = function(e) NULL)
-              models[[d]] <- NULL
-            }
-          }
-
-          # Compact lists
+          # Compact lists (subset first, then clear session)
           models      <- models[keep]
           configs     <- configs[keep]
           prev_epochs <- prev_epochs[keep]
@@ -680,16 +714,17 @@ tune.nn <- function(reftable, param.cols,
       }
 
       # Clear remaining models from this bracket
-      for (m in models) {
-        if (!is.null(m))
-          tryCatch(keras::k_clear_session(), error = function(e) NULL)
-      }
+      rm(models)
+      gc()
+      tryCatch(keras::k_clear_session(), error = function(e) NULL)
     }
   }
 
   list(
-    best_hp      = global_best_hp,
-    best_val_loss = global_best_loss,
-    all_results  = all_results
+    best_hp           = global_best_hp,
+    best_val_loss     = global_best_loss,
+    best_epochs       = global_best_epochs,
+    best_weights_path = best_weights_path,
+    all_results       = all_results
   )
 }
