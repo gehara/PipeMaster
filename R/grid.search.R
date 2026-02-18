@@ -334,3 +334,89 @@ grid.search <- function(model, observed, grid = NULL, n_points = 10, n_reps = 10
 
   sim_mat
 }
+
+
+#' Update model priors from grid search results
+#'
+#' @description Narrows model priors to the productive parameter region identified
+#'   by \code{\link{grid.search}}. For each parameter, the new uniform prior spans
+#'   the min–max range of the top grid cells (by distance), with optional padding
+#'   in log space. This is the recommended step between grid search and full ABC.
+#'
+#' @param model A PipeMaster model object (with \code{model$flags}).
+#' @param grid.results A data.frame returned by \code{\link{grid.search}}, with
+#'   parameter columns and a \code{distance} column.
+#' @param tol Fraction of top grid cells to use (default 0.05 = top 5\%).
+#' @param padding Fractional margin in log space beyond min/max of top cells
+#'   (default 0.1).
+#' @return The model with updated (narrowed) priors.
+#' @examples
+#' \dontrun{
+#' result <- grid.search(model = my_model, observed = obs,
+#'                       n_points = 10, n_reps = 10, ncores = 4)
+#' my_model <- update.priors.from.grid(my_model, result, tol = 0.05, padding = 0.1)
+#' }
+#' @author Marcelo Gehara
+#' @export
+update.priors.from.grid <- function(model, grid.results, tol = 0.05, padding = 0.1) {
+
+  ## ---- Validate inputs ----
+  if (!"distance" %in% colnames(grid.results))
+    stop("'grid.results' must contain a 'distance' column")
+
+  old_tab <- get.prior.table(model)
+  param_cols <- setdiff(colnames(grid.results), "distance")
+
+  missing <- setdiff(param_cols, old_tab$Parameter)
+  if (length(missing) > 0)
+    stop("Parameters not found in model: ", paste(missing, collapse = ", "))
+
+  ## ---- Select top grid cells ----
+  grid.results <- grid.results[order(grid.results$distance), ]
+  n_top <- max(1, ceiling(nrow(grid.results) * tol))
+  top <- grid.results[1:n_top, , drop = FALSE]
+
+  ## ---- Build new prior table ----
+  new_tab <- data.frame(
+    Parameter    = param_cols,
+    prior.1      = NA_character_,
+    prior.2      = NA_character_,
+    distribution = "runif",
+    stringsAsFactors = FALSE
+  )
+
+  cat("PipeMaster:: Updating priors from top", n_top, "of", nrow(grid.results),
+      "grid cells (tol =", tol, ", padding =", padding, ")\n")
+
+  for (i in seq_along(param_cols)) {
+    pname <- param_cols[i]
+    vals  <- top[[pname]]
+    min_val <- min(vals)
+    max_val <- max(vals)
+
+    ## Old range for display
+    old_row <- which(old_tab$Parameter == pname)
+    old_lo  <- as.numeric(old_tab$prior.1[old_row])
+    old_hi  <- as.numeric(old_tab$prior.2[old_row])
+
+    ## Compute new range with padding in log space
+    if (min_val == max_val) {
+      new_min <- 10^(log10(min_val) - 0.5)
+      new_max <- 10^(log10(max_val) + 0.5)
+    } else {
+      log_range <- log10(max_val) - log10(min_val)
+      new_min   <- 10^(log10(min_val) - padding * log_range)
+      new_max   <- 10^(log10(max_val) + padding * log_range)
+    }
+
+    new_tab$prior.1[i] <- as.character(new_min)
+    new_tab$prior.2[i] <- as.character(new_max)
+
+    cat(sprintf("  %-20s: [%.4g, %.4g] -> [%.4g, %.4g]\n",
+                pname, old_lo, old_hi, new_min, new_max))
+  }
+
+  ## ---- Apply via existing update.priors() ----
+  model <- update.priors(new_tab, model)
+  model
+}
