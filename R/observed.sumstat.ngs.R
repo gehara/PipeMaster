@@ -1,3 +1,76 @@
+# Fast PHYLIP-to-ms converter (internal helper)
+# Converts a multi-locus sequential PHYLIP file directly to a concatenated
+# ms-format file, avoiding character matrices and per-nucleotide strsplit.
+phylip_to_ms_file <- function(filepath, pop.assign, output_file) {
+  lines <- readLines(filepath)
+  pops <- data.frame(pop.assign)
+  pops <- pops[order(pops[,2]), ]
+
+  con <- file(output_file, "w")
+  on.exit(close(con))
+
+  i <- 1
+  while(i <= length(lines)) {
+    # Skip blank lines
+    if(nchar(trimws(lines[i])) == 0) { i <- i + 1; next }
+
+    # Parse header: "ntax nchar"
+    header <- as.integer(strsplit(trimws(lines[i]), "\\s+")[[1]])
+    ntax <- header[1]; nchar_seq <- header[2]
+    i <- i + 1
+
+    # Read sequences as strings (NOT character matrices)
+    names_vec <- character(ntax)
+    seqs <- character(ntax)
+    for(j in 1:ntax) {
+      names_vec[j] <- trimws(substr(lines[i], 1, 10))
+      seqs[j] <- gsub("\\s", "", substr(lines[i], 11, nchar(lines[i])))
+      i <- i + 1
+    }
+
+    # Reorder by pop.assign
+    ord <- match(pops[,1], names_vec)
+    ord <- ord[!is.na(ord)]
+    seqs <- seqs[ord]
+    n <- length(seqs)
+
+    # Convert to raw matrix for vectorized SNP detection
+    raw_mat <- do.call(rbind, lapply(seqs, function(s) charToRaw(tolower(s))))
+
+    # Find variable sites (exclude gaps '-'=0x2d, N 'n'=0x6e)
+    gap_mask <- colSums(raw_mat == as.raw(0x2d)) > 0
+    n_mask <- colSums(raw_mat == as.raw(0x6e)) > 0
+    ref <- raw_mat[1, ]
+    var_mask <- colSums(raw_mat != rep(ref, each = n)) > 0
+    snp_cols <- which(var_mask & !gap_mask & !n_mask)
+    ss <- length(snp_cols)
+
+    if(ss > 0) {
+      # Encode: major allele -> 0, others -> 1
+      snp_raw <- raw_mat[, snp_cols, drop = FALSE]
+      for(col in 1:ss) {
+        col_bytes <- snp_raw[, col]
+        freq <- tabulate(as.integer(col_bytes), nbins = 122)
+        major <- as.raw(which.max(freq))
+        encoded <- rep(as.raw(0x31), length(col_bytes))
+        encoded[col_bytes == major] <- as.raw(0x30)
+        snp_raw[, col] <- encoded
+      }
+      hap_strings <- character(n)
+      for(k in 1:n) hap_strings[k] <- rawToChar(snp_raw[k, ])
+      pos <- snp_cols / nchar_seq
+
+      writeLines(paste("segsites:", ss), con)
+      writeLines(paste("positions:", paste(pos, collapse = " ")), con)
+      writeLines(hap_strings, con)
+    } else {
+      writeLines("segsites: 0", con)
+      writeLines("positions:", con)
+    }
+    writeLines("//", con)
+  }
+}
+
 #' Observed summary statistics for nexgen data
 #' @description This function calculates the observed summary statistics from an empirical data.
 #'              This summary statistics are the same as those simulated by the sim.sumstat function.
@@ -43,31 +116,60 @@ obs.sumstat.ngs<-function(model=NULL,path.to.fasta=NULL,path.to.phylip=NULL,
   use_phylip <- !is.null(path.to.phylip)
 
   if(use_phylip) {
-    cat("PipeMaster:: Reading multi-locus PHYLIP file...\n")
-    phylip_loci <- read.phylip.loci(path.to.phylip)
-    n_loci <- length(phylip_loci)
-    # Need a temp directory for ms files used by msABC
     tmpdir <- tempfile("obs_sumstat_")
     dir.create(tmpdir)
+
+    # Step 1: Convert PHYLIP -> concatenated ms file
+    cat("PipeMaster:: Converting PHYLIP to ms format...\n")
+    ms_file <- file.path(tmpdir, "combined.ms")
+    phylip_to_ms_file(path.to.phylip, pop.assign, ms_file)
+
+    # Step 2: Create locfile
+    locfile <- PipeMaster:::get.locfile(model)
+    locfile_path <- file.path(tmpdir, ".1locfile.txt")
+    write.table(locfile, locfile_path, row.names=FALSE, col.names=TRUE, quote=FALSE, sep=" ")
+
+    # Step 3: Build fragment-mode command with --obs
+    saved_wd <- getwd()
     setwd(tmpdir)
-  } else {
-    setwd(path.to.fasta)
-    fasta.files<-list.files()
-    fasta.files<-fasta.files[grep(".fa",fasta.files,fixed=T)]
-    n_loci <- length(fasta.files)
+    com <- PipeMaster:::msABC.commander(model, use.alpha=FALSE, arg=1)
+    command <- paste(com[[1]], "--obs", ms_file)
+
+    # Step 4: Single msABC call -> returns header + moments
+    cat("PipeMaster:: Computing summary statistics via msABC...\n")
+    result <- run.msABC(command)
+    setwd(saved_wd)
+
+    # Step 5: Parse output
+    x <- strsplit(result, "\t")
+    frag_nam <- x[[1]]  # header names
+    values <- as.numeric(x[[2]])  # moment values
+
+    # Filter thomson, ZnS, FayWuH/fwh columns
+    cols_remove <- grep("thomson|ZnS|FayWuH|fwh", frag_nam)
+    if(length(cols_remove) > 0) {
+      frag_nam <- frag_nam[-cols_remove]
+      values <- values[-cols_remove]
+    }
+
+    observed <- t(data.frame(values))
+    colnames(observed) <- frag_nam
+
+    unlink(tmpdir, recursive=TRUE)
+    setwd(WD)
+    return(observed)
   }
 
-  # Per-locus: convert alignment -> ms -> run msABC --obs
+  # FASTA path
+  setwd(path.to.fasta)
+  fasta.files<-list.files()
+  fasta.files<-fasta.files[grep(".fa",fasta.files,fixed=T)]
+  n_loci <- length(fasta.files)
+
+  # Per-locus: convert FASTA alignment -> ms -> run msABC --obs
   process.one.locus <- function(i) {
-    if(use_phylip) {
-      ms.output <- PipeMaster:::mat.snp.2ms(phylip_loci[[i]], pop.assign)
-      locus.name <- paste0("locus_", i)
-      # Write ms file for msABC --obs
-      writeLines(ms.output[[1]], paste0(locus.name, ".ms"))
-    } else {
-      ms.output <- PipeMaster:::fasta.snp.2ms(path.to.fasta, fasta.files[i], write.file=TRUE, pop.assign)
-      locus.name <- strsplit(fasta.files[i], ".", fixed=TRUE)[[1]][1]
-    }
+    ms.output <- PipeMaster:::fasta.snp.2ms(path.to.fasta, fasta.files[i], write.file=TRUE, pop.assign)
+    locus.name <- strsplit(fasta.files[i], ".", fixed=TRUE)[[1]][1]
     xx <- strsplit(ms.output[[1]][1], " ")
     xx <- xx[[1]][2:length(xx[[1]])]
     xx <- paste(xx, collapse=" ")
@@ -143,7 +245,6 @@ obs.sumstat.ngs<-function(model=NULL,path.to.fasta=NULL,path.to.phylip=NULL,
     observed <- t(data.frame(observed))
     colnames(observed) <- frag_nam
   }
-  if(use_phylip) unlink(tmpdir, recursive = TRUE)
   setwd(WD)
   return(observed)
 }

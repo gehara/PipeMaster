@@ -7,6 +7,7 @@
 #' @references Chan Y.L., Schanzenbach D., & Hickerson M.J. (2014) Detecting concerted demographic response across community assemblages using hierarchical approximate Bayesian computation. Molecular Biology and Evolution, 31, 2501–2515.
 #' @export
 observed.coexp.sumstat<-function(path.to.fasta){
+  .Deprecated("obs.coexp.ngs")
   setwd(path.to.fasta)
   fasta.files<-list.files()
   fasta.files<-fasta.files[grep(".fas",fasta.files)]

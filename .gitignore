@@ -61,3 +61,8 @@ tests/data/PonAbe_TwoSpecies/*
 !tests/data/OutOfAfrica_3G09/
 tests/data/OutOfAfrica_3G09/*
 !tests/data/OutOfAfrica_3G09/model_OutOfAfrica_3G09.png
+
+# hABC test data and test scripts (kept locally only)
+tests/hABC/
+tests/sfs/
+tests/sumstats/
