@@ -135,7 +135,10 @@ tune.nn <- function(reftable, param.cols,
     best_hp       = hb$best_hp,
     best_val_loss = final_val_loss,
     all_results   = hb$all_results,
-    best_model    = best_model
+    best_model    = best_model,
+    data          = data,
+    type          = type,
+    sfs.dims      = sfs.dims
   )
 }
 
@@ -480,7 +483,8 @@ tune.nn <- function(reftable, param.cols,
     Y_train = zscore_tar(Y_tr_log), Y_val = zscore_tar(Y_va_log),
     n_features = ncol(X_train),
     feat_mu = feat_mu, feat_sd = feat_sd,
-    target_mu = t_mu, target_sd = t_sd
+    target_mu = t_mu, target_sd = t_sd,
+    stat_cols = stat_cols
   )
 }
 
@@ -524,7 +528,8 @@ tune.nn <- function(reftable, param.cols,
     Y_train = zscore_tar(Y_tr_log), Y_val = zscore_tar(Y_va_log),
     n_bins = n_bins, n_features = n_bins,
     feat_mu = feat_mu, feat_sd = feat_sd,
-    target_mu = t_mu, target_sd = t_sd
+    target_mu = t_mu, target_sd = t_sd,
+    stat_cols = sfs_cols
   )
 }
 
@@ -570,7 +575,8 @@ tune.nn <- function(reftable, param.cols,
     Y_train = zscore_tar(Y_tr_log), Y_val = zscore_tar(Y_va_log),
     n_bins = n_sfs, n_features = n_sfs,
     feat_mu = feat_mu, feat_sd = feat_sd,
-    target_mu = t_mu, target_sd = t_sd
+    target_mu = t_mu, target_sd = t_sd,
+    stat_cols = sfs_cols
   )
 }
 
@@ -727,4 +733,888 @@ tune.nn <- function(reftable, param.cols,
     best_weights_path = best_weights_path,
     all_results       = all_results
   )
+}
+
+# ============================================================================
+# nn.predict — Posterior estimation via conformal prediction and bootstrap
+# ============================================================================
+
+#' Posterior Estimation via Conformal Prediction and Bootstrap
+#'
+#' Estimates posterior distributions for observed data using a trained neural
+#' network from \code{tune.nn()}, with conformal prediction and/or bootstrap
+#' methods for uncertainty quantification.
+#'
+#' @param tune.result list — output from \code{tune.nn()}.
+#' @param observed named numeric vector or 1-row data.frame of observed summary
+#'   statistics (or SFS bins).
+#' @param reftable data.frame — original reference table (needed for bootstrap
+#'   retraining and conformal calibration).
+#' @param param.cols character vector — parameter column names.
+#' @param type character — architecture type: \code{"sumstat"}, \code{"sfs1d"},
+#'   or \code{"sfs2d"}. If NULL, uses the type stored in tune.result.
+#' @param sfs.dims integer vector — for 2D CNN only. If NULL, uses tune.result.
+#' @param method character — \code{"conformal"}, \code{"bootstrap"}, or both.
+#' @param n_boot integer — number of bootstrap replicates (default 50).
+#' @param n_ensemble integer — number of ensemble models for conformal (default 10).
+#' @param cal.frac numeric — fraction of reftable used as calibration set (default 0.1).
+#' @param max_epochs integer — max training epochs for conformal/bootstrap models (default 1000).
+#' @param cores integer — number of parallel Rscript workers for bootstrap (default 1).
+#' @param seed integer — random seed (default 42).
+#' @param verbose logical — print progress (default TRUE).
+#'
+#' @return A list with:
+#' \describe{
+#'   \item{point_estimate}{named numeric vector — inverse-transformed point
+#'     prediction from best model}
+#'   \item{conformal}{matrix of posterior samples (n_samples x n_params), or NULL}
+#'   \item{bootstrap}{matrix of posterior samples (n_boot x n_params), or NULL}
+#'   \item{param_names}{character vector of parameter column names}
+#' }
+#'
+#' @export
+nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL,
+                       type = NULL, sfs.dims = NULL,
+                       method = c("conformal", "bootstrap"),
+                       n_boot = 50, n_ensemble = 10, cal.frac = 0.1,
+                       max_epochs = 1000, cores = 1, seed = 42, verbose = TRUE) {
+
+  # --- Dependency check ---
+  if (!requireNamespace("keras", quietly = TRUE) ||
+      !requireNamespace("tensorflow", quietly = TRUE))
+    stop("nn.predict() requires the 'keras' and 'tensorflow' R packages.")
+
+  method <- match.arg(method, c("conformal", "bootstrap"), several.ok = TRUE)
+
+  # Extract from tune.result
+  best_hp    <- tune.result$best_hp
+  best_model <- tune.result$best_model
+  data       <- tune.result$data
+
+  if (is.null(best_hp) || is.null(data))
+    stop("tune.result must be output from tune.nn() with $best_hp and $data")
+
+  if (is.null(type)) type <- tune.result$type
+  if (is.null(type)) stop("type must be specified or present in tune.result")
+  type <- match.arg(type, c("sumstat", "sfs1d", "sfs2d"))
+
+  if (is.null(sfs.dims)) sfs.dims <- tune.result$sfs.dims
+
+  if (("conformal" %in% method || "bootstrap" %in% method) && is.null(reftable))
+    stop("reftable is required for conformal and bootstrap methods")
+  if (!is.null(reftable) && is.null(param.cols))
+    stop("param.cols is required when reftable is provided")
+
+  param_names <- if (!is.null(param.cols)) param.cols else colnames(data$Y_train)
+
+  # Coerce observed to numeric vector, reordering to match reftable stat column order
+  if (is.data.frame(observed)) {
+    stat_cols <- data$stat_cols
+    if (!is.null(stat_cols) && all(stat_cols %in% colnames(observed))) {
+      observed <- as.numeric(observed[1, stat_cols])
+    } else {
+      observed <- as.numeric(observed[1, ])
+    }
+  }
+
+  # --- Header ---
+  method_str <- paste(
+    ifelse("conformal" %in% method, "Conformal", ""),
+    ifelse(length(method) == 2, "+", ""),
+    ifelse("bootstrap" %in% method, "Bootstrap", ""),
+    sep = " "
+  )
+  method_str <- trimws(gsub("\\s+", " ", method_str))
+
+  if (verbose) {
+    cat(sprintf("PipeMaster:: nn.predict \u2014 %s\n", method_str))
+  }
+
+  # --- Prepare observed data ---
+  X_obs <- .prep.observed(observed, data, type, sfs.dims)
+
+  if (verbose) {
+    n_obs_feat <- if (type == "sumstat") length(observed) else length(observed)
+    cat(sprintf("PipeMaster:: Observed: %d %s\n", n_obs_feat,
+                if (type == "sumstat") "summary statistics" else "SFS bins"))
+  }
+
+  # --- Point estimate from best model ---
+  Y_z <- predict(best_model, X_obs, verbose = 0L)
+  point_est <- as.numeric(.inv.transform(Y_z, data$target_mu, data$target_sd))
+  names(point_est) <- param_names
+
+  if (verbose) {
+    est_str <- paste(sprintf("%s=%.0f", param_names, point_est), collapse = " ")
+    cat(sprintf("PipeMaster:: Point estimate: %s\n", est_str))
+  }
+
+  # --- Conformal prediction ---
+  conf_samples <- NULL
+  if ("conformal" %in% method) {
+    conf_samples <- .run.conformal(
+      reftable, param.cols, observed, best_hp, type, sfs.dims,
+      n_ensemble, cal.frac, max_epochs, seed, verbose
+    )
+    colnames(conf_samples) <- param_names
+  }
+
+  # --- Bootstrap ---
+  boot_samples <- NULL
+  if ("bootstrap" %in% method) {
+    boot_samples <- .run.bootstrap(
+      reftable, param.cols, observed, best_hp, type, sfs.dims,
+      n_boot, max_epochs, cores, seed, verbose
+    )
+    colnames(boot_samples) <- param_names
+  }
+
+  if (verbose) cat("PipeMaster:: Done.\n")
+
+  list(
+    point_estimate = point_est,
+    conformal      = conf_samples,
+    bootstrap      = boot_samples,
+    param_names    = param_names
+  )
+}
+
+# ============================================================================
+# Internal: prepare observed data for prediction
+# ============================================================================
+
+.prep.observed <- function(observed, data, type, sfs.dims) {
+  feat_mu <- data$feat_mu
+  feat_sd <- data$feat_sd
+
+  if (type == "sumstat") {
+    obs_aug <- c(observed, log1p(abs(observed)))
+    X_obs <- matrix((obs_aug - feat_mu) / feat_sd, nrow = 1)
+    X_obs[!is.finite(X_obs)] <- 0
+  } else if (type == "sfs1d") {
+    obs_log <- log1p(observed)
+    obs_z <- (obs_log - feat_mu) / feat_sd
+    obs_z[!is.finite(obs_z)] <- 0
+    X_obs <- array(obs_z, dim = c(1L, length(obs_z), 1L))
+  } else {
+    obs_log <- log1p(observed)
+    obs_z <- (obs_log - feat_mu) / feat_sd
+    obs_z[!is.finite(obs_z)] <- 0
+    X_obs <- array(obs_z, dim = c(1L, sfs.dims[1], sfs.dims[2], 1L))
+  }
+  X_obs
+}
+
+# ============================================================================
+# Internal: normalize observed with arbitrary normalization params
+# ============================================================================
+
+.prep.observed.with <- function(observed, feat_mu, feat_sd, type, sfs.dims) {
+  if (type == "sumstat") {
+    obs_aug <- c(observed, log1p(abs(observed)))
+    X_obs <- matrix((obs_aug - feat_mu) / feat_sd, nrow = 1)
+    X_obs[!is.finite(X_obs)] <- 0
+  } else if (type == "sfs1d") {
+    obs_log <- log1p(observed)
+    obs_z <- (obs_log - feat_mu) / feat_sd
+    obs_z[!is.finite(obs_z)] <- 0
+    X_obs <- array(obs_z, dim = c(1L, length(obs_z), 1L))
+  } else {
+    obs_log <- log1p(observed)
+    obs_z <- (obs_log - feat_mu) / feat_sd
+    obs_z[!is.finite(obs_z)] <- 0
+    X_obs <- array(obs_z, dim = c(1L, sfs.dims[1], sfs.dims[2], 1L))
+  }
+  X_obs
+}
+
+# ============================================================================
+# Internal: inverse transform predictions from normalized log-space
+# ============================================================================
+
+.inv.transform <- function(Y_z, target_mu, target_sd) {
+  exp(t(t(Y_z) * target_sd + target_mu))
+}
+
+# ============================================================================
+# Internal: write standalone model-builder R script for parallel workers
+# ============================================================================
+
+.write.builder.script <- function(filepath, type) {
+  # Emit self-contained build_nn() that only needs keras/tensorflow loaded.
+  # Only writes the architecture(s) actually needed.
+
+  lines <- c(
+    '# Auto-generated model builder for nn.predict parallel workers',
+    'build_nn <- function(hp, data, type, sfs.dims) {',
+    '  switch(type,',
+    '    sumstat = build_resnet(hp, data),',
+    '    sfs1d   = build_cnn1d(hp, data),',
+    '    sfs2d   = build_cnn2d(hp, data, sfs.dims)',
+    '  )',
+    '}'
+  )
+
+  if (type == "sumstat" || type == "all") {
+    lines <- c(lines, '',
+    'build_resnet <- function(hp, data) {',
+    '  n_features <- ncol(data$X_train)',
+    '  n_targets  <- ncol(data$Y_train)',
+    '  l2 <- regularizer_l2(hp$l2_reg)',
+    '  res_block <- function(x, units) {',
+    '    skip <- x',
+    '    x <- x |>',
+    '      layer_dense(units = as.integer(units), activation = "relu",',
+    '                  kernel_regularizer = l2) |>',
+    '      layer_batch_normalization() |>',
+    '      layer_dense(units = as.integer(units), activation = "linear",',
+    '                  kernel_regularizer = l2) |>',
+    '      layer_batch_normalization()',
+    '    x <- layer_add(list(x, skip))',
+    '    layer_activation(x, activation = "relu")',
+    '  }',
+    '  inp <- layer_input(shape = n_features)',
+    '  x <- inp |>',
+    '    layer_dense(units = as.integer(hp$units_1), activation = "relu",',
+    '                kernel_regularizer = l2) |>',
+    '    layer_batch_normalization()',
+    '  for (i in seq_len(hp$n_resblocks_1)) x <- res_block(x, hp$units_1)',
+    '  x <- x |>',
+    '    layer_dense(units = as.integer(hp$units_2), activation = "relu",',
+    '                kernel_regularizer = l2) |>',
+    '    layer_batch_normalization()',
+    '  if (isTRUE(hp$use_dropout) && hp$dropout > 0)',
+    '    x <- layer_dropout(x, rate = hp$dropout)',
+    '  if (hp$n_resblocks_2 > 0)',
+    '    for (i in seq_len(hp$n_resblocks_2)) x <- res_block(x, hp$units_2)',
+    '  x <- x |>',
+    '    layer_dense(units = as.integer(hp$units_3), activation = "relu",',
+    '                kernel_regularizer = l2) |>',
+    '    layer_batch_normalization()',
+    '  if (isTRUE(hp$use_dropout) && hp$dropout > 0)',
+    '    x <- layer_dropout(x, rate = hp$dropout)',
+    '  out <- x |> layer_dense(units = n_targets, activation = "linear")',
+    '  model <- keras_model(inp, out)',
+    '  model |> compile(',
+    '    loss = loss_huber(delta = hp$huber_delta),',
+    '    optimizer = optimizer_adam(learning_rate = hp$learning_rate)',
+    '  )',
+    '  model',
+    '}')
+  }
+
+  if (type == "sfs1d" || type == "all") {
+    lines <- c(lines, '',
+    'build_cnn1d <- function(hp, data) {',
+    '  n_bins <- data$n_bins',
+    '  n_targets <- ncol(data$Y_train)',
+    '  l2 <- regularizer_l2(hp$l2_reg)',
+    '  input <- layer_input(shape = c(n_bins, 1L))',
+    '  x <- input',
+    '  for (b in seq_len(hp$n_blocks)) {',
+    '    filters <- as.integer(hp$base_filters * (2 ^ min(b - 1, 2)))',
+    '    ks <- as.integer(max(3L, hp$kernel_start - (b - 1) * 2))',
+    '    x <- x |>',
+    '      layer_conv_1d(filters = filters, kernel_size = ks,',
+    '                    padding = "same", kernel_regularizer = l2) |>',
+    '      layer_batch_normalization() |>',
+    '      layer_activation("relu")',
+    '    if (isTRUE(hp$use_residual) && b > 1 && b < hp$n_blocks) {',
+    '      skip <- x',
+    '      x <- x |>',
+    '        layer_conv_1d(filters = filters, kernel_size = ks,',
+    '                      padding = "same", kernel_regularizer = l2) |>',
+    '        layer_batch_normalization() |>',
+    '        layer_activation("relu") |>',
+    '        layer_conv_1d(filters = filters, kernel_size = ks,',
+    '                      padding = "same", kernel_regularizer = l2) |>',
+    '        layer_batch_normalization()',
+    '      x <- layer_add(list(x, skip)) |> layer_activation("relu")',
+    '    }',
+    '  }',
+    '  x <- x |> layer_global_average_pooling_1d()',
+    '  for (d in seq_len(hp$n_dense)) {',
+    '    units <- as.integer(hp$dense_units / (2 ^ (d - 1)))',
+    '    x <- x |>',
+    '      layer_dense(units = units, activation = "relu",',
+    '                  kernel_regularizer = l2) |>',
+    '      layer_batch_normalization() |>',
+    '      layer_dropout(rate = hp$dropout)',
+    '  }',
+    '  output <- x |> layer_dense(units = n_targets, activation = "linear")',
+    '  model <- keras_model(input, output)',
+    '  loss_fn <- if (identical(hp$loss, "huber")) loss_huber(delta = 1.0) else "mse"',
+    '  model |> compile(loss = loss_fn,',
+    '    optimizer = optimizer_adam(learning_rate = hp$learning_rate),',
+    '    metrics = list("mae"))',
+    '  model',
+    '}')
+  }
+
+  if (type == "sfs2d" || type == "all") {
+    lines <- c(lines, '',
+    'build_cnn2d <- function(hp, data, sfs.dims) {',
+    '  dim1 <- sfs.dims[1]; dim2 <- sfs.dims[2]',
+    '  n_targets <- ncol(data$Y_train)',
+    '  l2 <- regularizer_l2(hp$l2_reg)',
+    '  input <- layer_input(shape = c(dim1, dim2, 1L))',
+    '  x <- input',
+    '  for (b in seq_len(hp$n_blocks)) {',
+    '    filters <- as.integer(hp$base_filters * (2 ^ min(b - 1, 2)))',
+    '    ks <- as.integer(max(3L, hp$kernel_start - (b - 1) * 2))',
+    '    x <- x |>',
+    '      layer_conv_2d(filters = filters, kernel_size = c(ks, ks),',
+    '                    padding = "same", kernel_regularizer = l2) |>',
+    '      layer_batch_normalization() |>',
+    '      layer_activation("relu")',
+    '    if (b == 1 || b == (hp$n_blocks %/% 2 + 1))',
+    '      x <- layer_max_pooling_2d(x, pool_size = c(2L, 2L))',
+    '    if (isTRUE(hp$use_residual) && b > 1 && b < hp$n_blocks) {',
+    '      skip <- x',
+    '      x <- x |>',
+    '        layer_conv_2d(filters = filters, kernel_size = c(ks, ks),',
+    '                      padding = "same", kernel_regularizer = l2) |>',
+    '        layer_batch_normalization() |>',
+    '        layer_activation("relu") |>',
+    '        layer_conv_2d(filters = filters, kernel_size = c(ks, ks),',
+    '                      padding = "same", kernel_regularizer = l2) |>',
+    '        layer_batch_normalization()',
+    '      x <- layer_add(list(x, skip)) |> layer_activation("relu")',
+    '    }',
+    '  }',
+    '  x <- x |> layer_global_average_pooling_2d()',
+    '  for (d in seq_len(hp$n_dense)) {',
+    '    units <- as.integer(hp$dense_units / (2 ^ (d - 1)))',
+    '    x <- x |>',
+    '      layer_dense(units = units, activation = "relu",',
+    '                  kernel_regularizer = l2) |>',
+    '      layer_batch_normalization() |>',
+    '      layer_dropout(rate = hp$dropout)',
+    '  }',
+    '  output <- x |> layer_dense(units = n_targets, activation = "linear")',
+    '  model <- keras_model(input, output)',
+    '  loss_fn <- if (identical(hp$loss, "huber")) loss_huber(delta = 1.0) else "mse"',
+    '  model |> compile(loss = loss_fn,',
+    '    optimizer = optimizer_adam(learning_rate = hp$learning_rate),',
+    '    metrics = list("mae"))',
+    '  model',
+    '}')
+  }
+
+  writeLines(lines, filepath)
+}
+
+# ============================================================================
+# Internal: prepare reftable split for conformal/bootstrap training
+# ============================================================================
+
+.prep.reftable.split <- function(reftable, param.cols, row_idx, type, sfs.dims) {
+  nuisance <- c("mean.rate", "sd.rate")
+  target_cols <- setdiff(param.cols, nuisance)
+
+  targets <- as.matrix(reftable[row_idx, target_cols, drop = FALSE])
+
+  if (type == "sumstat") {
+    stat_cols <- setdiff(colnames(reftable), c(param.cols, nuisance))
+    features_raw <- as.matrix(reftable[row_idx, stat_cols])
+    features <- cbind(features_raw, log1p(abs(features_raw)))
+
+    bad <- apply(features, 1, function(x) any(!is.finite(x)))
+    if (any(bad)) { features <- features[!bad, ]; targets <- targets[!bad, , drop = FALSE] }
+  } else {
+    stat_cols <- grep("^sfs_", colnames(reftable), value = TRUE)
+    sfs_raw <- as.matrix(reftable[row_idx, stat_cols])
+    features <- log1p(sfs_raw)
+
+    bad <- apply(features, 1, function(x) any(!is.finite(x)))
+    if (any(bad)) { features <- features[!bad, ]; targets <- targets[!bad, , drop = FALSE] }
+  }
+
+  list(features = features, targets = targets)
+}
+
+# ============================================================================
+# Internal: conformal prediction (sequential ensemble)
+# ============================================================================
+
+.run.conformal <- function(reftable, param.cols, observed, best_hp, type, sfs.dims,
+                           n_ensemble, cal.frac, max_epochs, seed, verbose) {
+
+  nuisance <- c("mean.rate", "sd.rate")
+  target_cols <- setdiff(param.cols, nuisance)
+  n_params <- length(target_cols)
+
+  n_total <- nrow(reftable)
+  n_cal   <- floor(cal.frac * n_total)
+  n_train <- n_total - n_cal
+
+  if (verbose)
+    cat(sprintf("\nPipeMaster:: Conformal prediction (%d ensemble \u00d7 %d cal samples)...\n",
+                n_ensemble, n_cal))
+
+  all_conf_samples <- list()
+
+  for (ens_i in seq_len(n_ensemble)) {
+    # Split reftable into train / calibration
+    set.seed(seed + ens_i * 100)
+    idx <- sample(n_total)
+    tr_idx  <- idx[1:n_train]
+    cal_idx <- idx[(n_train + 1):n_total]
+
+    # Prepare train and calibration splits
+    tr_split  <- .prep.reftable.split(reftable, param.cols, tr_idx, type, sfs.dims)
+    cal_split <- .prep.reftable.split(reftable, param.cols, cal_idx, type, sfs.dims)
+
+    feat_tr  <- tr_split$features
+    targ_tr  <- tr_split$targets
+    feat_cal <- cal_split$features
+    params_cal <- cal_split$targets
+
+    # Z-score features using train stats
+    f_mu <- colMeans(feat_tr)
+    f_sd <- apply(feat_tr, 2, sd); f_sd[f_sd == 0] <- 1
+    X_tr  <- t((t(feat_tr)  - f_mu) / f_sd)
+    X_cal <- t((t(feat_cal) - f_mu) / f_sd)
+
+    # Log + Z-score targets using train stats
+    Y_tr_log <- log(targ_tr)
+    t_mu <- colMeans(Y_tr_log)
+    t_sd <- apply(Y_tr_log, 2, sd); t_sd[t_sd == 0] <- 1
+    Y_tr <- t((t(Y_tr_log) - t_mu) / t_sd)
+
+    # Reshape for CNN architectures
+    if (type == "sfs1d") {
+      n_bins <- ncol(X_tr)
+      dim(X_tr)  <- c(nrow(X_tr), n_bins, 1L)
+      dim(X_cal) <- c(nrow(X_cal), n_bins, 1L)
+    } else if (type == "sfs2d") {
+      X_tr  <- array(X_tr,  dim = c(nrow(X_tr),  sfs.dims[1], sfs.dims[2], 1L))
+      X_cal <- array(X_cal, dim = c(nrow(X_cal), sfs.dims[1], sfs.dims[2], 1L))
+    }
+
+    # Split train into train/val for early stopping
+    n_tr_rows <- nrow(X_tr)
+    n_va <- max(1L, floor(0.1 * n_tr_rows))
+    va_rows <- seq_len(n_va)
+    tr_rows <- seq(n_va + 1L, n_tr_rows)
+
+    if (type == "sumstat") {
+      X_va_s <- X_tr[va_rows, , drop = FALSE]
+      X_tr_s <- X_tr[tr_rows, , drop = FALSE]
+    } else if (type == "sfs1d") {
+      X_va_s <- X_tr[va_rows, , , drop = FALSE]
+      X_tr_s <- X_tr[tr_rows, , , drop = FALSE]
+    } else {
+      X_va_s <- X_tr[va_rows, , , , drop = FALSE]
+      X_tr_s <- X_tr[tr_rows, , , , drop = FALSE]
+    }
+    Y_va_s <- Y_tr[va_rows, , drop = FALSE]
+    Y_tr_s <- Y_tr[tr_rows, , drop = FALSE]
+
+    # Build data list for .build.nn
+    ens_data <- list(
+      X_train = X_tr_s, X_val = X_va_s,
+      Y_train = Y_tr_s, Y_val = Y_va_s,
+      n_features = ncol(feat_tr),
+      n_bins = if (type != "sumstat") ncol(feat_cal) else NULL,
+      feat_mu = f_mu, feat_sd = f_sd,
+      target_mu = t_mu, target_sd = t_sd
+    )
+
+    # Build and train model
+    tensorflow::tf$random$set_seed(as.integer(seed + ens_i * 1000))
+    model <- .build.nn(best_hp, ens_data, type, sfs.dims)
+
+    bs <- as.integer(best_hp$batch_size)
+    history <- model |> keras::fit(
+      x = ens_data$X_train, y = ens_data$Y_train,
+      validation_data = list(ens_data$X_val, ens_data$Y_val),
+      epochs     = as.integer(max_epochs),
+      batch_size = bs,
+      callbacks  = list(
+        keras::callback_early_stopping(monitor = "val_loss", patience = 30L,
+                                       restore_best_weights = TRUE),
+        keras::callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 15L,
+                                             factor = 0.5, min_lr = 1e-6, verbose = 0L)
+      ),
+      verbose = 0L
+    )
+
+    # Count epochs trained
+    vl <- history$metrics$val_loss
+    if (is.null(vl)) vl <- history$history$val_loss
+    n_ep <- length(unlist(vl))
+
+    # Predict on calibration set -> inverse transform
+    cal_pred_z <- predict(model, X_cal, verbose = 0L)
+    cal_pred   <- .inv.transform(cal_pred_z, t_mu, t_sd)
+
+    # Residuals: true params - predicted params (original scale)
+    cal_resid <- params_cal - cal_pred
+
+    # Predict on observed (normalized with this split's params)
+    X_obs <- .prep.observed.with(observed, f_mu, f_sd, type, sfs.dims)
+    obs_pred_z <- predict(model, X_obs, verbose = 0L)
+    obs_est <- as.numeric(.inv.transform(obs_pred_z, t_mu, t_sd))
+
+    # Conformal samples: obs_est[j] + cal_resid[, j]
+    ens_samples <- matrix(NA, nrow = nrow(cal_resid), ncol = n_params)
+    for (j in seq_len(n_params))
+      ens_samples[, j] <- obs_est[j] + cal_resid[, j]
+
+    all_conf_samples[[ens_i]] <- ens_samples
+
+    if (verbose)
+      cat(sprintf("  Ensemble %d/%d \u2014 trained %d ep, %d conformal samples\n",
+                  ens_i, n_ensemble, n_ep, nrow(ens_samples)))
+
+    rm(model)
+    gc()
+    tryCatch(keras::k_clear_session(), error = function(e) NULL)
+  }
+
+  # Stack all ensemble samples
+  do.call(rbind, all_conf_samples)
+}
+
+# ============================================================================
+# Internal: bootstrap posterior estimation
+# ============================================================================
+
+.run.bootstrap <- function(reftable, param.cols, observed, best_hp, type, sfs.dims,
+                           n_boot, max_epochs, cores, seed, verbose) {
+
+  if (cores <= 1) {
+    return(.run.bootstrap.sequential(
+      reftable, param.cols, observed, best_hp, type, sfs.dims,
+      n_boot, max_epochs, seed, verbose
+    ))
+  }
+
+  # Parallel bootstrap via Rscript workers
+  .run.bootstrap.parallel(
+    reftable, param.cols, observed, best_hp, type, sfs.dims,
+    n_boot, max_epochs, cores, seed, verbose
+  )
+}
+
+# ============================================================================
+# Internal: sequential bootstrap (cores = 1)
+# ============================================================================
+
+.run.bootstrap.sequential <- function(reftable, param.cols, observed, best_hp,
+                                      type, sfs.dims, n_boot, max_epochs,
+                                      seed, verbose) {
+
+  nuisance <- c("mean.rate", "sd.rate")
+  target_cols <- setdiff(param.cols, nuisance)
+  n_params <- length(target_cols)
+
+  if (verbose)
+    cat(sprintf("\nPipeMaster:: Bootstrap (%d replicates, sequential)...\n", n_boot))
+
+  boot_matrix <- matrix(NA, nrow = n_boot, ncol = n_params)
+
+  # Prepare full data once
+  all_rows <- seq_len(nrow(reftable))
+  full_split <- .prep.reftable.split(reftable, param.cols, all_rows, type, sfs.dims)
+  features_all <- full_split$features
+  targets_all  <- full_split$targets
+  n_rows <- nrow(features_all)
+
+  for (b in seq_len(n_boot)) {
+    set.seed(seed + b)
+
+    # Bootstrap sample with replacement
+    boot_idx <- sample(n_rows, replace = TRUE)
+    feat_boot <- features_all[boot_idx, ]
+    targ_boot <- targets_all[boot_idx, , drop = FALSE]
+
+    # Z-score features
+    f_mu <- colMeans(feat_boot)
+    f_sd <- apply(feat_boot, 2, sd); f_sd[f_sd == 0] <- 1
+    X_boot <- t((t(feat_boot) - f_mu) / f_sd)
+
+    # Log + Z-score targets
+    Y_boot_log <- log(targ_boot)
+    t_mu <- colMeans(Y_boot_log)
+    t_sd <- apply(Y_boot_log, 2, sd); t_sd[t_sd == 0] <- 1
+    Y_boot <- t((t(Y_boot_log) - t_mu) / t_sd)
+
+    # Reshape for CNN
+    if (type == "sfs1d") {
+      n_bins <- ncol(X_boot)
+      dim(X_boot) <- c(nrow(X_boot), n_bins, 1L)
+    } else if (type == "sfs2d") {
+      X_boot <- array(X_boot, dim = c(nrow(X_boot), sfs.dims[1], sfs.dims[2], 1L))
+    }
+
+    # Split off validation for early stopping
+    n_b <- nrow(X_boot)
+    n_va <- max(1L, floor(0.1 * n_b))
+    va_rows <- seq_len(n_va)
+    tr_rows <- seq(n_va + 1L, n_b)
+
+    if (type == "sumstat") {
+      X_va_b <- X_boot[va_rows, , drop = FALSE]
+      X_tr_b <- X_boot[tr_rows, , drop = FALSE]
+    } else if (type == "sfs1d") {
+      X_va_b <- X_boot[va_rows, , , drop = FALSE]
+      X_tr_b <- X_boot[tr_rows, , , drop = FALSE]
+    } else {
+      X_va_b <- X_boot[va_rows, , , , drop = FALSE]
+      X_tr_b <- X_boot[tr_rows, , , , drop = FALSE]
+    }
+    Y_va_b <- Y_boot[va_rows, , drop = FALSE]
+    Y_tr_b <- Y_boot[tr_rows, , drop = FALSE]
+
+    boot_data <- list(
+      X_train = X_tr_b, X_val = X_va_b,
+      Y_train = Y_tr_b, Y_val = Y_va_b,
+      n_features = ncol(feat_boot),
+      n_bins = if (type != "sumstat") ncol(feat_boot) else NULL,
+      feat_mu = f_mu, feat_sd = f_sd,
+      target_mu = t_mu, target_sd = t_sd
+    )
+
+    tensorflow::tf$random$set_seed(as.integer(seed + b))
+    model <- .build.nn(best_hp, boot_data, type, sfs.dims)
+
+    bs <- as.integer(best_hp$batch_size)
+    model |> keras::fit(
+      x = boot_data$X_train, y = boot_data$Y_train,
+      validation_data = list(boot_data$X_val, boot_data$Y_val),
+      epochs     = as.integer(max_epochs),
+      batch_size = bs,
+      callbacks  = list(
+        keras::callback_early_stopping(monitor = "val_loss", patience = 30L,
+                                       restore_best_weights = TRUE),
+        keras::callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 15L,
+                                             factor = 0.5, min_lr = 1e-6, verbose = 0L)
+      ),
+      verbose = 0L
+    )
+
+    # Predict on observed (normalized with this bootstrap's params)
+    X_obs <- .prep.observed.with(observed, f_mu, f_sd, type, sfs.dims)
+    obs_pred_z <- predict(model, X_obs, verbose = 0L)
+    boot_matrix[b, ] <- as.numeric(.inv.transform(obs_pred_z, t_mu, t_sd))
+
+    if (verbose && (b %% 10 == 0 || b == n_boot))
+      cat(sprintf("  Progress: %d/%d\n", b, n_boot))
+
+    rm(model)
+    gc()
+    tryCatch(keras::k_clear_session(), error = function(e) NULL)
+  }
+
+  boot_matrix
+}
+
+# ============================================================================
+# Internal: parallel bootstrap via Rscript workers
+# ============================================================================
+
+.run.bootstrap.parallel <- function(reftable, param.cols, observed, best_hp,
+                                    type, sfs.dims, n_boot, max_epochs,
+                                    cores, seed, verbose) {
+
+  nuisance <- c("mean.rate", "sd.rate")
+  target_cols <- setdiff(param.cols, nuisance)
+  n_params <- length(target_cols)
+
+  if (verbose)
+    cat(sprintf("\nPipeMaster:: Bootstrap (%d replicates, %d cores)...\n", n_boot, cores))
+
+  # Create temp working directory
+  work_dir <- tempfile("nn_boot_")
+  dir.create(work_dir, recursive = TRUE)
+  results_dir <- file.path(work_dir, "results")
+  dir.create(results_dir)
+
+  # Prepare full data and save shared .RData
+  all_rows <- seq_len(nrow(reftable))
+  full_split <- .prep.reftable.split(reftable, param.cols, all_rows, type, sfs.dims)
+  features_all <- full_split$features
+  targets_all  <- full_split$targets
+  n_rows <- nrow(features_all)
+
+  # Save everything the worker needs
+  shared_file <- file.path(work_dir, "shared_data.RData")
+  save(features_all, targets_all, observed, best_hp,
+       type, sfs.dims, n_rows, n_params, max_epochs, seed, target_cols,
+       file = shared_file)
+
+  # Save model-building functions so workers are self-contained (no PipeMaster dep)
+  builder_script <- file.path(work_dir, "_build_model.R")
+  .write.builder.script(builder_script, type)
+
+  # Generate worker script
+  worker_script <- file.path(work_dir, "_nn_worker.R")
+  writeLines(c(
+    '#!/usr/bin/env Rscript',
+    'args <- commandArgs(trailingOnly = TRUE)',
+    'task_id <- as.integer(args[1])',
+    '',
+    'Sys.setenv(TF_NUM_INTRAOP_THREADS = "1",',
+    '           TF_NUM_INTEROP_THREADS = "1",',
+    '           OMP_NUM_THREADS = "1")',
+    '',
+    'load("shared_data.RData")',
+    '',
+    'out_file <- file.path("results", sprintf("boot_%04d.csv", task_id))',
+    'if (file.exists(out_file)) { cat("skip\\n"); q("no") }',
+    '',
+    'suppressPackageStartupMessages({',
+    '  library(keras)',
+    '  library(tensorflow)',
+    '})',
+    'source("_build_model.R")',
+    '',
+    'set.seed(seed + task_id)',
+    'boot_idx <- sample(n_rows, replace = TRUE)',
+    'feat_boot <- features_all[boot_idx, ]',
+    'targ_boot <- targets_all[boot_idx, , drop = FALSE]',
+    '',
+    'f_mu <- colMeans(feat_boot)',
+    'f_sd <- apply(feat_boot, 2, sd); f_sd[f_sd == 0] <- 1',
+    'X_boot <- t((t(feat_boot) - f_mu) / f_sd)',
+    '',
+    'Y_boot_log <- log(targ_boot)',
+    't_mu <- colMeans(Y_boot_log)',
+    't_sd <- apply(Y_boot_log, 2, sd); t_sd[t_sd == 0] <- 1',
+    'Y_boot <- t((t(Y_boot_log) - t_mu) / t_sd)',
+    '',
+    'if (type == "sfs1d") {',
+    '  n_bins <- ncol(X_boot)',
+    '  dim(X_boot) <- c(nrow(X_boot), n_bins, 1L)',
+    '} else if (type == "sfs2d") {',
+    '  X_boot <- array(X_boot, dim = c(nrow(X_boot), sfs.dims[1], sfs.dims[2], 1L))',
+    '}',
+    '',
+    'n_b <- nrow(X_boot)',
+    'n_va <- max(1L, floor(0.1 * n_b))',
+    'va_rows <- seq_len(n_va)',
+    'tr_rows <- seq(n_va + 1L, n_b)',
+    '',
+    'if (type == "sumstat") {',
+    '  X_va_b <- X_boot[va_rows, , drop = FALSE]',
+    '  X_tr_b <- X_boot[tr_rows, , drop = FALSE]',
+    '} else if (type == "sfs1d") {',
+    '  X_va_b <- X_boot[va_rows, , , drop = FALSE]',
+    '  X_tr_b <- X_boot[tr_rows, , , drop = FALSE]',
+    '} else {',
+    '  X_va_b <- X_boot[va_rows, , , , drop = FALSE]',
+    '  X_tr_b <- X_boot[tr_rows, , , , drop = FALSE]',
+    '}',
+    'Y_va_b <- Y_boot[va_rows, , drop = FALSE]',
+    'Y_tr_b <- Y_boot[tr_rows, , drop = FALSE]',
+    '',
+    'boot_data <- list(',
+    '  X_train = X_tr_b, X_val = X_va_b,',
+    '  Y_train = Y_tr_b, Y_val = Y_va_b,',
+    '  n_features = ncol(feat_boot),',
+    '  n_bins = if (type != "sumstat") ncol(feat_boot) else NULL,',
+    '  feat_mu = f_mu, feat_sd = f_sd,',
+    '  target_mu = t_mu, target_sd = t_sd',
+    ')',
+    '',
+    'tf$random$set_seed(as.integer(seed + task_id))',
+    'model <- build_nn(best_hp, boot_data, type, sfs.dims)',
+    '',
+    'bs <- as.integer(best_hp$batch_size)',
+    'model |> fit(',
+    '  x = boot_data$X_train, y = boot_data$Y_train,',
+    '  validation_data = list(boot_data$X_val, boot_data$Y_val),',
+    '  epochs = as.integer(max_epochs), batch_size = bs,',
+    '  callbacks = list(',
+    '    callback_early_stopping(monitor = "val_loss", patience = 30L,',
+    '                            restore_best_weights = TRUE),',
+    '    callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 15L,',
+    '                                  factor = 0.5, min_lr = 1e-6, verbose = 0L)',
+    '  ),',
+    '  verbose = 0L',
+    ')',
+    '',
+    '# Normalize observed and predict',
+    'if (type == "sumstat") {',
+    '  obs_aug <- c(observed, log1p(abs(observed)))',
+    '  X_obs <- matrix((obs_aug - f_mu) / f_sd, nrow = 1)',
+    '  X_obs[!is.finite(X_obs)] <- 0',
+    '} else if (type == "sfs1d") {',
+    '  obs_z <- (log1p(observed) - f_mu) / f_sd',
+    '  obs_z[!is.finite(obs_z)] <- 0',
+    '  X_obs <- array(obs_z, dim = c(1L, length(obs_z), 1L))',
+    '} else {',
+    '  obs_z <- (log1p(observed) - f_mu) / f_sd',
+    '  obs_z[!is.finite(obs_z)] <- 0',
+    '  X_obs <- array(obs_z, dim = c(1L, sfs.dims[1], sfs.dims[2], 1L))',
+    '}',
+    '',
+    'obs_pred_z <- predict(model, X_obs, verbose = 0L)',
+    'est <- as.numeric(exp(t(t(obs_pred_z) * t_sd + t_mu)))',
+    '',
+    'df <- as.data.frame(matrix(est, nrow = 1))',
+    'colnames(df) <- target_cols',
+    'write.csv(df, out_file, row.names = FALSE)',
+    'cat(sprintf("  boot %d done\\n", task_id))',
+    'k_clear_session()'
+  ), worker_script)
+
+  # Launch workers in batches
+  if (verbose)
+    cat(sprintf("  Launching %d Rscript workers, %d concurrent...\n", n_boot, cores))
+
+  old_wd <- getwd()
+  setwd(work_dir)
+  on.exit(setwd(old_wd), add = TRUE)
+
+  # Process in batches of `cores`
+  batch_starts <- seq(1, n_boot, by = cores)
+
+  for (batch_start in batch_starts) {
+    batch_end <- min(batch_start + cores - 1, n_boot)
+    batch_ids <- batch_start:batch_end
+
+    # Launch batch: background processes via system()
+    for (id in batch_ids) {
+      out_csv <- file.path("results", sprintf("boot_%04d.csv", id))
+      if (file.exists(out_csv)) next
+      cmd <- sprintf("Rscript %s %d > /dev/null 2>&1 &",
+                     shQuote(worker_script), id)
+      system(cmd, wait = FALSE)
+    }
+
+    # Poll until all output CSVs exist or timeout
+    expected <- file.path("results", sprintf("boot_%04d.csv", batch_ids))
+    timeout <- max_epochs * 10  # generous timeout in seconds
+    elapsed <- 0
+    while (elapsed < timeout) {
+      if (all(file.exists(expected))) break
+      Sys.sleep(2)
+      elapsed <- elapsed + 2
+    }
+
+    if (verbose)
+      cat(sprintf("  Progress: %d/%d\n", batch_end, n_boot))
+  }
+
+  # Collect results
+  boot_matrix <- matrix(NA, nrow = n_boot, ncol = n_params)
+  for (b in seq_len(n_boot)) {
+    csv_file <- file.path(results_dir, sprintf("boot_%04d.csv", b))
+    if (file.exists(csv_file)) {
+      row <- read.csv(csv_file)
+      boot_matrix[b, ] <- as.numeric(row[1, ])
+    }
+  }
+
+  actual_failures <- sum(is.na(boot_matrix[, 1]))
+  if (verbose)
+    cat(sprintf("  Failures: %d/%d\n", actual_failures, n_boot))
+
+  # Clean up temp files
+  unlink(work_dir, recursive = TRUE)
+
+  boot_matrix
 }
