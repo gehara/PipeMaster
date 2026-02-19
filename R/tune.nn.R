@@ -44,6 +44,13 @@ tune.nn <- function(reftable, param.cols,
          "Install with: install.packages(c('keras', 'tensorflow'))\n",
          "Then run: keras::install_keras()")
 
+  # --- Enable GPU memory growth (prevent TF from grabbing all VRAM) ---
+  tryCatch({
+    gpus <- tensorflow::tf$config$list_physical_devices("GPU")
+    for (gpu in gpus)
+      tensorflow::tf$config$experimental$set_memory_growth(gpu, TRUE)
+  }, error = function(e) NULL)
+
   type <- match.arg(type)
 
   if (type == "sfs2d" && (is.null(sfs.dims) || length(sfs.dims) != 2))
@@ -587,7 +594,7 @@ tune.nn <- function(reftable, param.cols,
 .hyperband <- function(search_space, data, type, sfs.dims,
                        max_epochs, eta, n_iter, seed, verbose) {
 
-  s_max <- floor(log(max_epochs) / log(eta))
+  s_max <- min(floor(log(max_epochs) / log(eta)), 3L)  # cap at 3 (max 27 configs/bracket)
 
   if (verbose) cat(sprintf("PipeMaster:: max_epochs=%d, eta=%d, s_max=%d, %d brackets\n\n",
                            max_epochs, eta, s_max, s_max + 1))
@@ -612,36 +619,36 @@ tune.nn <- function(reftable, param.cols,
       if (verbose) cat(sprintf("  Bracket %d | %d configs \u00d7 %d epochs\n",
                                s, n, round(r)))
 
-      # Sample configs and build models
+      # Sample configs
       set.seed(seed + iter * 1000 + s)
       configs <- lapply(seq_len(n), function(i) .sample.config(search_space))
 
-      tensorflow::tf$random$set_seed(as.integer(seed + iter * 1000 + s))
-      models <- lapply(seq_along(configs), function(k) {
-        tryCatch(.build.nn(configs[[k]], data, type, sfs.dims),
-                 error = function(e) {
-                   if (verbose) cat(sprintf("    [warn] config %d failed to build: %s\n",
-                                            k, conditionMessage(e)))
-                   NULL
-                 })
-      })
-
       # Track how many epochs each model has been trained
       prev_epochs <- rep(0L, n)
+      # Temp dir for per-config weight files (avoids GPU OOM from keeping all models)
+      weight_dir <- tempfile("hb_weights_")
+      dir.create(weight_dir, recursive = TRUE)
 
       for (i in 0:s) {
         r_i <- round(r * eta^i)
         n_i <- max(1, floor(n / eta^i))
         n_keep <- max(1, ceiling(n_i / eta))
 
-        # Train each surviving model
-        val_losses <- rep(Inf, length(models))
+        # Train each config one at a time — build, load weights, train, save, delete
+        val_losses <- rep(Inf, length(configs))
 
-        for (j in seq_along(models)) {
-          if (is.null(models[[j]])) next
-
+        for (j in seq_along(configs)) {
           tryCatch({
-            history <- models[[j]] |> keras::fit(
+            tensorflow::tf$random$set_seed(as.integer(seed + iter * 1000 + s + j))
+            model <- .build.nn(configs[[j]], data, type, sfs.dims)
+
+            # Load saved weights from previous round (if any)
+            wpath <- file.path(weight_dir, sprintf("cfg_%d", j))
+            if (prev_epochs[j] > 0 && dir.exists(wpath)) {
+              keras::load_model_weights_tf(model, wpath)
+            }
+
+            history <- model |> keras::fit(
               x = data$X_train, y = data$Y_train,
               validation_data = list(data$X_val, data$Y_val),
               epochs        = as.integer(r_i),
@@ -662,18 +669,39 @@ tune.nn <- function(reftable, param.cols,
             vl <- history$metrics$val_loss
             if (is.null(vl)) vl <- history$history$val_loss
             val_losses[j] <- min(unlist(vl))
+
+            # Save weights for this config (overwrite previous round's)
+            keras::save_model_weights_tf(model, wpath)
+
+            # Update global best
+            if (val_losses[j] < global_best_loss) {
+              global_best_loss   <- val_losses[j]
+              global_best_hp     <- configs[[j]]
+              global_best_epochs <- as.integer(r_i)
+              tryCatch(
+                keras::save_model_weights_tf(model, best_weights_path),
+                error = function(e) NULL
+              )
+            }
+
+            # Free GPU memory immediately
+            rm(model); gc()
+            tryCatch(keras::k_clear_session(), error = function(e) NULL)
+
           }, error = function(e) {
-            if (verbose) cat(sprintf("    [warn] config %d train error: %s\n",
+            if (verbose) cat(sprintf("    [warn] config %d error: %s\n",
                                      j, conditionMessage(e)))
             val_losses[j] <<- Inf
+            tryCatch({ rm(model); gc(); keras::k_clear_session() },
+                     error = function(e2) NULL)
           })
         }
 
-        prev_epochs[seq_along(models)] <- r_i
+        prev_epochs[seq_along(configs)] <- r_i
 
         # Record results
-        for (j in seq_along(models)) {
-          if (!is.null(models[[j]]) && is.finite(val_losses[j])) {
+        for (j in seq_along(configs)) {
+          if (is.finite(val_losses[j])) {
             all_results <- rbind(all_results, data.frame(
               hp_string = .hp.to.string(configs[[j]], type),
               val_loss  = val_losses[j],
@@ -687,42 +715,44 @@ tune.nn <- function(reftable, param.cols,
         best_round_loss <- min(val_losses[is.finite(val_losses)])
         if (verbose)
           cat(sprintf("    Round %d: %d configs, %d ep \u2192 best val_loss=%.4f",
-                      i, sum(!sapply(models, is.null)), r_i, best_round_loss))
-
-        # Update global best — save weights so we can resume after k_clear_session
-        best_idx <- which.min(val_losses)
-        if (val_losses[best_idx] < global_best_loss) {
-          global_best_loss   <- val_losses[best_idx]
-          global_best_hp     <- configs[[best_idx]]
-          global_best_epochs <- as.integer(r_i)
-          tryCatch(
-            keras::save_model_weights_tf(models[[best_idx]], best_weights_path),
-            error = function(e) NULL
-          )
-        }
+                      i, length(configs), r_i, best_round_loss))
 
         # Prune: keep top n_keep
         if (i < s) {
           ranking <- order(val_losses)
           keep <- ranking[1:min(n_keep, length(ranking))]
-          discard <- setdiff(seq_along(models), keep)
 
           if (verbose) cat(sprintf(" | pruning to %d\n", length(keep)))
 
-          # Compact lists (subset first, then clear session)
-          models      <- models[keep]
-          configs     <- configs[keep]
-          prev_epochs <- prev_epochs[keep]
-          val_losses  <- val_losses[keep]
+          # Remove weight files for discarded configs
+          discard <- setdiff(seq_along(configs), keep)
+          for (d in discard) {
+            wpath <- file.path(weight_dir, sprintf("cfg_%d", d))
+            unlink(wpath, recursive = TRUE)
+          }
+
+          # Renumber surviving configs/weights 1..n_keep
+          new_configs     <- configs[keep]
+          new_prev_epochs <- prev_epochs[keep]
+          for (k in seq_along(keep)) {
+            old_path <- file.path(weight_dir, sprintf("cfg_%d", keep[k]))
+            new_path <- file.path(weight_dir, sprintf("cfg_new_%d", k))
+            if (dir.exists(old_path)) file.rename(old_path, new_path)
+          }
+          for (k in seq_along(keep)) {
+            old_path <- file.path(weight_dir, sprintf("cfg_new_%d", k))
+            new_path <- file.path(weight_dir, sprintf("cfg_%d", k))
+            if (dir.exists(old_path)) file.rename(old_path, new_path)
+          }
+          configs     <- new_configs
+          prev_epochs <- new_prev_epochs
         } else {
           if (verbose) cat("\n")
         }
       }
 
-      # Clear remaining models from this bracket
-      rm(models)
-      gc()
-      tryCatch(keras::k_clear_session(), error = function(e) NULL)
+      # Clean up bracket weight files
+      unlink(weight_dir, recursive = TRUE)
     }
   }
 
@@ -733,6 +763,65 @@ tune.nn <- function(reftable, param.cols,
     best_weights_path = best_weights_path,
     all_results       = all_results
   )
+}
+
+# ============================================================================
+# save / load tune.nn results (keras model needs special serialization)
+# ============================================================================
+
+#' Save tune.nn Result to Disk
+#'
+#' Saves the output of \code{tune.nn()} so it can be loaded on another machine.
+#' The keras model is serialized separately using \code{keras::save_model_tf()}.
+#'
+#' @param tune.result list — output from \code{tune.nn()}.
+#' @param path character — directory path where files will be saved (created if needed).
+#'
+#' @export
+save.tune.result <- function(tune.result, path) {
+  if (!requireNamespace("keras", quietly = TRUE))
+    stop("save.tune.result() requires the 'keras' package.")
+
+  dir.create(path, showWarnings = FALSE, recursive = TRUE)
+
+  # Save keras model
+  model_dir <- file.path(path, "best_model")
+  keras::save_model_tf(tune.result$best_model, model_dir)
+
+  # Save everything else as RData
+  result_no_model <- tune.result
+  result_no_model$best_model <- NULL
+  saveRDS(result_no_model, file.path(path, "tune_result.rds"))
+
+  cat(sprintf("PipeMaster:: Saved tune.nn result to %s\n", path))
+}
+
+#' Load tune.nn Result from Disk
+#'
+#' Loads a tune.nn() result previously saved with \code{save.tune.result()}.
+#'
+#' @param path character — directory path where files were saved.
+#'
+#' @return A list identical to the output of \code{tune.nn()}.
+#'
+#' @export
+load.tune.result <- function(path) {
+  if (!requireNamespace("keras", quietly = TRUE))
+    stop("load.tune.result() requires the 'keras' package.")
+
+  rds_file  <- file.path(path, "tune_result.rds")
+  model_dir <- file.path(path, "best_model")
+
+  if (!file.exists(rds_file))
+    stop("tune_result.rds not found in: ", path)
+  if (!dir.exists(model_dir))
+    stop("best_model/ directory not found in: ", path)
+
+  result <- readRDS(rds_file)
+  result$best_model <- keras::load_model_tf(model_dir)
+
+  cat(sprintf("PipeMaster:: Loaded tune.nn result from %s\n", path))
+  result
 }
 
 # ============================================================================
