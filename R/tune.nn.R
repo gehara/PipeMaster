@@ -18,6 +18,10 @@
 #' @param search_space named list — overrides default HP ranges. NULL uses
 #'   architecture-specific defaults.
 #' @param val.frac numeric — validation fraction (default 0.1).
+#' @param cores integer — number of parallel Rscript workers for Hyperband rounds
+#'   (default 1, sequential). Values > 1 train multiple configs simultaneously.
+#' @param gpus integer — number of GPUs to round-robin across workers (default 0,
+#'   CPU-only). Ignored when \code{cores = 1}.
 #' @param seed integer — random seed (default 42).
 #' @param verbose logical — print progress (default TRUE).
 #'
@@ -35,7 +39,8 @@ tune.nn <- function(reftable, param.cols,
                     sfs.dims = NULL,
                     max_epochs = 500, eta = 3, hyperband_iterations = 1,
                     search_space = NULL,
-                    val.frac = 0.1, seed = 42, verbose = TRUE) {
+                    val.frac = 0.1, cores = 1L, gpus = 0L,
+                    seed = 42, verbose = TRUE) {
 
   # --- Dependency check ---
   if (!requireNamespace("keras", quietly = TRUE) ||
@@ -45,11 +50,14 @@ tune.nn <- function(reftable, param.cols,
          "Then run: keras::install_keras()")
 
   # --- Enable GPU memory growth (prevent TF from grabbing all VRAM) ---
-  tryCatch({
-    gpus <- tensorflow::tf$config$list_physical_devices("GPU")
-    for (gpu in gpus)
-      tensorflow::tf$config$experimental$set_memory_growth(gpu, TRUE)
-  }, error = function(e) NULL)
+  # Only in sequential mode; parallel workers set CUDA_VISIBLE_DEVICES per-process
+  if (cores <= 1L) {
+    tryCatch({
+      tf_gpus <- tensorflow::tf$config$list_physical_devices("GPU")
+      for (gpu in tf_gpus)
+        tensorflow::tf$config$experimental$set_memory_growth(gpu, TRUE)
+    }, error = function(e) NULL)
+  }
 
   type <- match.arg(type)
 
@@ -80,6 +88,8 @@ tune.nn <- function(reftable, param.cols,
     max_epochs   = max_epochs,
     eta          = eta,
     n_iter       = hyperband_iterations,
+    cores        = cores,
+    gpus         = gpus,
     seed         = seed,
     verbose      = verbose
   )
@@ -622,7 +632,7 @@ tune.nn <- function(reftable, param.cols,
 # ============================================================================
 
 .hyperband <- function(search_space, data, type, sfs.dims,
-                       max_epochs, eta, n_iter, seed, verbose) {
+                       max_epochs, eta, n_iter, cores, gpus, seed, verbose) {
 
   s_max <- min(floor(log(max_epochs) / log(eta)), 3L)  # cap at 3 (max 27 configs/bracket)
 
@@ -664,67 +674,90 @@ tune.nn <- function(reftable, param.cols,
         n_i <- max(1, floor(n / eta^i))
         n_keep <- max(1, ceiling(n_i / eta))
 
-        # Train each config one at a time — build, load weights, train, save, delete
         val_losses <- rep(Inf, length(configs))
 
-        for (j in seq_along(configs)) {
-          tryCatch({
-            tensorflow::tf$random$set_seed(as.integer(seed + iter * 1000 + s + j))
-            model <- .build.nn(configs[[j]], data, type, sfs.dims)
+        if (cores > 1L && length(configs) > 1L) {
+          # PARALLEL: train configs via Rscript worker pool
+          val_losses <- .hyperband.round.parallel(
+            configs, data, type, sfs.dims, r_i, prev_epochs,
+            weight_dir, seed, iter, s, cores, gpus, verbose)
 
-            # Load saved weights from previous round (if any)
-            wpath <- file.path(weight_dir, sprintf("cfg_%d", j))
-            if (prev_epochs[j] > 0 && dir.exists(wpath)) {
-              keras::load_model_weights_tf(model, wpath)
-            }
-
-            history <- model |> keras::fit(
-              x = data$X_train, y = data$Y_train,
-              validation_data = list(data$X_val, data$Y_val),
-              epochs        = as.integer(r_i),
-              initial_epoch = as.integer(prev_epochs[j]),
-              batch_size    = as.integer(configs[[j]]$batch_size),
-              callbacks     = list(
-                keras::callback_early_stopping(monitor = "val_loss",
-                                               patience = 10L,
-                                               restore_best_weights = TRUE),
-                keras::callback_reduce_lr_on_plateau(monitor = "val_loss",
-                                                      patience = 5L,
-                                                      factor = 0.5,
-                                                      min_lr = 1e-6,
-                                                      verbose = 0L)
-              ),
-              verbose = 0L
-            )
-            vl <- history$metrics$val_loss
-            if (is.null(vl)) vl <- history$history$val_loss
-            val_losses[j] <- min(unlist(vl))
-
-            # Save weights for this config (overwrite previous round's)
-            keras::save_model_weights_tf(model, wpath)
-
-            # Update global best
+          # Update global best from parallel results
+          for (j in seq_along(configs)) {
             if (val_losses[j] < global_best_loss) {
               global_best_loss   <- val_losses[j]
               global_best_hp     <- configs[[j]]
               global_best_epochs <- as.integer(r_i)
-              tryCatch(
-                keras::save_model_weights_tf(model, best_weights_path),
-                error = function(e) NULL
-              )
+              wpath <- file.path(weight_dir, sprintf("cfg_%d", j))
+              if (dir.exists(wpath)) {
+                unlink(best_weights_path, recursive = TRUE)
+                dir.create(best_weights_path, recursive = TRUE, showWarnings = FALSE)
+                file.copy(list.files(wpath, full.names = TRUE),
+                          best_weights_path, recursive = TRUE)
+              }
             }
+          }
+        } else {
+          # SEQUENTIAL: train each config one at a time
+          for (j in seq_along(configs)) {
+            tryCatch({
+              tensorflow::tf$random$set_seed(as.integer(seed + iter * 1000 + s + j))
+              model <- .build.nn(configs[[j]], data, type, sfs.dims)
 
-            # Free GPU memory immediately
-            rm(model); gc()
-            tryCatch(keras::k_clear_session(), error = function(e) NULL)
+              # Load saved weights from previous round (if any)
+              wpath <- file.path(weight_dir, sprintf("cfg_%d", j))
+              if (prev_epochs[j] > 0 && dir.exists(wpath)) {
+                keras::load_model_weights_tf(model, wpath)
+              }
 
-          }, error = function(e) {
-            if (verbose) cat(sprintf("    [warn] config %d error: %s\n",
-                                     j, conditionMessage(e)))
-            val_losses[j] <<- Inf
-            tryCatch({ rm(model); gc(); keras::k_clear_session() },
-                     error = function(e2) NULL)
-          })
+              history <- model |> keras::fit(
+                x = data$X_train, y = data$Y_train,
+                validation_data = list(data$X_val, data$Y_val),
+                epochs        = as.integer(r_i),
+                initial_epoch = as.integer(prev_epochs[j]),
+                batch_size    = as.integer(configs[[j]]$batch_size),
+                callbacks     = list(
+                  keras::callback_early_stopping(monitor = "val_loss",
+                                                 patience = 10L,
+                                                 restore_best_weights = TRUE),
+                  keras::callback_reduce_lr_on_plateau(monitor = "val_loss",
+                                                        patience = 5L,
+                                                        factor = 0.5,
+                                                        min_lr = 1e-6,
+                                                        verbose = 0L)
+                ),
+                verbose = 0L
+              )
+              vl <- history$metrics$val_loss
+              if (is.null(vl)) vl <- history$history$val_loss
+              val_losses[j] <- min(unlist(vl))
+
+              # Save weights for this config (overwrite previous round's)
+              keras::save_model_weights_tf(model, wpath)
+
+              # Update global best
+              if (val_losses[j] < global_best_loss) {
+                global_best_loss   <- val_losses[j]
+                global_best_hp     <- configs[[j]]
+                global_best_epochs <- as.integer(r_i)
+                tryCatch(
+                  keras::save_model_weights_tf(model, best_weights_path),
+                  error = function(e) NULL
+                )
+              }
+
+              # Free GPU memory immediately
+              rm(model); gc()
+              tryCatch(keras::k_clear_session(), error = function(e) NULL)
+
+            }, error = function(e) {
+              if (verbose) cat(sprintf("    [warn] config %d error: %s\n",
+                                       j, conditionMessage(e)))
+              val_losses[j] <<- Inf
+              tryCatch({ rm(model); gc(); keras::k_clear_session() },
+                       error = function(e2) NULL)
+            })
+          }
         }
 
         prev_epochs[seq_along(configs)] <- r_i
@@ -793,6 +826,110 @@ tune.nn <- function(reftable, param.cols,
     best_weights_path = best_weights_path,
     all_results       = all_results
   )
+}
+
+# ============================================================================
+# Internal: parallel training of one Hyperband round via Rscript worker pool
+# ============================================================================
+
+.hyperband.round.parallel <- function(configs, data, type, sfs.dims, r_i,
+                                      prev_epochs, weight_dir, seed, iter, s,
+                                      cores, gpus, verbose) {
+  n_configs <- length(configs)
+  val_losses <- rep(Inf, n_configs)
+
+  # Create temp working directory
+
+  work_dir <- tempfile("hb_round_")
+  dir.create(work_dir, recursive = TRUE)
+  results_dir <- file.path(work_dir, "results")
+  dir.create(results_dir)
+  weights_work <- file.path(work_dir, "weights")
+  dir.create(weights_work)
+
+  # Save shared training data
+  X_train <- data$X_train
+  X_val   <- data$X_val
+  Y_train <- data$Y_train
+  Y_val   <- data$Y_val
+  n_features <- if (type == "sumstat") ncol(data$X_train) else data$n_features
+  n_bins     <- data$n_bins
+  shared_file <- file.path(work_dir, "shared_data.RData")
+  save(X_train, X_val, Y_train, Y_val,
+       type, sfs.dims, n_features, n_bins,
+       file = shared_file)
+
+  # Save round-specific task data (configs, epochs, seeds)
+  round_configs <- configs
+  round_r_i     <- as.integer(r_i)
+  round_prev_epochs <- as.integer(prev_epochs)
+  round_seeds <- vapply(seq_len(n_configs), function(j) {
+    as.integer(seed + iter * 1000 + s + j)
+  }, integer(1))
+  round_file <- file.path(work_dir, "round_tasks.RData")
+  save(round_configs, round_r_i, round_prev_epochs, round_seeds,
+       file = round_file)
+
+  # Copy existing weights from weight_dir/cfg_* → work_dir/weights/cfg_*
+  for (j in seq_len(n_configs)) {
+    src <- file.path(weight_dir, sprintf("cfg_%d", j))
+    if (prev_epochs[j] > 0 && dir.exists(src)) {
+      dst <- file.path(weights_work, sprintf("cfg_%d", j))
+      dir.create(dst, recursive = TRUE, showWarnings = FALSE)
+      file.copy(list.files(src, full.names = TRUE), dst, recursive = TRUE)
+    }
+  }
+
+  # Write scripts
+  .write.builder.script(file.path(work_dir, "_build_model.R"), type)
+  .write.hyperband.worker.script(file.path(work_dir, "_hb_worker.R"))
+
+  # Build task list for the pool
+  tasks <- lapply(seq_len(n_configs), function(j) {
+    list(
+      script = "_hb_worker.R",
+      id     = j,
+      result = sprintf("results/hb_%04d.csv", j),
+      prefix = "hb"
+    )
+  })
+
+  if (verbose)
+    cat(sprintf("    [parallel] %d configs on %d cores%s\n",
+                n_configs, cores,
+                if (gpus > 0) sprintf(", %d GPUs", gpus) else ""))
+
+  # Launch pool
+  pool_result <- .launch.rscript.pool(tasks, cores, work_dir,
+                                       timeout_per_task = r_i * 10,
+                                       gpus = gpus, verbose = verbose,
+                                       max_retries = 1L)
+
+  # Collect val_losses from result CSVs
+  for (j in seq_len(n_configs)) {
+    csv_file <- file.path(results_dir, sprintf("hb_%04d.csv", j))
+    if (file.exists(csv_file)) {
+      row <- tryCatch(read.csv(csv_file), error = function(e) NULL)
+      if (!is.null(row) && "val_loss" %in% names(row))
+        val_losses[j] <- as.numeric(row$val_loss[1])
+    }
+  }
+
+  # Copy updated weights back: work_dir/weights/cfg_* → weight_dir/cfg_*
+  for (j in seq_len(n_configs)) {
+    src <- file.path(weights_work, sprintf("cfg_%d", j))
+    if (dir.exists(src)) {
+      dst <- file.path(weight_dir, sprintf("cfg_%d", j))
+      unlink(dst, recursive = TRUE)
+      dir.create(dst, recursive = TRUE, showWarnings = FALSE)
+      file.copy(list.files(src, full.names = TRUE), dst, recursive = TRUE)
+    }
+  }
+
+  # Clean up
+  unlink(work_dir, recursive = TRUE)
+
+  val_losses
 }
 
 # ============================================================================
@@ -2026,6 +2163,90 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   }
 
   writeLines(lines, filepath)
+}
+
+# ============================================================================
+# Internal: write standalone Hyperband worker Rscript
+# ============================================================================
+
+.write.hyperband.worker.script <- function(filepath) {
+  writeLines(c(
+    '#!/usr/bin/env Rscript',
+    'args <- commandArgs(trailingOnly = TRUE)',
+    'task_id <- as.integer(args[1])',
+    '',
+    '# Threading env (GPU env set externally by pool launcher)',
+    'Sys.setenv(TF_NUM_INTRAOP_THREADS = "1",',
+    '           TF_NUM_INTEROP_THREADS = "1",',
+    '           OMP_NUM_THREADS = "1")',
+    '',
+    'load("shared_data.RData")',
+    'load("round_tasks.RData")',
+    '',
+    'out_file <- file.path("results", sprintf("hb_%04d.csv", task_id))',
+    'if (file.exists(out_file)) { cat("skip\\n"); q("no") }',
+    '',
+    'suppressPackageStartupMessages({',
+    '  library(keras)',
+    '  library(tensorflow)',
+    '})',
+    'source("_build_model.R")',
+    '',
+    '# Build data list for builder',
+    'hb_data <- list(',
+    '  X_train = X_train, X_val = X_val,',
+    '  Y_train = Y_train, Y_val = Y_val,',
+    '  n_features = n_features,',
+    '  n_bins = n_bins',
+    ')',
+    '',
+    'cfg <- round_configs[[task_id]]',
+    'prev_ep <- round_prev_epochs[task_id]',
+    'target_ep <- round_r_i',
+    'worker_seed <- round_seeds[task_id]',
+    '',
+    'tf$random$set_seed(as.integer(worker_seed))',
+    'model <- build_nn(cfg, hb_data, type, sfs.dims)',
+    '',
+    '# Load weights from previous round (if any)',
+    'wpath <- file.path("weights", sprintf("cfg_%d", task_id))',
+    'if (prev_ep > 0 && dir.exists(wpath)) {',
+    '  load_model_weights_tf(model, wpath)',
+    '}',
+    '',
+    'history <- model |> fit(',
+    '  x = hb_data$X_train, y = hb_data$Y_train,',
+    '  validation_data = list(hb_data$X_val, hb_data$Y_val),',
+    '  epochs        = as.integer(target_ep),',
+    '  initial_epoch = as.integer(prev_ep),',
+    '  batch_size    = as.integer(cfg$batch_size),',
+    '  callbacks     = list(',
+    '    callback_early_stopping(monitor = "val_loss",',
+    '                            patience = 10L,',
+    '                            restore_best_weights = TRUE),',
+    '    callback_reduce_lr_on_plateau(monitor = "val_loss",',
+    '                                  patience = 5L,',
+    '                                  factor = 0.5,',
+    '                                  min_lr = 1e-6,',
+    '                                  verbose = 0L)',
+    '  ),',
+    '  verbose = 0L',
+    ')',
+    '',
+    'vl <- history$metrics$val_loss',
+    'if (is.null(vl)) vl <- history$history$val_loss',
+    'best_vl <- min(unlist(vl))',
+    '',
+    '# Save weights',
+    'dir.create(wpath, recursive = TRUE, showWarnings = FALSE)',
+    'save_model_weights_tf(model, wpath)',
+    '',
+    '# Write result',
+    'write.csv(data.frame(task_id = task_id, val_loss = best_vl),',
+    '          out_file, row.names = FALSE)',
+    'cat(sprintf("  hb %d done (val_loss=%.4f)\\n", task_id, best_vl))',
+    'k_clear_session()'
+  ), filepath)
 }
 
 # ============================================================================
