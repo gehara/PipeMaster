@@ -17,11 +17,30 @@
 #' @param hyperband_iterations integer — number of full Hyperband sweeps (default 1).
 #' @param search_space named list — overrides default HP ranges. NULL uses
 #'   architecture-specific defaults.
+#' @param exclude.cols character vector — additional column names to exclude from
+#'   features (e.g., other parameter columns not in \code{param.cols}). Required
+#'   when estimating a single parameter from a reftable that contains multiple
+#'   parameter columns, to prevent other parameters from leaking into the feature
+#'   set. Default NULL (only \code{param.cols} and nuisance columns are excluded).
 #' @param val.frac numeric — validation fraction (default 0.1).
 #' @param cores integer — number of parallel Rscript workers for Hyperband rounds
 #'   (default 1, sequential). Values > 1 train multiple configs simultaneously.
+#'   Each worker spawns a separate R process that loads TensorFlow and a full
+#'   copy of the training data, so RAM usage scales linearly with \code{cores}
+#'   (~1.5 GB per worker). When \code{gpus > 0}, workers are assigned to GPUs
+#'   via round-robin: multiple workers can share a GPU (they allocate VRAM
+#'   incrementally), but too many workers per GPU may cause GPU out-of-memory
+#'   errors.
 #' @param gpus integer — number of GPUs to round-robin across workers (default 0,
-#'   CPU-only). Ignored when \code{cores = 1}.
+#'   CPU-only). When \code{gpus = 0}, all workers run on CPU with GPUs disabled.
+#'   Ignored when \code{cores = 1}.
+#' @param gpu.threshold integer — maximum number of workers per GPU before
+#'   switching to CPU-only for a round (default 4). When \code{gpus > 0},
+#'   Hyperband rounds with more than \code{gpu.threshold * gpus} configs run
+#'   on CPU (all \code{cores} workers, GPUs disabled), while rounds with fewer
+#'   configs use the GPU. This allows early brackets (many configs, few epochs)
+#'   to exploit CPU parallelism and later brackets (few configs, many epochs) to
+#'   use GPU throughput. Ignored when \code{gpus = 0}.
 #' @param seed integer — random seed (default 42).
 #' @param verbose logical — print progress (default TRUE).
 #'
@@ -39,7 +58,9 @@ tune.nn <- function(reftable, param.cols,
                     sfs.dims = NULL,
                     max_epochs = 500, eta = 3, hyperband_iterations = 1,
                     search_space = NULL,
+                    exclude.cols = NULL,
                     val.frac = 0.1, cores = 1L, gpus = 0L,
+                    gpu.threshold = 4L,
                     seed = 42, verbose = TRUE) {
 
   # --- Dependency check ---
@@ -65,14 +86,16 @@ tune.nn <- function(reftable, param.cols,
       est_per_worker <- 1.5  # ~1.5 GB per TF worker (runtime + data copy)
       est_total <- cores * est_per_worker
       if (est_total > avail_gb * 0.85) {
-        safe_cores <- max(1L, floor(avail_gb * 0.85 / est_per_worker))
         warning(sprintf(
-          paste0("Requested cores=%d may exceed available RAM (%.1f GB free, ",
-                 "~%.0f GB needed). Consider cores=%d or fewer to avoid swapping."),
-          cores, avail_gb, est_total, safe_cores),
+          paste0("cores=%d workers may exceed available RAM ",
+                 "(%.1f GB free, ~%.0f GB estimated). ",
+                 "This can cause swapping and severe slowdowns. ",
+                 "Reduce cores if you experience memory issues."),
+          cores, avail_gb, est_total),
           call. = FALSE)
       }
     }
+
   }
 
   # --- Enable GPU memory growth (prevent TF from grabbing all VRAM) ---
@@ -97,7 +120,7 @@ tune.nn <- function(reftable, param.cols,
   if (verbose) cat(sprintf("PipeMaster:: tune.nn \u2014 Hyperband (%s)\n",
                            switch(type, sumstat = "ResNet", sfs1d = "1D CNN", sfs2d = "2D CNN")))
 
-  data <- .prep.data(reftable, param.cols, type, sfs.dims, val.frac, seed)
+  data <- .prep.data(reftable, param.cols, type, sfs.dims, exclude.cols, val.frac, seed)
 
   n_feat <- if (type == "sumstat") ncol(data$X_train) else data$n_features
   n_targ <- ncol(data$Y_train)
@@ -116,6 +139,7 @@ tune.nn <- function(reftable, param.cols,
     n_iter       = hyperband_iterations,
     cores        = cores,
     gpus         = gpus,
+    gpu.threshold = gpu.threshold,
     seed         = seed,
     verbose      = verbose
   )
@@ -129,7 +153,7 @@ tune.nn <- function(reftable, param.cols,
 
   # Load weights from best Hyperband model
   weights_loaded <- tryCatch({
-    keras::load_model_weights_tf(best_model, hb$best_weights_path)
+    keras::load_model_weights_tf(best_model, file.path(hb$best_weights_path, "ckpt"))
     TRUE
   }, error = function(e) {
     if (verbose) cat("PipeMaster:: [warn] Could not load saved weights, training from scratch\n")
@@ -181,7 +205,8 @@ tune.nn <- function(reftable, param.cols,
     best_model    = best_model,
     data          = data,
     type          = type,
-    sfs.dims      = sfs.dims
+    sfs.dims      = sfs.dims,
+    exclude.cols  = exclude.cols
   )
 }
 
@@ -502,11 +527,11 @@ tune.nn <- function(reftable, param.cols,
 # Internal: data preparation
 # ============================================================================
 
-.prep.data <- function(reftable, param.cols, type, sfs.dims, val.frac, seed) {
+.prep.data <- function(reftable, param.cols, type, sfs.dims, exclude.cols, val.frac, seed) {
   set.seed(seed)
 
   if (type == "sumstat") {
-    .prep.sumstat(reftable, param.cols, val.frac)
+    .prep.sumstat(reftable, param.cols, exclude.cols, val.frac)
   } else if (type == "sfs1d") {
     .prep.sfs1d(reftable, param.cols, val.frac)
   } else {
@@ -515,20 +540,20 @@ tune.nn <- function(reftable, param.cols,
 }
 
 # --- sumstat: augment features with log1p(abs(x)), Z-score, log-targets ---
-.prep.sumstat <- function(reftable, param.cols, val.frac) {
+.prep.sumstat <- function(reftable, param.cols, exclude.cols, val.frac) {
   nuisance <- c("mean.rate", "sd.rate")
-  stat_cols <- setdiff(colnames(reftable), c(param.cols, nuisance))
+  stat_cols <- setdiff(colnames(reftable), c(param.cols, nuisance, exclude.cols))
   target_cols <- setdiff(param.cols, nuisance)
 
-  targets <- as.matrix(reftable[, target_cols])
-  features_raw <- as.matrix(reftable[, stat_cols])
+  targets <- as.matrix(reftable[, target_cols, drop = FALSE])
+  features_raw <- as.matrix(reftable[, stat_cols, drop = FALSE])
 
   # Feature augmentation
   features <- cbind(features_raw, log1p(abs(features_raw)))
 
   # Remove bad rows
   bad <- apply(features, 1, function(x) any(!is.finite(x)))
-  if (any(bad)) { features <- features[!bad, ]; targets <- targets[!bad, ] }
+  if (any(bad)) { features <- features[!bad, , drop = FALSE]; targets <- targets[!bad, , drop = FALSE] }
 
   # Split
   n <- nrow(features)
@@ -539,15 +564,15 @@ tune.nn <- function(reftable, param.cols,
   tr <- idx[1:n_train]; va <- idx[(n_train + 1):n]
 
   # Z-score features
-  feat_mu <- colMeans(features[tr, ])
-  feat_sd <- apply(features[tr, ], 2, sd); feat_sd[feat_sd == 0] <- 1
+  feat_mu <- colMeans(features[tr, , drop = FALSE])
+  feat_sd <- apply(features[tr, , drop = FALSE], 2, sd); feat_sd[feat_sd == 0] <- 1
   zscore_feat <- function(X) t((t(X) - feat_mu) / feat_sd)
 
-  X_train <- zscore_feat(features[tr, ])
-  X_val   <- zscore_feat(features[va, ])
+  X_train <- zscore_feat(features[tr, , drop = FALSE])
+  X_val   <- zscore_feat(features[va, , drop = FALSE])
 
   # Log-transform + Z-score targets
-  Y_tr_log <- log(targets[tr, ]); Y_va_log <- log(targets[va, ])
+  Y_tr_log <- log(targets[tr, , drop = FALSE]); Y_va_log <- log(targets[va, , drop = FALSE])
   t_mu <- colMeans(Y_tr_log); t_sd <- apply(Y_tr_log, 2, sd); t_sd[t_sd == 0] <- 1
   zscore_tar <- function(Y) t((t(Y) - t_mu) / t_sd)
 
@@ -566,14 +591,14 @@ tune.nn <- function(reftable, param.cols,
   sfs_cols <- grep("^sfs_", colnames(reftable), value = TRUE)
   n_bins <- length(sfs_cols)
 
-  targets <- as.matrix(reftable[, param.cols])
+  targets <- as.matrix(reftable[, param.cols, drop = FALSE])
   sfs_raw <- as.matrix(reftable[, sfs_cols])
 
   # Log1p transform
   sfs_log <- log1p(sfs_raw)
 
   bad <- apply(sfs_log, 1, function(x) any(!is.finite(x)))
-  if (any(bad)) { sfs_log <- sfs_log[!bad, ]; targets <- targets[!bad, ] }
+  if (any(bad)) { sfs_log <- sfs_log[!bad, ]; targets <- targets[!bad, , drop = FALSE] }
 
   n <- nrow(sfs_log)
   idx <- sample(n)
@@ -592,7 +617,7 @@ tune.nn <- function(reftable, param.cols,
   dim(X_val)   <- c(nrow(X_val), n_bins, 1L)
 
   # Log + Z-score targets
-  Y_tr_log <- log(targets[tr, ]); Y_va_log <- log(targets[va, ])
+  Y_tr_log <- log(targets[tr, , drop = FALSE]); Y_va_log <- log(targets[va, , drop = FALSE])
   t_mu <- colMeans(Y_tr_log); t_sd <- apply(Y_tr_log, 2, sd); t_sd[t_sd == 0] <- 1
   zscore_tar <- function(Y) t((t(Y) - t_mu) / t_sd)
 
@@ -615,12 +640,12 @@ tune.nn <- function(reftable, param.cols,
     stop(sprintf("Number of SFS columns (%d) doesn't match sfs.dims %dx%d = %d",
                  n_sfs, dim1, dim2, dim1 * dim2))
 
-  targets <- as.matrix(reftable[, param.cols])
+  targets <- as.matrix(reftable[, param.cols, drop = FALSE])
   sfs_raw <- as.matrix(reftable[, sfs_cols])
 
   sfs_log <- log1p(sfs_raw)
   bad <- apply(sfs_log, 1, function(x) any(!is.finite(x)))
-  if (any(bad)) { sfs_log <- sfs_log[!bad, ]; targets <- targets[!bad, ] }
+  if (any(bad)) { sfs_log <- sfs_log[!bad, ]; targets <- targets[!bad, , drop = FALSE] }
 
   n <- nrow(sfs_log)
   idx <- sample(n)
@@ -639,7 +664,7 @@ tune.nn <- function(reftable, param.cols,
   X_val   <- array(X_val,   dim = c(nrow(X_val),   dim1, dim2, 1L))
 
   # Log + Z-score targets
-  Y_tr_log <- log(targets[tr, ]); Y_va_log <- log(targets[va, ])
+  Y_tr_log <- log(targets[tr, , drop = FALSE]); Y_va_log <- log(targets[va, , drop = FALSE])
   t_mu <- colMeans(Y_tr_log); t_sd <- apply(Y_tr_log, 2, sd); t_sd[t_sd == 0] <- 1
   zscore_tar <- function(Y) t((t(Y) - t_mu) / t_sd)
 
@@ -658,7 +683,8 @@ tune.nn <- function(reftable, param.cols,
 # ============================================================================
 
 .hyperband <- function(search_space, data, type, sfs.dims,
-                       max_epochs, eta, n_iter, cores, gpus, seed, verbose) {
+                       max_epochs, eta, n_iter, cores, gpus,
+                       gpu.threshold, seed, verbose) {
 
   s_max <- min(floor(log(max_epochs) / log(eta)), 3L)  # cap at 3 (max 27 configs/bracket)
 
@@ -703,10 +729,18 @@ tune.nn <- function(reftable, param.cols,
         val_losses <- rep(Inf, length(configs))
 
         if (cores > 1L && length(configs) > 1L) {
-          # PARALLEL: train configs via Rscript worker pool
+          # PARALLEL: choose CPU vs GPU based on config count per round
+          if (gpus > 0L && length(configs) <= gpus * gpu.threshold) {
+            round_cores <- min(cores, gpus * gpu.threshold)
+            round_gpus  <- gpus
+          } else {
+            round_cores <- cores
+            round_gpus  <- 0L
+          }
+
           val_losses <- .hyperband.round.parallel(
             configs, data, type, sfs.dims, r_i, prev_epochs,
-            weight_dir, seed, iter, s, cores, gpus, verbose)
+            weight_dir, seed, iter, s, round_cores, round_gpus, verbose)
 
           # Update global best from parallel results
           for (j in seq_along(configs)) {
@@ -732,8 +766,9 @@ tune.nn <- function(reftable, param.cols,
 
               # Load saved weights from previous round (if any)
               wpath <- file.path(weight_dir, sprintf("cfg_%d", j))
+              wfile <- file.path(wpath, "ckpt")
               if (prev_epochs[j] > 0 && dir.exists(wpath)) {
-                keras::load_model_weights_tf(model, wpath)
+                keras::load_model_weights_tf(model, wfile)
               }
 
               history <- model |> keras::fit(
@@ -759,15 +794,18 @@ tune.nn <- function(reftable, param.cols,
               val_losses[j] <- min(unlist(vl))
 
               # Save weights for this config (overwrite previous round's)
-              keras::save_model_weights_tf(model, wpath)
+              dir.create(wpath, recursive = TRUE, showWarnings = FALSE)
+              keras::save_model_weights_tf(model, wfile)
 
               # Update global best
               if (val_losses[j] < global_best_loss) {
                 global_best_loss   <- val_losses[j]
                 global_best_hp     <- configs[[j]]
                 global_best_epochs <- as.integer(r_i)
-                tryCatch(
-                  keras::save_model_weights_tf(model, best_weights_path),
+                tryCatch({
+                  dir.create(best_weights_path, recursive = TRUE, showWarnings = FALSE)
+                  keras::save_model_weights_tf(model, file.path(best_weights_path, "ckpt"))
+                },
                   error = function(e) NULL
                 )
               }
@@ -1115,6 +1153,7 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
   type <- match.arg(type, c("sumstat", "sfs1d", "sfs2d"))
 
   if (is.null(sfs.dims)) sfs.dims <- tune.result$sfs.dims
+  exclude.cols <- tune.result$exclude.cols
 
   needs_reftable <- any(c("conformal", "bootstrap", "quantile") %in% method)
   if (needs_reftable && is.null(reftable))
@@ -1252,7 +1291,8 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
     quant_probs <- q_probs
     quant_matrix <- .run.quantile.regression(
       reftable, param.cols, observed, best_hp, type, sfs.dims,
-      q_probs, max_epochs, seed, verbose, data, best_model
+      q_probs, max_epochs, seed, verbose, data, best_model,
+      exclude.cols = exclude.cols
     )
     colnames(quant_matrix) <- param_names
   }
@@ -1263,7 +1303,7 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
       reftable, param.cols, observed, best_hp, type, sfs.dims,
       do_conformal, do_bootstrap, n_ensemble, n_boot,
       cal.frac, max_epochs, cores, gpus, seed, verbose,
-      point_est = point_est
+      point_est = point_est, exclude.cols = exclude.cols
     )
     if (do_conformal && !is.null(pool_out$conformal)) {
       conf_samples <- pool_out$conformal
@@ -1279,14 +1319,15 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
       conf_samples <- .run.conformal.sequential(
         reftable, param.cols, observed, best_hp, type, sfs.dims,
         n_ensemble, cal.frac, max_epochs, seed, verbose,
-        point_est = point_est
+        point_est = point_est, exclude.cols = exclude.cols
       )
       colnames(conf_samples) <- param_names
     }
     if (do_bootstrap) {
       boot_samples <- .run.bootstrap.sequential(
         reftable, param.cols, observed, best_hp, type, sfs.dims,
-        n_boot, max_epochs, seed, verbose
+        n_boot, max_epochs, seed, verbose,
+        exclude.cols = exclude.cols
       )
       colnames(boot_samples) <- param_names
     }
@@ -1571,6 +1612,9 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
   if (type == "sumstat") {
     obs_aug <- c(observed, log1p(abs(observed)))
+    if (length(obs_aug) != length(feat_mu))
+      stop(sprintf("Dimension mismatch: observed has %d features (augmented) but model expects %d.\n  This usually means the tune.nn() model was trained with extra columns as features.\n  Use exclude.cols in tune.nn() to exclude non-target parameter columns.",
+                    length(obs_aug), length(feat_mu)))
     X_obs <- matrix((obs_aug - feat_mu) / feat_sd, nrow = 1)
     X_obs[!is.finite(X_obs)] <- 0
   } else if (type == "sfs1d") {
@@ -1594,6 +1638,9 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 .prep.observed.with <- function(observed, feat_mu, feat_sd, type, sfs.dims) {
   if (type == "sumstat") {
     obs_aug <- c(observed, log1p(abs(observed)))
+    if (length(obs_aug) != length(feat_mu))
+      stop(sprintf("Dimension mismatch: observed has %d features (augmented) but model expects %d.\n  This usually means the tune.nn() model was trained with extra columns as features.\n  Use exclude.cols in tune.nn() to exclude non-target parameter columns.",
+                    length(obs_aug), length(feat_mu)))
     X_obs <- matrix((obs_aug - feat_mu) / feat_sd, nrow = 1)
     X_obs[!is.finite(X_obs)] <- 0
   } else if (type == "sfs1d") {
@@ -1828,7 +1875,8 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
 .run.quantile.regression <- function(reftable, param.cols, observed, best_hp,
                                      type, sfs.dims, q_probs, max_epochs,
-                                     seed, verbose, data, best_model = NULL) {
+                                     seed, verbose, data, best_model = NULL,
+                                     exclude.cols = NULL) {
 
   nuisance <- c("mean.rate", "sd.rate")
   target_cols <- setdiff(param.cols, nuisance)
@@ -1843,7 +1891,8 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
   # Prepare features and targets from reftable
   all_rows   <- seq_len(nrow(reftable))
-  full_split <- .prep.reftable.split(reftable, param.cols, all_rows, type, sfs.dims)
+  full_split <- .prep.reftable.split(reftable, param.cols, all_rows, type, sfs.dims,
+                                      exclude.cols = exclude.cols)
   features_all <- full_split$features
   targets_all  <- full_split$targets
   n_total <- nrow(features_all)
@@ -2236,8 +2285,9 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     '',
     '# Load weights from previous round (if any)',
     'wpath <- file.path("weights", sprintf("cfg_%d", task_id))',
+    'wfile <- file.path(wpath, "ckpt")',
     'if (prev_ep > 0 && dir.exists(wpath)) {',
-    '  load_model_weights_tf(model, wpath)',
+    '  load_model_weights_tf(model, wfile)',
     '}',
     '',
     'history <- model |> fit(',
@@ -2265,7 +2315,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     '',
     '# Save weights',
     'dir.create(wpath, recursive = TRUE, showWarnings = FALSE)',
-    'save_model_weights_tf(model, wpath)',
+    'save_model_weights_tf(model, wfile)',
     '',
     '# Write result',
     'write.csv(data.frame(task_id = task_id, val_loss = best_vl),',
@@ -2429,14 +2479,15 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 # Internal: prepare reftable split for conformal/bootstrap training
 # ============================================================================
 
-.prep.reftable.split <- function(reftable, param.cols, row_idx, type, sfs.dims) {
+.prep.reftable.split <- function(reftable, param.cols, row_idx, type, sfs.dims,
+                                  exclude.cols = NULL) {
   nuisance <- c("mean.rate", "sd.rate")
   target_cols <- setdiff(param.cols, nuisance)
 
   targets <- as.matrix(reftable[row_idx, target_cols, drop = FALSE])
 
   if (type == "sumstat") {
-    stat_cols <- setdiff(colnames(reftable), c(param.cols, nuisance))
+    stat_cols <- setdiff(colnames(reftable), c(param.cols, nuisance, exclude.cols))
     features_raw <- as.matrix(reftable[row_idx, stat_cols])
     features <- cbind(features_raw, log1p(abs(features_raw)))
 
@@ -2460,7 +2511,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
 .run.conformal.sequential <- function(reftable, param.cols, observed, best_hp, type, sfs.dims,
                            n_ensemble, cal.frac, max_epochs, seed, verbose,
-                           point_est = NULL) {
+                           point_est = NULL, exclude.cols = NULL) {
 
   nuisance <- c("mean.rate", "sd.rate")
   target_cols <- setdiff(param.cols, nuisance)
@@ -2484,8 +2535,10 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     cal_idx <- idx[(n_train + 1):n_total]
 
     # Prepare train and calibration splits
-    tr_split  <- .prep.reftable.split(reftable, param.cols, tr_idx, type, sfs.dims)
-    cal_split <- .prep.reftable.split(reftable, param.cols, cal_idx, type, sfs.dims)
+    tr_split  <- .prep.reftable.split(reftable, param.cols, tr_idx, type, sfs.dims,
+                                       exclude.cols = exclude.cols)
+    cal_split <- .prep.reftable.split(reftable, param.cols, cal_idx, type, sfs.dims,
+                                       exclude.cols = exclude.cols)
 
     feat_tr  <- tr_split$features
     targ_tr  <- tr_split$targets
@@ -2609,19 +2662,22 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 # ============================================================================
 
 .run.bootstrap <- function(reftable, param.cols, observed, best_hp, type, sfs.dims,
-                           n_boot, max_epochs, cores, gpus = 0, seed, verbose) {
+                           n_boot, max_epochs, cores, gpus = 0, seed, verbose,
+                           exclude.cols = NULL) {
 
   if (cores <= 1) {
     return(.run.bootstrap.sequential(
       reftable, param.cols, observed, best_hp, type, sfs.dims,
-      n_boot, max_epochs, seed, verbose
+      n_boot, max_epochs, seed, verbose,
+      exclude.cols = exclude.cols
     ))
   }
 
   # Parallel bootstrap via Rscript workers
   .run.bootstrap.parallel(
     reftable, param.cols, observed, best_hp, type, sfs.dims,
-    n_boot, max_epochs, cores, gpus = gpus, seed, verbose
+    n_boot, max_epochs, cores, gpus = gpus, seed, verbose,
+    exclude.cols = exclude.cols
   )
 }
 
@@ -2631,7 +2687,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
 .run.bootstrap.sequential <- function(reftable, param.cols, observed, best_hp,
                                       type, sfs.dims, n_boot, max_epochs,
-                                      seed, verbose) {
+                                      seed, verbose, exclude.cols = NULL) {
 
   nuisance <- c("mean.rate", "sd.rate")
   target_cols <- setdiff(param.cols, nuisance)
@@ -2644,7 +2700,8 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
   # Prepare full data once
   all_rows <- seq_len(nrow(reftable))
-  full_split <- .prep.reftable.split(reftable, param.cols, all_rows, type, sfs.dims)
+  full_split <- .prep.reftable.split(reftable, param.cols, all_rows, type, sfs.dims,
+                                      exclude.cols = exclude.cols)
   features_all <- full_split$features
   targets_all  <- full_split$targets
   n_rows <- nrow(features_all)
@@ -3033,7 +3090,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
                                 type, sfs.dims, do_conformal, do_bootstrap,
                                 n_ensemble, n_boot, cal.frac, max_epochs,
                                 cores, gpus, seed, verbose,
-                                point_est = NULL) {
+                                point_est = NULL, exclude.cols = NULL) {
 
   nuisance    <- c("mean.rate", "sd.rate")
   target_cols <- setdiff(param.cols, nuisance)
@@ -3047,7 +3104,8 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
   # Prepare and save shared data
   all_rows   <- seq_len(nrow(reftable))
-  full_split <- .prep.reftable.split(reftable, param.cols, all_rows, type, sfs.dims)
+  full_split <- .prep.reftable.split(reftable, param.cols, all_rows, type, sfs.dims,
+                                      exclude.cols = exclude.cols)
   features_all <- full_split$features
   targets_all  <- full_split$targets
   n_rows     <- nrow(features_all)
@@ -3150,7 +3208,8 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
 .run.bootstrap.parallel <- function(reftable, param.cols, observed, best_hp,
                                     type, sfs.dims, n_boot, max_epochs,
-                                    cores, gpus = 0, seed, verbose) {
+                                    cores, gpus = 0, seed, verbose,
+                                    exclude.cols = NULL) {
 
   nuisance <- c("mean.rate", "sd.rate")
   target_cols <- setdiff(param.cols, nuisance)
@@ -3167,7 +3226,8 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
   # Prepare full data and save shared .RData
   all_rows <- seq_len(nrow(reftable))
-  full_split <- .prep.reftable.split(reftable, param.cols, all_rows, type, sfs.dims)
+  full_split <- .prep.reftable.split(reftable, param.cols, all_rows, type, sfs.dims,
+                                      exclude.cols = exclude.cols)
   features_all <- full_split$features
   targets_all  <- full_split$targets
   n_rows <- nrow(features_all)
