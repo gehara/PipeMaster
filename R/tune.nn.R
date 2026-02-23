@@ -245,20 +245,30 @@ tune.nn <- function(reftable, param.cols,
 # Internal: build and compile a keras model from an HP config
 # ============================================================================
 
-.build.nn <- function(hp, data, type, sfs.dims) {
+.build.nn <- function(hp, data, type, sfs.dims, mc_dropout = FALSE) {
   switch(type,
-    sumstat = .build.resnet(hp, data),
-    sfs1d   = .build.cnn1d(hp, data),
-    sfs2d   = .build.cnn2d(hp, data, sfs.dims)
+    sumstat = .build.resnet(hp, data, mc_dropout = mc_dropout),
+    sfs1d   = .build.cnn1d(hp, data, mc_dropout = mc_dropout),
+    sfs2d   = .build.cnn2d(hp, data, sfs.dims, mc_dropout = mc_dropout)
   )
 }
 
 # --- ResNet for summary statistics ---
-.build.resnet <- function(hp, data) {
+.build.resnet <- function(hp, data, mc_dropout = FALSE) {
   n_features <- ncol(data$X_train)
   n_targets  <- ncol(data$Y_train)
 
   l2 <- keras::regularizer_l2(hp$l2_reg)
+
+  # Dropout layer: standard or always-on (for MC dropout inference)
+  .drop <- if (mc_dropout) {
+    function(x, rate) {
+      r <- rate
+      keras::layer_lambda(x, f = function(x) tensorflow::tf$nn$dropout(x, rate = r))
+    }
+  } else {
+    function(x, rate) keras::layer_dropout(x, rate = rate)
+  }
 
   # Residual block helper
   res_block <- function(x, units) {
@@ -291,7 +301,7 @@ tune.nn <- function(reftable, param.cols,
                        kernel_regularizer = l2) |>
     keras::layer_batch_normalization()
   if (isTRUE(hp$use_dropout) && hp$dropout > 0)
-    x <- keras::layer_dropout(x, rate = hp$dropout)
+    x <- .drop(x, hp$dropout)
 
   # Second residual group
   if (hp$n_resblocks_2 > 0)
@@ -304,7 +314,7 @@ tune.nn <- function(reftable, param.cols,
                        kernel_regularizer = l2) |>
     keras::layer_batch_normalization()
   if (isTRUE(hp$use_dropout) && hp$dropout > 0)
-    x <- keras::layer_dropout(x, rate = hp$dropout)
+    x <- .drop(x, hp$dropout)
 
   out <- x |> keras::layer_dense(units = n_targets, activation = "linear")
 
@@ -317,11 +327,21 @@ tune.nn <- function(reftable, param.cols,
 }
 
 # --- 1D CNN for single-population SFS ---
-.build.cnn1d <- function(hp, data) {
+.build.cnn1d <- function(hp, data, mc_dropout = FALSE) {
   n_bins    <- data$n_bins
   n_targets <- ncol(data$Y_train)
 
   l2 <- keras::regularizer_l2(hp$l2_reg)
+
+  .drop <- if (mc_dropout && hp$dropout > 0) {
+    function(x, rate) {
+      r <- rate
+      keras::layer_lambda(x, f = function(x) tensorflow::tf$nn$dropout(x, rate = r))
+    }
+  } else {
+    function(x, rate) keras::layer_dropout(x, rate = rate)
+  }
+
   input <- keras::layer_input(shape = c(n_bins, 1L))
   x <- input
 
@@ -357,7 +377,7 @@ tune.nn <- function(reftable, param.cols,
       keras::layer_dense(units = units, activation = "relu",
                          kernel_regularizer = l2) |>
       keras::layer_batch_normalization() |>
-      keras::layer_dropout(rate = hp$dropout)
+      .drop(hp$dropout)
   }
 
   output <- x |> keras::layer_dense(units = n_targets, activation = "linear")
@@ -373,11 +393,21 @@ tune.nn <- function(reftable, param.cols,
 }
 
 # --- 2D CNN for joint SFS ---
-.build.cnn2d <- function(hp, data, sfs.dims) {
+.build.cnn2d <- function(hp, data, sfs.dims, mc_dropout = FALSE) {
   dim1 <- sfs.dims[1]; dim2 <- sfs.dims[2]
   n_targets <- ncol(data$Y_train)
 
   l2 <- keras::regularizer_l2(hp$l2_reg)
+
+  .drop <- if (mc_dropout && hp$dropout > 0) {
+    function(x, rate) {
+      r <- rate
+      keras::layer_lambda(x, f = function(x) tensorflow::tf$nn$dropout(x, rate = r))
+    }
+  } else {
+    function(x, rate) keras::layer_dropout(x, rate = rate)
+  }
+
   input <- keras::layer_input(shape = c(dim1, dim2, 1L))
   x <- input
 
@@ -417,7 +447,7 @@ tune.nn <- function(reftable, param.cols,
       keras::layer_dense(units = units, activation = "relu",
                          kernel_regularizer = l2) |>
       keras::layer_batch_normalization() |>
-      keras::layer_dropout(rate = hp$dropout)
+      .drop(hp$dropout)
   }
 
   output <- x |> keras::layer_dense(units = n_targets, activation = "linear")
@@ -828,11 +858,12 @@ load.tune.result <- function(path) {
 # nn.predict — Posterior estimation via conformal prediction and bootstrap
 # ============================================================================
 
-#' Posterior Estimation via Conformal Prediction and Bootstrap
+#' Posterior Estimation via Neural Network Uncertainty Quantification
 #'
 #' Estimates posterior distributions for observed data using a trained neural
-#' network from \code{tune.nn()}, with conformal prediction and/or bootstrap
-#' methods for uncertainty quantification.
+#' network from \code{tune.nn()}, with multiple methods for uncertainty
+#' quantification: conformal prediction, bootstrap, MC dropout, and quantile
+#' regression.
 #'
 #' @param tune.result list — output from \code{tune.nn()}.
 #' @param observed named numeric vector or 1-row data.frame of observed summary
@@ -843,37 +874,70 @@ load.tune.result <- function(path) {
 #' @param type character — architecture type: \code{"sumstat"}, \code{"sfs1d"},
 #'   or \code{"sfs2d"}. If NULL, uses the type stored in tune.result.
 #' @param sfs.dims integer vector — for 2D CNN only. If NULL, uses tune.result.
-#' @param method character — \code{"conformal"}, \code{"bootstrap"}, or both.
-#' @param n_boot integer — number of bootstrap replicates (default 50).
-#' @param n_ensemble integer — number of ensemble models for conformal (default 10).
+#' @param method character — one or more of \code{"conformal"}, \code{"bootstrap"},
+#'   \code{"mc_dropout"}, \code{"quantile"}.
+#' @param n_boot integer — number of bootstrap replicates (default 20).
+#' @param n_ensemble integer — number of ensemble models for conformal (default 1).
 #' @param cal.frac numeric — fraction of reftable used as calibration set (default 0.1).
-#' @param max_epochs integer — max training epochs for conformal/bootstrap models (default 1000).
-#' @param cores integer — number of parallel Rscript workers for bootstrap (default 1).
+#' @param n_mc integer — number of MC dropout forward passes (default 1000).
+#'   Only used when \code{method} includes \code{"mc_dropout"}.
+#' @param mc_dropout_rate numeric — dropout rate for MC dropout (default NULL =
+#'   use tuned rate). When set (e.g. 0.1), the model is retrained with this
+#'   dropout rate before running forward passes. Useful when the tuned dropout
+#'   is too low to produce meaningful posterior spread.
+#' @param n_quantiles integer — number of evenly-spaced quantile bins for quantile
+#'   regression (default 19). Higher values (e.g. 50, 100) produce smoother
+#'   posteriors. Ignored if \code{q_probs} is provided explicitly.
+#' @param q_probs numeric vector — custom quantile probabilities. If NULL
+#'   (default), generated automatically from \code{n_quantiles}. Only used when
+#'   \code{method} includes \code{"quantile"}.
+#' @param max_epochs integer — max training epochs for conformal/bootstrap/quantile
+#'   models (default 1000).
+#' @param cores integer — number of parallel Rscript workers (default 1).
+#' @param gpus integer — number of GPUs for parallel workers (default 0 = CPU-only).
+#'   When \code{gpus > 0}, workers are assigned GPUs round-robin via
+#'   \code{CUDA_VISIBLE_DEVICES}. Each worker sets
+#'   \code{TF_FORCE_GPU_ALLOW_GROWTH=true} so multiple workers sharing a GPU
+#'   don't OOM. \code{cores} and \code{gpus} are independent — \code{cores}
+#'   controls max concurrent workers, \code{gpus} controls GPU assignment.
 #' @param seed integer — random seed (default 42).
 #' @param verbose logical — print progress (default TRUE).
 #'
-#' @return A list with:
+#' @return An object of class \code{"nn.posterior"} (a list) with:
 #' \describe{
 #'   \item{point_estimate}{named numeric vector — inverse-transformed point
 #'     prediction from best model}
 #'   \item{conformal}{matrix of posterior samples (n_samples x n_params), or NULL}
 #'   \item{bootstrap}{matrix of posterior samples (n_boot x n_params), or NULL}
+#'   \item{mc_dropout}{matrix of posterior samples (n_mc x n_params), or NULL}
+#'   \item{quantile}{matrix of quantile values (n_quantiles x n_params), or NULL}
+#'   \item{q_probs}{numeric vector of quantile probabilities used, or NULL}
 #'   \item{param_names}{character vector of parameter column names}
 #' }
+#' Use \code{summary()} to get a table of median, mean, and quantiles.
 #'
 #' @export
 nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL,
                        type = NULL, sfs.dims = NULL,
-                       method = c("conformal", "bootstrap"),
-                       n_boot = 50, n_ensemble = 10, cal.frac = 0.1,
-                       max_epochs = 1000, cores = 1, seed = 42, verbose = TRUE) {
+                       method = c("conformal", "bootstrap", "mc_dropout", "quantile"),
+                       n_boot = 20, n_ensemble = 1, cal.frac = 0.1,
+                       n_mc = 1000L, mc_dropout_rate = NULL,
+                       n_quantiles = 19L, q_probs = NULL,
+                       max_epochs = 1000, cores = 1, gpus = 0, seed = 42,
+                       verbose = TRUE) {
 
   # --- Dependency check ---
   if (!requireNamespace("keras", quietly = TRUE) ||
       !requireNamespace("tensorflow", quietly = TRUE))
     stop("nn.predict() requires the 'keras' and 'tensorflow' R packages.")
 
-  method <- match.arg(method, c("conformal", "bootstrap"), several.ok = TRUE)
+  method <- match.arg(method, c("conformal", "bootstrap", "mc_dropout", "quantile"),
+                      several.ok = TRUE)
+
+  # Generate q_probs from n_quantiles if not provided
+  if (is.null(q_probs)) {
+    q_probs <- seq(0.01, 0.99, length.out = as.integer(n_quantiles))
+  }
 
   # Extract from tune.result
   best_hp    <- tune.result$best_hp
@@ -889,8 +953,9 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
 
   if (is.null(sfs.dims)) sfs.dims <- tune.result$sfs.dims
 
-  if (("conformal" %in% method || "bootstrap" %in% method) && is.null(reftable))
-    stop("reftable is required for conformal and bootstrap methods")
+  needs_reftable <- any(c("conformal", "bootstrap", "quantile") %in% method)
+  if (needs_reftable && is.null(reftable))
+    stop("reftable is required for conformal, bootstrap, and quantile methods")
   if (!is.null(reftable) && is.null(param.cols))
     stop("param.cols is required when reftable is provided")
 
@@ -907,13 +972,9 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
   }
 
   # --- Header ---
-  method_str <- paste(
-    ifelse("conformal" %in% method, "Conformal", ""),
-    ifelse(length(method) == 2, "+", ""),
-    ifelse("bootstrap" %in% method, "Bootstrap", ""),
-    sep = " "
-  )
-  method_str <- trimws(gsub("\\s+", " ", method_str))
+  method_labels <- c(conformal = "Conformal", bootstrap = "Bootstrap",
+                     mc_dropout = "MC Dropout", quantile = "Quantile Regression")
+  method_str <- paste(method_labels[method], collapse = " + ")
 
   if (verbose) {
     cat(sprintf("PipeMaster:: nn.predict \u2014 %s\n", method_str))
@@ -938,34 +999,382 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
     cat(sprintf("PipeMaster:: Point estimate: %s\n", est_str))
   }
 
-  # --- Conformal prediction ---
-  conf_samples <- NULL
-  if ("conformal" %in% method) {
-    conf_samples <- .run.conformal(
-      reftable, param.cols, observed, best_hp, type, sfs.dims,
-      n_ensemble, cal.frac, max_epochs, seed, verbose
-    )
-    colnames(conf_samples) <- param_names
+  # --- Uncertainty quantification ---
+  conf_samples   <- NULL
+  boot_samples   <- NULL
+  mcdrop_samples <- NULL
+  quant_matrix   <- NULL
+  quant_probs    <- NULL
+  do_conformal  <- "conformal" %in% method
+  do_bootstrap  <- "bootstrap" %in% method
+  do_mc_dropout <- "mc_dropout" %in% method
+  do_quantile   <- "quantile" %in% method
+
+  # --- MC Dropout ---
+  if (do_mc_dropout) {
+    tf <- tensorflow::tf
+    mc_hp <- best_hp
+
+    # Override dropout rate if requested
+    needs_retrain <- FALSE
+    if (!is.null(mc_dropout_rate)) {
+      mc_hp <- best_hp
+      mc_hp$dropout     <- mc_dropout_rate
+      mc_hp$use_dropout <- TRUE
+      needs_retrain <- (mc_dropout_rate != best_hp$dropout)
+    }
+
+    # Check for dropout
+    has_dropout <- (isTRUE(mc_hp$use_dropout) && mc_hp$dropout > 0) ||
+                   (!is.null(mc_hp$dropout) && mc_hp$dropout > 0)
+    if (!has_dropout)
+      warning("MC Dropout requested but dropout rate is 0. ",
+              "Predictions will have no stochastic variation. ",
+              "Set mc_dropout_rate (e.g. 0.1) to override.", call. = FALSE)
+
+    if (verbose)
+      cat(sprintf("\nPipeMaster:: MC Dropout (%d forward passes, dropout=%.3f%s)...\n",
+                  n_mc, mc_hp$dropout,
+                  if (needs_retrain) ", retraining" else ""))
+
+    # Build MC model: same architecture but with always-on dropout (lambda layers)
+    # so predict() keeps BN in inference mode while dropout stays active
+    mc_model <- .build.nn(mc_hp, data, type, sfs.dims, mc_dropout = TRUE)
+
+    if (needs_retrain) {
+      # Retrain with the new dropout rate using tune.nn's data splits
+      tensorflow::tf$random$set_seed(as.integer(seed + 555L))
+      bs <- as.integer(mc_hp$batch_size)
+
+      if (verbose) cat("PipeMaster:: Retraining model with new dropout rate...\n")
+
+      mc_model |> keras::fit(
+        x = data$X_train, y = data$Y_train,
+        validation_data = list(data$X_val, data$Y_val),
+        epochs     = as.integer(max_epochs),
+        batch_size = bs,
+        callbacks  = list(
+          keras::callback_early_stopping(monitor = "val_loss", patience = 30L,
+                                         restore_best_weights = TRUE),
+          keras::callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 15L,
+                                               factor = 0.5, min_lr = 1e-6, verbose = 0L)
+        ),
+        verbose = 0L
+      )
+
+      if (verbose) cat("PipeMaster:: Retrain done. Running forward passes...\n")
+    } else {
+      # Same dropout rate — just copy weights from best model
+      mc_model$set_weights(best_model$get_weights())
+    }
+
+    n_params_mc <- length(param_names)
+    mc_raw <- matrix(NA_real_, nrow = as.integer(n_mc), ncol = n_params_mc)
+    for (i in seq_len(n_mc)) {
+      pred_z <- predict(mc_model, X_obs, verbose = 0L)
+      mc_raw[i, ] <- as.numeric(.inv.transform(pred_z, data$target_mu, data$target_sd))
+    }
+
+    rm(mc_model); gc()
+
+    mcdrop_samples <- mc_raw
+    colnames(mcdrop_samples) <- param_names
+
+    if (verbose)
+      cat(sprintf("PipeMaster:: MC Dropout done — %d samples\n", n_mc))
   }
 
-  # --- Bootstrap ---
-  boot_samples <- NULL
-  if ("bootstrap" %in% method) {
-    boot_samples <- .run.bootstrap(
+  # --- Quantile Regression (trains 1 model) ---
+  if (do_quantile) {
+    quant_probs <- q_probs
+    quant_matrix <- .run.quantile.regression(
       reftable, param.cols, observed, best_hp, type, sfs.dims,
-      n_boot, max_epochs, cores, seed, verbose
+      q_probs, max_epochs, seed, verbose, data, best_model
     )
-    colnames(boot_samples) <- param_names
+    colnames(quant_matrix) <- param_names
+  }
+
+  if (cores > 1 && (do_conformal || do_bootstrap)) {
+    # Unified parallel dispatch via priority pool
+    pool_out <- .run.parallel.pool(
+      reftable, param.cols, observed, best_hp, type, sfs.dims,
+      do_conformal, do_bootstrap, n_ensemble, n_boot,
+      cal.frac, max_epochs, cores, gpus, seed, verbose,
+      point_est = point_est
+    )
+    if (do_conformal && !is.null(pool_out$conformal)) {
+      conf_samples <- pool_out$conformal
+      colnames(conf_samples) <- param_names
+    }
+    if (do_bootstrap && !is.null(pool_out$bootstrap)) {
+      boot_samples <- pool_out$bootstrap
+      colnames(boot_samples) <- param_names
+    }
+  } else {
+    # Sequential fallback (cores <= 1)
+    if (do_conformal) {
+      conf_samples <- .run.conformal.sequential(
+        reftable, param.cols, observed, best_hp, type, sfs.dims,
+        n_ensemble, cal.frac, max_epochs, seed, verbose,
+        point_est = point_est
+      )
+      colnames(conf_samples) <- param_names
+    }
+    if (do_bootstrap) {
+      boot_samples <- .run.bootstrap.sequential(
+        reftable, param.cols, observed, best_hp, type, sfs.dims,
+        n_boot, max_epochs, seed, verbose
+      )
+      colnames(boot_samples) <- param_names
+    }
+  }
+
+  # Clip to prior range — use reftable parameter columns as bounds
+  if (!is.null(reftable) && !is.null(param_names)) {
+    for (j in seq_along(param_names)) {
+      p <- param_names[j]
+      if (p %in% colnames(reftable)) {
+        lo <- min(reftable[[p]])
+        hi <- max(reftable[[p]])
+        if (!is.null(conf_samples))   conf_samples[, j]   <- pmax(lo, pmin(hi, conf_samples[, j]))
+        if (!is.null(boot_samples))   boot_samples[, j]   <- pmax(lo, pmin(hi, boot_samples[, j]))
+        if (!is.null(mcdrop_samples)) mcdrop_samples[, j] <- pmax(lo, pmin(hi, mcdrop_samples[, j]))
+        if (!is.null(quant_matrix))   quant_matrix[, j]   <- pmax(lo, pmin(hi, quant_matrix[, j]))
+      }
+    }
+  } else {
+    # Fallback: at minimum clip negatives
+    if (!is.null(conf_samples))   conf_samples[conf_samples < 0]     <- 0
+    if (!is.null(boot_samples))   boot_samples[boot_samples < 0]     <- 0
+    if (!is.null(mcdrop_samples)) mcdrop_samples[mcdrop_samples < 0] <- 0
+    if (!is.null(quant_matrix))   quant_matrix[quant_matrix < 0]     <- 0
   }
 
   if (verbose) cat("PipeMaster:: Done.\n")
 
-  list(
+  # Store prior samples from reftable
+  prior_samples <- NULL
+  if (!is.null(reftable) && !is.null(param_names)) {
+    nuisance <- c("mean.rate", "sd.rate")
+    pcols <- setdiff(param_names, nuisance)
+    prior_samples <- as.matrix(reftable[, pcols, drop = FALSE])
+    colnames(prior_samples) <- pcols
+  }
+
+  result <- list(
     point_estimate = point_est,
     conformal      = conf_samples,
     bootstrap      = boot_samples,
+    mc_dropout     = mcdrop_samples,
+    quantile       = quant_matrix,
+    q_probs        = quant_probs,
+    prior          = prior_samples,
     param_names    = param_names
   )
+  class(result) <- "nn.posterior"
+  result
+}
+
+#' @export
+summary.nn.posterior <- function(object, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), ...) {
+  param_names <- object$param_names
+  n_params <- length(param_names)
+  q_labels <- paste0(formatC(probs * 100, format = "fg"), "%")
+
+  .summarize <- function(mat) {
+    tbl <- matrix(NA, nrow = n_params, ncol = length(probs) + 2)
+    colnames(tbl) <- c("Mean", "Median", q_labels)
+    rownames(tbl) <- param_names
+    for (j in seq_len(n_params)) {
+      vals <- mat[, j]
+      vals <- vals[is.finite(vals)]
+      tbl[j, "Mean"]   <- mean(vals)
+      tbl[j, "Median"] <- median(vals)
+      tbl[j, -(1:2)]   <- quantile(vals, probs = probs)
+    }
+    tbl
+  }
+
+  out <- list(point_estimate = object$point_estimate)
+  if (!is.null(object$conformal))
+    out$conformal <- .summarize(object$conformal)
+  if (!is.null(object$bootstrap))
+    out$bootstrap <- .summarize(object$bootstrap)
+  if (!is.null(object$mc_dropout))
+    out$mc_dropout <- .summarize(object$mc_dropout)
+  if (!is.null(object$quantile)) {
+    # Quantile matrix is (n_quantiles x n_params) — report directly
+    tbl <- t(object$quantile)
+    colnames(tbl) <- paste0("Q", formatC(object$q_probs * 100, format = "fg"), "%")
+    rownames(tbl) <- param_names
+    out$quantile <- tbl
+    out$q_probs  <- object$q_probs
+  }
+  class(out) <- "summary.nn.posterior"
+  out
+}
+
+#' @export
+print.summary.nn.posterior <- function(x, digits = 2, ...) {
+  cat("Point estimate:\n")
+  print(round(x$point_estimate, digits))
+  if (!is.null(x$conformal)) {
+    cat("\nConformal posterior:\n")
+    print(round(x$conformal, digits))
+  }
+  if (!is.null(x$bootstrap)) {
+    cat("\nBootstrap posterior:\n")
+    print(round(x$bootstrap, digits))
+  }
+  if (!is.null(x$mc_dropout)) {
+    cat("\nMC Dropout posterior:\n")
+    print(round(x$mc_dropout, digits))
+  }
+  if (!is.null(x$quantile)) {
+    cat("\nQuantile Regression:\n")
+    print(round(x$quantile, digits))
+  }
+  invisible(x)
+}
+
+#' @export
+print.nn.posterior <- function(x, ...) {
+  methods <- c()
+  if (!is.null(x$conformal))  methods <- c(methods, sprintf("conformal (%d samples)", nrow(x$conformal)))
+  if (!is.null(x$bootstrap))  methods <- c(methods, sprintf("bootstrap (%d samples)", nrow(x$bootstrap)))
+  if (!is.null(x$mc_dropout)) methods <- c(methods, sprintf("mc_dropout (%d samples)", nrow(x$mc_dropout)))
+  if (!is.null(x$quantile))   methods <- c(methods, sprintf("quantile (%d quantiles)", nrow(x$quantile)))
+  cat(sprintf("nn.posterior object — %s\n", paste(methods, collapse = " + ")))
+  cat("Point estimate:\n")
+  print(round(x$point_estimate, 2))
+  cat("\nUse summary() for posterior quantiles, density() for density objects.\n")
+  invisible(x)
+}
+
+#' @export
+density.nn.posterior <- function(x, method = NULL, ...) {
+  param_names <- x$param_names
+  sample_methods <- c("conformal", "bootstrap", "mc_dropout")
+
+  if (is.null(method)) {
+    for (m in sample_methods) {
+      if (!is.null(x[[m]])) { method <- m; break }
+    }
+    if (is.null(method)) stop("No posterior samples available.")
+  }
+  method <- match.arg(method, sample_methods)
+  mat <- x[[method]]
+  if (is.null(mat)) stop(sprintf("No %s samples available.", method))
+
+  densities <- lapply(seq_along(param_names), function(j) {
+    vals <- mat[, j]
+    vals <- vals[is.finite(vals)]
+    if (length(vals) > 2) density(vals, ...) else NULL
+  })
+  names(densities) <- param_names
+  densities
+}
+
+#' @export
+plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
+                             show_point_est = TRUE, show_prior = FALSE, ...) {
+  param_names <- x$param_names
+  n_params <- length(param_names)
+
+  all_methods <- c("prior", "conformal", "bootstrap", "mc_dropout", "quantile")
+
+  # Pick methods
+  if (is.null(method)) {
+    methods <- c()
+    for (m in all_methods) {
+      if (!is.null(x[[m]])) methods <- c(methods, m)
+    }
+  } else {
+    methods <- match.arg(method, all_methods, several.ok = TRUE)
+  }
+  if (show_prior && !"prior" %in% methods && !is.null(x$prior))
+    methods <- c("prior", methods)
+
+  post_methods <- setdiff(methods, "prior")
+  if (length(post_methods) == 0 && !"prior" %in% methods)
+    stop("No posterior samples available.")
+
+  # Colors for methods
+  method_cols <- c(prior = "grey50", conformal = "red", bootstrap = "blue",
+                   mc_dropout = "darkgreen", quantile = "purple")
+  if (length(col) == 1 && length(post_methods) == 1)
+    method_cols[post_methods] <- col
+
+  # Separate sample-based methods from quantile method
+  sample_methods <- intersect(methods, c("prior", "conformal", "bootstrap", "mc_dropout"))
+  has_quantile <- "quantile" %in% methods
+
+  par(mfrow = c(1, n_params))
+  for (j in seq_len(n_params)) {
+    pname <- param_names[j]
+    first <- TRUE
+
+    # Plot density curves for sample-based methods (including prior)
+    for (m in sample_methods) {
+      mat <- x[[m]]
+      if (is.null(mat)) next
+      vals <- mat[, j]
+      vals <- vals[is.finite(vals)]
+      if (length(vals) <= 2) next
+      d <- density(vals)
+      m_lty <- if (m == "prior") 3 else 1
+      if (first) {
+        plot(d, main = pname, xlab = pname, ylab = "Density",
+             col = method_cols[m], lwd = lwd, lty = m_lty, ...)
+        first <- FALSE
+      } else {
+        lines(d, col = method_cols[m], lwd = lwd, lty = m_lty)
+      }
+    }
+
+    # Quantile: interpolate inverse CDF to pseudo-samples, then plot density
+    if (has_quantile && !is.null(x$quantile)) {
+      qvals  <- x$quantile[, j]
+      qprobs <- x$q_probs
+      pseudo <- approx(qprobs, qvals, xout = seq(qprobs[1], qprobs[length(qprobs)],
+                                                   length.out = 10000),
+                        rule = 2)$y
+      d_q <- density(pseudo, n = 1024, adjust = 1.5)
+      if (first) {
+        plot(d_q, main = pname, xlab = pname, ylab = "Density",
+             col = method_cols["quantile"], lwd = lwd, ...)
+        first <- FALSE
+      } else {
+        lines(d_q, col = method_cols["quantile"], lwd = lwd)
+      }
+    }
+
+    if (show_point_est)
+      abline(v = x$point_estimate[j], lty = 2, lwd = lwd)
+
+    # Legend
+    legend_labels <- c()
+    legend_cols   <- c()
+    legend_lty    <- c()
+    for (m in sample_methods) {
+      legend_labels <- c(legend_labels, m)
+      legend_cols   <- c(legend_cols, method_cols[m])
+      legend_lty    <- c(legend_lty, if (m == "prior") 3 else 1)
+    }
+    if (has_quantile) {
+      legend_labels <- c(legend_labels, "quantile")
+      legend_cols   <- c(legend_cols, method_cols["quantile"])
+      legend_lty    <- c(legend_lty, 1)
+    }
+    if (show_point_est) {
+      legend_labels <- c(legend_labels, "Point est.")
+      legend_cols   <- c(legend_cols, "black")
+      legend_lty    <- c(legend_lty, 2)
+    }
+
+    legend("topright", legend = legend_labels, col = legend_cols,
+           lty = legend_lty, lwd = lwd, cex = 0.8)
+  }
 }
 
 # ============================================================================
@@ -1023,6 +1432,411 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
 
 .inv.transform <- function(Y_z, target_mu, target_sd) {
   exp(t(t(Y_z) * target_sd + target_mu))
+}
+
+# ============================================================================
+# Internal: build quantile regression model (same architecture, different head)
+# ============================================================================
+
+.build.nn.qr <- function(hp, data, type, sfs.dims, n_quantiles, n_params, q_probs) {
+  tf <- tensorflow::tf
+
+  # Total outputs: one per (param, quantile) pair
+  n_out <- as.integer(n_params * n_quantiles)
+
+  # Build the backbone — reuse same architecture but with expanded output layer
+  switch(type,
+    sumstat = .build.resnet.qr(hp, data, n_out, n_params, n_quantiles, q_probs),
+    sfs1d   = .build.cnn.qr(hp, data, n_out, n_params, n_quantiles, q_probs, "1d"),
+    sfs2d   = .build.cnn2d.qr(hp, data, n_out, n_params, n_quantiles, q_probs, sfs.dims)
+  )
+}
+
+.build.resnet.qr <- function(hp, data, n_out, n_params, n_quantiles, q_probs) {
+  tf <- tensorflow::tf
+  n_features <- ncol(data$X_train)
+  l2 <- keras::regularizer_l2(hp$l2_reg)
+
+  res_block <- function(x, units) {
+    skip <- x
+    x <- x |>
+      keras::layer_dense(units = as.integer(units), activation = "relu",
+                         kernel_regularizer = l2) |>
+      keras::layer_batch_normalization() |>
+      keras::layer_dense(units = as.integer(units), activation = "linear",
+                         kernel_regularizer = l2) |>
+      keras::layer_batch_normalization()
+    x <- keras::layer_add(list(x, skip))
+    keras::layer_activation(x, activation = "relu")
+  }
+
+  inp <- keras::layer_input(shape = n_features)
+  x <- inp |>
+    keras::layer_dense(units = as.integer(hp$units_1), activation = "relu",
+                       kernel_regularizer = l2) |>
+    keras::layer_batch_normalization()
+  for (i in seq_len(hp$n_resblocks_1)) x <- res_block(x, hp$units_1)
+
+  x <- x |>
+    keras::layer_dense(units = as.integer(hp$units_2), activation = "relu",
+                       kernel_regularizer = l2) |>
+    keras::layer_batch_normalization()
+  if (isTRUE(hp$use_dropout) && hp$dropout > 0)
+    x <- keras::layer_dropout(x, rate = hp$dropout)
+
+  if (hp$n_resblocks_2 > 0)
+    for (i in seq_len(hp$n_resblocks_2)) x <- res_block(x, hp$units_2)
+
+  x <- x |>
+    keras::layer_dense(units = as.integer(hp$units_3), activation = "relu",
+                       kernel_regularizer = l2) |>
+    keras::layer_batch_normalization()
+  if (isTRUE(hp$use_dropout) && hp$dropout > 0)
+    x <- keras::layer_dropout(x, rate = hp$dropout)
+
+  out <- x |> keras::layer_dense(units = n_out, activation = "linear")
+  model <- keras::keras_model(inp, out)
+
+  pinball <- .make.pinball.loss(n_params, n_quantiles, q_probs)
+  model |> keras::compile(
+    loss      = pinball,
+    optimizer = keras::optimizer_adam(learning_rate = hp$learning_rate)
+  )
+  model
+}
+
+.build.cnn.qr <- function(hp, data, n_out, n_params, n_quantiles, q_probs, dim_type) {
+  tf <- tensorflow::tf
+  n_bins    <- data$n_bins
+  l2 <- keras::regularizer_l2(hp$l2_reg)
+  input <- keras::layer_input(shape = c(n_bins, 1L))
+  x <- input
+
+  for (b in seq_len(hp$n_blocks)) {
+    filters <- as.integer(hp$base_filters * (2 ^ min(b - 1, 2)))
+    ks <- as.integer(max(3L, hp$kernel_start - (b - 1) * 2))
+    x <- x |>
+      keras::layer_conv_1d(filters = filters, kernel_size = ks,
+                           padding = "same", kernel_regularizer = l2) |>
+      keras::layer_batch_normalization() |>
+      keras::layer_activation("relu")
+    if (isTRUE(hp$use_residual) && b > 1 && b < hp$n_blocks) {
+      skip <- x
+      x <- x |>
+        keras::layer_conv_1d(filters = filters, kernel_size = ks,
+                             padding = "same", kernel_regularizer = l2) |>
+        keras::layer_batch_normalization() |>
+        keras::layer_activation("relu") |>
+        keras::layer_conv_1d(filters = filters, kernel_size = ks,
+                             padding = "same", kernel_regularizer = l2) |>
+        keras::layer_batch_normalization()
+      x <- keras::layer_add(list(x, skip)) |> keras::layer_activation("relu")
+    }
+  }
+  x <- x |> keras::layer_global_average_pooling_1d()
+
+  for (d in seq_len(hp$n_dense)) {
+    units <- as.integer(hp$dense_units / (2 ^ (d - 1)))
+    x <- x |>
+      keras::layer_dense(units = units, activation = "relu",
+                         kernel_regularizer = l2) |>
+      keras::layer_batch_normalization() |>
+      keras::layer_dropout(rate = hp$dropout)
+  }
+
+  output <- x |> keras::layer_dense(units = n_out, activation = "linear")
+  model <- keras::keras_model(input, output)
+
+  pinball <- .make.pinball.loss(n_params, n_quantiles, q_probs)
+  model |> keras::compile(
+    loss      = pinball,
+    optimizer = keras::optimizer_adam(learning_rate = hp$learning_rate),
+    metrics   = list("mae")
+  )
+  model
+}
+
+.build.cnn2d.qr <- function(hp, data, n_out, n_params, n_quantiles, q_probs, sfs.dims) {
+  tf <- tensorflow::tf
+  dim1 <- sfs.dims[1]; dim2 <- sfs.dims[2]
+  l2 <- keras::regularizer_l2(hp$l2_reg)
+  input <- keras::layer_input(shape = c(dim1, dim2, 1L))
+  x <- input
+
+  for (b in seq_len(hp$n_blocks)) {
+    filters <- as.integer(hp$base_filters * (2 ^ min(b - 1, 2)))
+    ks <- as.integer(max(3L, hp$kernel_start - (b - 1) * 2))
+    x <- x |>
+      keras::layer_conv_2d(filters = filters, kernel_size = c(ks, ks),
+                           padding = "same", kernel_regularizer = l2) |>
+      keras::layer_batch_normalization() |>
+      keras::layer_activation("relu")
+    if (b == 1 || b == (hp$n_blocks %/% 2 + 1))
+      x <- keras::layer_max_pooling_2d(x, pool_size = c(2L, 2L))
+    if (isTRUE(hp$use_residual) && b > 1 && b < hp$n_blocks) {
+      skip <- x
+      x <- x |>
+        keras::layer_conv_2d(filters = filters, kernel_size = c(ks, ks),
+                             padding = "same", kernel_regularizer = l2) |>
+        keras::layer_batch_normalization() |>
+        keras::layer_activation("relu") |>
+        keras::layer_conv_2d(filters = filters, kernel_size = c(ks, ks),
+                             padding = "same", kernel_regularizer = l2) |>
+        keras::layer_batch_normalization()
+      x <- keras::layer_add(list(x, skip)) |> keras::layer_activation("relu")
+    }
+  }
+  x <- x |> keras::layer_global_average_pooling_2d()
+
+  for (d in seq_len(hp$n_dense)) {
+    units <- as.integer(hp$dense_units / (2 ^ (d - 1)))
+    x <- x |>
+      keras::layer_dense(units = units, activation = "relu",
+                         kernel_regularizer = l2) |>
+      keras::layer_batch_normalization() |>
+      keras::layer_dropout(rate = hp$dropout)
+  }
+
+  output <- x |> keras::layer_dense(units = n_out, activation = "linear")
+  model <- keras::keras_model(input, output)
+
+  pinball <- .make.pinball.loss(n_params, n_quantiles, q_probs)
+  model |> keras::compile(
+    loss      = pinball,
+    optimizer = keras::optimizer_adam(learning_rate = hp$learning_rate),
+    metrics   = list("mae")
+  )
+  model
+}
+
+# ============================================================================
+# Internal: pinball (quantile) loss function
+# ============================================================================
+
+.make.pinball.loss <- function(n_params, n_quantiles, q_probs) {
+  tf <- tensorflow::tf
+  # q_probs is a numeric vector of length n_quantiles
+  # output shape: (batch, n_params * n_quantiles)
+  # y_true shape: (batch, n_params) — replicated targets
+
+  q_tensor <- tf$constant(q_probs, dtype = "float32")
+  np <- as.integer(n_params)
+  nq <- as.integer(n_quantiles)
+
+  function(y_true, y_pred) {
+    # y_true: (batch, n_params) — expand to (batch, n_params, n_quantiles)
+    y_true_exp <- tf$expand_dims(y_true, axis = -1L)
+    y_true_rep <- tf$`repeat`(y_true_exp, repeats = nq, axis = -1L)
+
+    # y_pred: (batch, n_params * n_quantiles) — reshape to (batch, n_params, n_quantiles)
+    y_pred_3d <- tf$reshape(y_pred, c(-1L, np, nq))
+
+    # Pinball loss
+    err <- y_true_rep - y_pred_3d
+    loss <- tf$maximum(q_tensor * err, (q_tensor - 1.0) * err)
+    tf$reduce_mean(loss)
+  }
+}
+
+# ============================================================================
+# Internal: quantile regression — train and predict
+# ============================================================================
+
+.run.quantile.regression <- function(reftable, param.cols, observed, best_hp,
+                                     type, sfs.dims, q_probs, max_epochs,
+                                     seed, verbose, data, best_model = NULL) {
+
+  nuisance <- c("mean.rate", "sd.rate")
+  target_cols <- setdiff(param.cols, nuisance)
+  n_params    <- length(target_cols)
+  n_quantiles <- length(q_probs)
+
+  warm_start <- !is.null(best_model)
+
+  if (verbose)
+    cat(sprintf("\nPipeMaster:: Quantile Regression (%d quantiles, warm_start=%s)...\n",
+                n_quantiles, warm_start))
+
+  # Prepare features and targets from reftable
+  all_rows   <- seq_len(nrow(reftable))
+  full_split <- .prep.reftable.split(reftable, param.cols, all_rows, type, sfs.dims)
+  features_all <- full_split$features
+  targets_all  <- full_split$targets
+  n_total <- nrow(features_all)
+
+  # Split into train/val
+  set.seed(seed + 999L)
+  idx <- sample(n_total)
+  n_val   <- max(1L, floor(0.1 * n_total))
+  n_train <- n_total - n_val
+  tr_idx <- idx[1:n_train]
+  va_idx <- idx[(n_train + 1):n_total]
+
+  feat_tr <- features_all[tr_idx, ]
+  feat_va <- features_all[va_idx, ]
+  targ_tr <- targets_all[tr_idx, , drop = FALSE]
+  targ_va <- targets_all[va_idx, , drop = FALSE]
+
+  if (warm_start) {
+    # Use same normalization as best_model (from tune.nn)
+    f_mu <- data$feat_mu; f_sd <- data$feat_sd
+    t_mu <- data$target_mu; t_sd <- data$target_sd
+  } else {
+    # Compute normalization from scratch
+    f_mu <- colMeans(feat_tr)
+    f_sd <- apply(feat_tr, 2, sd); f_sd[f_sd == 0] <- 1
+    t_mu <- colMeans(log(targ_tr))
+    t_sd <- apply(log(targ_tr), 2, sd); t_sd[t_sd == 0] <- 1
+  }
+
+  # Z-score features
+  X_tr <- t((t(feat_tr) - f_mu) / f_sd)
+  X_va <- t((t(feat_va) - f_mu) / f_sd)
+
+  # Log + Z-score targets
+  Y_tr <- t((t(log(targ_tr)) - t_mu) / t_sd)
+  Y_va <- t((t(log(targ_va)) - t_mu) / t_sd)
+
+  # Reshape for CNN architectures
+  if (type == "sfs1d") {
+    n_bins <- ncol(X_tr)
+    dim(X_tr) <- c(nrow(X_tr), n_bins, 1L)
+    dim(X_va) <- c(nrow(X_va), n_bins, 1L)
+  } else if (type == "sfs2d") {
+    X_tr <- array(X_tr, dim = c(nrow(X_tr), sfs.dims[1], sfs.dims[2], 1L))
+    X_va <- array(X_va, dim = c(nrow(X_va), sfs.dims[1], sfs.dims[2], 1L))
+  }
+
+  qr_data <- list(
+    X_train = X_tr, X_val = X_va,
+    Y_train = Y_tr, Y_val = Y_va,
+    n_features = ncol(features_all),
+    n_bins = if (type != "sumstat") ncol(features_all) else NULL,
+    feat_mu = f_mu, feat_sd = f_sd,
+    target_mu = t_mu, target_sd = t_sd
+  )
+
+  # Build quantile regression model
+  tensorflow::tf$random$set_seed(as.integer(seed + 777L))
+  model <- .build.nn.qr(best_hp, qr_data, type, sfs.dims,
+                         n_quantiles, n_params, q_probs)
+
+  # --- Warm-start: copy backbone weights from best_model ---
+  if (warm_start) {
+    orig_w <- best_model$get_weights()
+    qr_w   <- model$get_weights()
+
+    # All weights match except the last 2 (output Dense kernel + bias)
+    # which differ in shape: (units_3, n_params) vs (units_3, n_params*n_quantiles)
+    n_backbone <- length(qr_w) - 2L
+
+    if (length(orig_w) - 2L == n_backbone) {
+      for (i in seq_len(n_backbone)) {
+        qr_w[[i]] <- orig_w[[i]]
+      }
+      model$set_weights(qr_w)
+      if (verbose)
+        cat("PipeMaster:: Warm-start: copied backbone weights from best model\n")
+    } else {
+      warning("Warm-start: backbone weight count mismatch (",
+              length(orig_w) - 2L, " vs ", n_backbone,
+              "). Training from scratch.")
+      warm_start <- FALSE
+    }
+  }
+
+  pinball <- .make.pinball.loss(n_params, n_quantiles, q_probs)
+  bs <- as.integer(best_hp$batch_size)
+
+  if (warm_start) {
+    # Phase 1: freeze backbone, train only output head at full LR
+    n_layers <- length(model$layers)
+    for (i in seq_len(n_layers - 1L)) {
+      layer <- model$layers[[i]]
+      layer$trainable <- FALSE
+    }
+    model |> keras::compile(
+      loss      = pinball,
+      optimizer = keras::optimizer_adam(learning_rate = best_hp$learning_rate)
+    )
+    if (verbose) cat("PipeMaster:: Phase 1: training output head (backbone frozen)...\n")
+    model |> keras::fit(
+      x = qr_data$X_train, y = qr_data$Y_train,
+      validation_data = list(qr_data$X_val, qr_data$Y_val),
+      epochs     = 100L,
+      batch_size = bs,
+      callbacks  = list(
+        keras::callback_early_stopping(monitor = "val_loss", patience = 20L,
+                                       restore_best_weights = TRUE)
+      ),
+      verbose = 0L
+    )
+
+    # Phase 2: unfreeze all, fine-tune at lower LR
+    for (i in seq_len(n_layers - 1L)) {
+      layer <- model$layers[[i]]
+      layer$trainable <- TRUE
+    }
+    model |> keras::compile(
+      loss      = pinball,
+      optimizer = keras::optimizer_adam(learning_rate = best_hp$learning_rate / 10)
+    )
+    if (verbose) cat("PipeMaster:: Phase 2: fine-tuning full model...\n")
+  } else {
+    model |> keras::compile(
+      loss      = pinball,
+      optimizer = keras::optimizer_adam(learning_rate = best_hp$learning_rate)
+    )
+  }
+
+  history <- model |> keras::fit(
+    x = qr_data$X_train, y = qr_data$Y_train,
+    validation_data = list(qr_data$X_val, qr_data$Y_val),
+    epochs     = as.integer(max_epochs),
+    batch_size = bs,
+    callbacks  = list(
+      keras::callback_early_stopping(monitor = "val_loss", patience = 30L,
+                                     restore_best_weights = TRUE),
+      keras::callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 15L,
+                                           factor = 0.5, min_lr = 1e-6, verbose = 0L)
+    ),
+    verbose = 0L
+  )
+
+  vl <- history$metrics$val_loss
+  if (is.null(vl)) vl <- history$history$val_loss
+  n_ep <- length(unlist(vl))
+  final_vl <- min(unlist(vl))
+
+  if (verbose)
+    cat(sprintf("PipeMaster:: QR model trained %d epochs (val_loss=%.6f)\n", n_ep, final_vl))
+
+  # Predict on observed
+  X_obs_qr <- .prep.observed.with(observed, f_mu, f_sd, type, sfs.dims)
+  pred_z <- predict(model, X_obs_qr, verbose = 0L)   # (1, n_params * n_quantiles)
+  pred_z <- as.numeric(pred_z)
+
+  # Reshape to (n_params, n_quantiles) — TF reshape is row-major, so use byrow=TRUE
+  pred_mat_z <- matrix(pred_z, nrow = n_params, ncol = n_quantiles, byrow = TRUE)
+
+  # Inverse transform each value: exp(z * t_sd + t_mu)
+  quant_mat <- matrix(NA_real_, nrow = n_quantiles, ncol = n_params)
+  for (j in seq_len(n_params)) {
+    quant_mat[, j] <- exp(pred_mat_z[j, ] * t_sd[j] + t_mu[j])
+  }
+
+  # Enforce monotonicity: sort quantiles per parameter
+  for (j in seq_len(n_params)) {
+    quant_mat[, j] <- sort(quant_mat[, j])
+  }
+
+  rm(model); gc()
+  tryCatch(keras::k_clear_session(), error = function(e) NULL)
+
+  if (verbose)
+    cat("PipeMaster:: Quantile Regression done\n")
+
+  quant_mat
 }
 
 # ============================================================================
@@ -1194,6 +2008,156 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
 }
 
 # ============================================================================
+# Internal: write standalone conformal worker Rscript
+# ============================================================================
+
+.write.conformal.worker.script <- function(filepath) {
+  lines <- c(
+    '#!/usr/bin/env Rscript',
+    'args <- commandArgs(trailingOnly = TRUE)',
+    'task_id <- as.integer(args[1])',
+    '',
+    '# Threading env (GPU env set externally by pool launcher)',
+    'Sys.setenv(TF_NUM_INTRAOP_THREADS = "1",',
+    '           TF_NUM_INTEROP_THREADS = "1",',
+    '           OMP_NUM_THREADS = "1")',
+    '',
+    'load("shared_data.RData")',
+    '',
+    'out_file <- file.path("results", sprintf("conf_%04d.csv", task_id))',
+    'if (file.exists(out_file)) { cat("skip\\n"); q("no") }',
+    '',
+    'suppressPackageStartupMessages({',
+    '  library(keras)',
+    '  library(tensorflow)',
+    '})',
+    'source("_build_model.R")',
+    '',
+    '# Split into train / calibration',
+    'n_cal   <- floor(cal_frac * n_rows)',
+    'n_train <- n_rows - n_cal',
+    '',
+    'set.seed(seed + task_id * 100)',
+    'idx     <- sample(n_rows)',
+    'tr_idx  <- idx[1:n_train]',
+    'cal_idx <- idx[(n_train + 1):n_rows]',
+    '',
+    'feat_tr    <- features_all[tr_idx, ]',
+    'targ_tr    <- targets_all[tr_idx, , drop = FALSE]',
+    'feat_cal   <- features_all[cal_idx, ]',
+    'params_cal <- targets_all[cal_idx, , drop = FALSE]',
+    '',
+    '# Z-score features using train stats',
+    'f_mu  <- colMeans(feat_tr)',
+    'f_sd  <- apply(feat_tr, 2, sd); f_sd[f_sd == 0] <- 1',
+    'X_tr  <- t((t(feat_tr)  - f_mu) / f_sd)',
+    'X_cal <- t((t(feat_cal) - f_mu) / f_sd)',
+    '',
+    '# Log + Z-score targets using train stats',
+    'Y_tr_log <- log(targ_tr)',
+    't_mu <- colMeans(Y_tr_log)',
+    't_sd <- apply(Y_tr_log, 2, sd); t_sd[t_sd == 0] <- 1',
+    'Y_tr <- t((t(Y_tr_log) - t_mu) / t_sd)',
+    '',
+    '# Reshape for CNN if needed',
+    'if (type == "sfs1d") {',
+    '  n_bins <- ncol(X_tr)',
+    '  dim(X_tr)  <- c(nrow(X_tr), n_bins, 1L)',
+    '  dim(X_cal) <- c(nrow(X_cal), n_bins, 1L)',
+    '} else if (type == "sfs2d") {',
+    '  X_tr  <- array(X_tr,  dim = c(nrow(X_tr),  sfs.dims[1], sfs.dims[2], 1L))',
+    '  X_cal <- array(X_cal, dim = c(nrow(X_cal), sfs.dims[1], sfs.dims[2], 1L))',
+    '}',
+    '',
+    '# Split train into train/val for early stopping',
+    'n_tr_rows <- nrow(X_tr)',
+    'n_va <- max(1L, floor(0.1 * n_tr_rows))',
+    'va_rows <- seq_len(n_va)',
+    'tr_rows <- seq(n_va + 1L, n_tr_rows)',
+    '',
+    'if (type == "sumstat") {',
+    '  X_va_s <- X_tr[va_rows, , drop = FALSE]',
+    '  X_tr_s <- X_tr[tr_rows, , drop = FALSE]',
+    '} else if (type == "sfs1d") {',
+    '  X_va_s <- X_tr[va_rows, , , drop = FALSE]',
+    '  X_tr_s <- X_tr[tr_rows, , , drop = FALSE]',
+    '} else {',
+    '  X_va_s <- X_tr[va_rows, , , , drop = FALSE]',
+    '  X_tr_s <- X_tr[tr_rows, , , , drop = FALSE]',
+    '}',
+    'Y_va_s <- Y_tr[va_rows, , drop = FALSE]',
+    'Y_tr_s <- Y_tr[tr_rows, , drop = FALSE]',
+    '',
+    'ens_data <- list(',
+    '  X_train = X_tr_s, X_val = X_va_s,',
+    '  Y_train = Y_tr_s, Y_val = Y_va_s,',
+    '  n_features = ncol(feat_tr),',
+    '  n_bins = if (type != "sumstat") ncol(feat_tr) else NULL,',
+    '  feat_mu = f_mu, feat_sd = f_sd,',
+    '  target_mu = t_mu, target_sd = t_sd',
+    ')',
+    '',
+    'tf$random$set_seed(as.integer(seed + task_id * 1000))',
+    'model <- build_nn(best_hp, ens_data, type, sfs.dims)',
+    '',
+    'bs <- as.integer(best_hp$batch_size)',
+    'model |> fit(',
+    '  x = ens_data$X_train, y = ens_data$Y_train,',
+    '  validation_data = list(ens_data$X_val, ens_data$Y_val),',
+    '  epochs = as.integer(max_epochs), batch_size = bs,',
+    '  callbacks = list(',
+    '    callback_early_stopping(monitor = "val_loss", patience = 30L,',
+    '                            restore_best_weights = TRUE),',
+    '    callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 15L,',
+    '                                  factor = 0.5, min_lr = 1e-6, verbose = 0L)',
+    '  ),',
+    '  verbose = 0L',
+    ')',
+    '',
+    '# Predict on calibration set -> inverse transform',
+    'cal_pred_z <- predict(model, X_cal, verbose = 0L)',
+    'cal_pred   <- exp(t(t(cal_pred_z) * t_sd + t_mu))',
+    '',
+    '# Residuals: true params - predicted params',
+    'cal_resid <- params_cal - cal_pred',
+    '',
+    '# Center on best model point estimate (avoids multi-peaked posteriors)',
+    'if (!is.null(point_est)) {',
+    '  center <- point_est',
+    '} else {',
+    '  if (type == "sumstat") {',
+    '    obs_aug <- c(observed, log1p(abs(observed)))',
+    '    X_obs <- matrix((obs_aug - f_mu) / f_sd, nrow = 1)',
+    '    X_obs[!is.finite(X_obs)] <- 0',
+    '  } else if (type == "sfs1d") {',
+    '    obs_z <- (log1p(observed) - f_mu) / f_sd',
+    '    obs_z[!is.finite(obs_z)] <- 0',
+    '    X_obs <- array(obs_z, dim = c(1L, length(obs_z), 1L))',
+    '  } else {',
+    '    obs_z <- (log1p(observed) - f_mu) / f_sd',
+    '    obs_z[!is.finite(obs_z)] <- 0',
+    '    X_obs <- array(obs_z, dim = c(1L, sfs.dims[1], sfs.dims[2], 1L))',
+    '  }',
+    '  obs_pred_z <- predict(model, X_obs, verbose = 0L)',
+    '  center <- as.numeric(exp(t(t(obs_pred_z) * t_sd + t_mu)))',
+    '}',
+    '',
+    '# Conformal samples: center[j] + cal_resid[, j]',
+    'conf_samples <- matrix(NA, nrow = nrow(cal_resid), ncol = n_params)',
+    'for (j in seq_len(n_params))',
+    '  conf_samples[, j] <- center[j] + cal_resid[, j]',
+    '',
+    'df <- as.data.frame(conf_samples)',
+    'colnames(df) <- target_cols',
+    'write.csv(df, out_file, row.names = FALSE)',
+    'cat(sprintf("  conf %d done (%d samples)\\n", task_id, nrow(conf_samples)))',
+    'k_clear_session()'
+  )
+
+  writeLines(lines, filepath)
+}
+
+# ============================================================================
 # Internal: prepare reftable split for conformal/bootstrap training
 # ============================================================================
 
@@ -1223,11 +2187,12 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
 }
 
 # ============================================================================
-# Internal: conformal prediction (sequential ensemble)
+# Internal: conformal prediction (sequential ensemble, cores <= 1 fallback)
 # ============================================================================
 
-.run.conformal <- function(reftable, param.cols, observed, best_hp, type, sfs.dims,
-                           n_ensemble, cal.frac, max_epochs, seed, verbose) {
+.run.conformal.sequential <- function(reftable, param.cols, observed, best_hp, type, sfs.dims,
+                           n_ensemble, cal.frac, max_epochs, seed, verbose,
+                           point_est = NULL) {
 
   nuisance <- c("mean.rate", "sd.rate")
   target_cols <- setdiff(param.cols, nuisance)
@@ -1341,15 +2306,20 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
     # Residuals: true params - predicted params (original scale)
     cal_resid <- params_cal - cal_pred
 
-    # Predict on observed (normalized with this split's params)
-    X_obs <- .prep.observed.with(observed, f_mu, f_sd, type, sfs.dims)
-    obs_pred_z <- predict(model, X_obs, verbose = 0L)
-    obs_est <- as.numeric(.inv.transform(obs_pred_z, t_mu, t_sd))
+    # Center conformal samples on best model's point estimate (if provided)
+    # to avoid multi-peaked posteriors from varying per-ensemble obs_est
+    if (!is.null(point_est)) {
+      center <- point_est
+    } else {
+      X_obs <- .prep.observed.with(observed, f_mu, f_sd, type, sfs.dims)
+      obs_pred_z <- predict(model, X_obs, verbose = 0L)
+      center <- as.numeric(.inv.transform(obs_pred_z, t_mu, t_sd))
+    }
 
-    # Conformal samples: obs_est[j] + cal_resid[, j]
+    # Conformal samples: center[j] + cal_resid[, j]
     ens_samples <- matrix(NA, nrow = nrow(cal_resid), ncol = n_params)
     for (j in seq_len(n_params))
-      ens_samples[, j] <- obs_est[j] + cal_resid[, j]
+      ens_samples[, j] <- center[j] + cal_resid[, j]
 
     all_conf_samples[[ens_i]] <- ens_samples
 
@@ -1371,7 +2341,7 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
 # ============================================================================
 
 .run.bootstrap <- function(reftable, param.cols, observed, best_hp, type, sfs.dims,
-                           n_boot, max_epochs, cores, seed, verbose) {
+                           n_boot, max_epochs, cores, gpus = 0, seed, verbose) {
 
   if (cores <= 1) {
     return(.run.bootstrap.sequential(
@@ -1383,7 +2353,7 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
   # Parallel bootstrap via Rscript workers
   .run.bootstrap.parallel(
     reftable, param.cols, observed, best_hp, type, sfs.dims,
-    n_boot, max_epochs, cores, seed, verbose
+    n_boot, max_epochs, cores, gpus = gpus, seed, verbose
   )
 }
 
@@ -1501,50 +2471,16 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
 }
 
 # ============================================================================
-# Internal: parallel bootstrap via Rscript workers
+# Internal: write standalone bootstrap worker Rscript
 # ============================================================================
 
-.run.bootstrap.parallel <- function(reftable, param.cols, observed, best_hp,
-                                    type, sfs.dims, n_boot, max_epochs,
-                                    cores, seed, verbose) {
-
-  nuisance <- c("mean.rate", "sd.rate")
-  target_cols <- setdiff(param.cols, nuisance)
-  n_params <- length(target_cols)
-
-  if (verbose)
-    cat(sprintf("\nPipeMaster:: Bootstrap (%d replicates, %d cores)...\n", n_boot, cores))
-
-  # Create temp working directory
-  work_dir <- tempfile("nn_boot_")
-  dir.create(work_dir, recursive = TRUE)
-  results_dir <- file.path(work_dir, "results")
-  dir.create(results_dir)
-
-  # Prepare full data and save shared .RData
-  all_rows <- seq_len(nrow(reftable))
-  full_split <- .prep.reftable.split(reftable, param.cols, all_rows, type, sfs.dims)
-  features_all <- full_split$features
-  targets_all  <- full_split$targets
-  n_rows <- nrow(features_all)
-
-  # Save everything the worker needs
-  shared_file <- file.path(work_dir, "shared_data.RData")
-  save(features_all, targets_all, observed, best_hp,
-       type, sfs.dims, n_rows, n_params, max_epochs, seed, target_cols,
-       file = shared_file)
-
-  # Save model-building functions so workers are self-contained (no PipeMaster dep)
-  builder_script <- file.path(work_dir, "_build_model.R")
-  .write.builder.script(builder_script, type)
-
-  # Generate worker script
-  worker_script <- file.path(work_dir, "_nn_worker.R")
+.write.bootstrap.worker.script <- function(filepath) {
   writeLines(c(
     '#!/usr/bin/env Rscript',
     'args <- commandArgs(trailingOnly = TRUE)',
     'task_id <- as.integer(args[1])',
     '',
+    '# Threading env (GPU env set externally by pool launcher)',
     'Sys.setenv(TF_NUM_INTRAOP_THREADS = "1",',
     '           TF_NUM_INTEROP_THREADS = "1",',
     '           OMP_NUM_THREADS = "1")',
@@ -1648,45 +2584,349 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
     'write.csv(df, out_file, row.names = FALSE)',
     'cat(sprintf("  boot %d done\\n", task_id))',
     'k_clear_session()'
-  ), worker_script)
+  ), filepath)
+}
 
-  # Launch workers in batches
-  if (verbose)
-    cat(sprintf("  Launching %d Rscript workers, %d concurrent...\n", n_boot, cores))
+# ============================================================================
+# Internal: continuous worker pool with priority scheduling
+# ============================================================================
 
+.launch.rscript.pool <- function(tasks, cores, work_dir,
+                                  timeout_per_task, gpus, verbose,
+                                  max_retries = 2L) {
   old_wd <- getwd()
   setwd(work_dir)
   on.exit(setwd(old_wd), add = TRUE)
 
-  # Process in batches of `cores`
-  batch_starts <- seq(1, n_boot, by = cores)
+  logs_dir <- file.path(work_dir, "logs")
+  dir.create(logs_dir, showWarnings = FALSE, recursive = TRUE)
+  sentinels_dir <- file.path(work_dir, "sentinels")
+  dir.create(sentinels_dir, showWarnings = FALSE, recursive = TRUE)
 
-  for (batch_start in batch_starts) {
-    batch_end <- min(batch_start + cores - 1, n_boot)
-    batch_ids <- batch_start:batch_end
+  n_tasks <- length(tasks)
+  pending   <- seq_len(n_tasks)
+  active    <- list()
+  completed <- integer(0)
+  failed    <- integer(0)
+  gpu_counter <- 0L
+  retry_count <- integer(n_tasks)  # starts at 0 for each task
 
-    # Launch batch: background processes via system()
-    for (id in batch_ids) {
-      out_csv <- file.path("results", sprintf("boot_%04d.csv", id))
-      if (file.exists(out_csv)) next
-      cmd <- sprintf("Rscript %s %d > /dev/null 2>&1 &",
-                     shQuote(worker_script), id)
-      system(cmd, wait = FALSE)
+  launch_one <- function(task_idx) {
+    task <- tasks[[task_idx]]
+    attempt <- retry_count[task_idx] + 1L
+    log_file <- file.path("logs", sprintf("%s_%04d_a%d.log",
+                                          task$prefix, task$id, attempt))
+
+    # Sentinel file paths (include attempt to avoid stale files)
+    done_file <- file.path(sentinels_dir,
+                           sprintf("%s_%04d_a%d.done", task$prefix, task$id, attempt))
+    pid_file  <- file.path(sentinels_dir,
+                           sprintf("%s_%04d_a%d.pid", task$prefix, task$id, attempt))
+
+    # GPU environment
+    if (gpus > 0) {
+      gpu_id <- gpu_counter %% gpus
+      gpu_counter <<- gpu_counter + 1L
+      gpu_env <- sprintf("CUDA_VISIBLE_DEVICES=%d TF_FORCE_GPU_ALLOW_GROWTH=true",
+                         gpu_id)
+    } else {
+      gpu_env <- "CUDA_VISIBLE_DEVICES=-1"
     }
 
-    # Poll until all output CSVs exist or timeout
-    expected <- file.path("results", sprintf("boot_%04d.csv", batch_ids))
-    timeout <- max_epochs * 10  # generous timeout in seconds
-    elapsed <- 0
-    while (elapsed < timeout) {
-      if (all(file.exists(expected))) break
-      Sys.sleep(2)
-      elapsed <- elapsed + 2
+    # Shell wrapper: run Rscript, capture exit code in .done file, record PID
+    cmd <- sprintf(
+      "{ env %s Rscript %s %d > %s 2>&1; echo $? > %s; } & echo $! > %s",
+      gpu_env, shQuote(task$script), task$id,
+      shQuote(log_file), shQuote(done_file), shQuote(pid_file))
+    system(cmd, wait = FALSE)
+
+    list(task_idx = task_idx, start_time = Sys.time(), log_file = log_file,
+         done_file = done_file, pid_file = pid_file, attempt = attempt)
+  }
+
+  # Helper: read last N lines from a log file for diagnostics
+  .log_tail <- function(log_rel_path, n = 20L) {
+    log_path <- file.path(work_dir, log_rel_path)
+    if (!file.exists(log_path)) return(NULL)
+    log_lines <- readLines(log_path, warn = FALSE)
+    n_lines <- length(log_lines)
+    if (n_lines == 0L) return(NULL)
+    log_lines[max(1L, n_lines - n + 1L):n_lines]
+  }
+
+  # Fill initial slots (conformal tasks come first = priority)
+  while (length(active) < cores && length(pending) > 0) {
+    tidx <- pending[1]
+    pending <- pending[-1]
+    active[[length(active) + 1]] <- launch_one(tidx)
+  }
+
+  if (verbose)
+    cat(sprintf("  [pool] Launched %d / %d tasks (%d pending)\n",
+                length(active), n_tasks, length(pending)))
+
+  # Poll loop — check every second, 4-way detection
+  while (length(active) > 0) {
+    Sys.sleep(1)
+
+    still_active <- list()
+    for (a in active) {
+      task <- tasks[[a$task_idx]]
+      elapsed_sec <- as.numeric(difftime(Sys.time(), a$start_time, units = "secs"))
+
+      if (file.exists(task$result)) {
+        # --- SUCCESS: result CSV exists ---
+        completed <- c(completed, a$task_idx)
+        if (verbose)
+          cat(sprintf("  [pool] %s %d done (%d/%d, %.0fs)\n",
+                      task$prefix, task$id,
+                      length(completed), n_tasks, elapsed_sec))
+
+      } else if (file.exists(a$done_file)) {
+        # --- CRASH: process exited but no result CSV ---
+        exit_code <- tryCatch(
+          as.integer(trimws(readLines(a$done_file, n = 1L, warn = FALSE))),
+          error = function(e) NA_integer_)
+        tail_lines <- .log_tail(a$log_file)
+
+        if (retry_count[a$task_idx] < max_retries) {
+          retry_count[a$task_idx] <- retry_count[a$task_idx] + 1L
+          if (verbose)
+            cat(sprintf("  [pool] %s %d CRASHED (exit %s, %.0fs) — retry %d/%d\n",
+                        task$prefix, task$id,
+                        if (is.na(exit_code)) "?" else as.character(exit_code),
+                        elapsed_sec,
+                        retry_count[a$task_idx], max_retries))
+          # Re-queue at front of pending so it gets the next free slot
+          pending <- c(a$task_idx, pending)
+        } else {
+          failed <- c(failed, a$task_idx)
+          tail_msg <- if (!is.null(tail_lines))
+            paste(tail_lines, collapse = "\n") else "(no log)"
+          warning(sprintf(
+            "Worker %s %d crashed (exit %s) after %d attempt(s), %.0fs. Last log:\n%s",
+            task$prefix, task$id,
+            if (is.na(exit_code)) "?" else as.character(exit_code),
+            max_retries + 1L, elapsed_sec, tail_msg),
+            call. = FALSE)
+        }
+
+      } else if (elapsed_sec > timeout_per_task) {
+        # --- TIMEOUT: kill process and fail/retry ---
+        # Try to kill the child process
+        if (file.exists(a$pid_file)) {
+          pid <- tryCatch(
+            as.integer(trimws(readLines(a$pid_file, n = 1L, warn = FALSE))),
+            error = function(e) NA_integer_)
+          if (!is.na(pid)) tryCatch(tools::pskill(pid), error = function(e) NULL)
+        }
+
+        if (retry_count[a$task_idx] < max_retries) {
+          retry_count[a$task_idx] <- retry_count[a$task_idx] + 1L
+          if (verbose)
+            cat(sprintf("  [pool] %s %d TIMEOUT (%.0fs) — retry %d/%d\n",
+                        task$prefix, task$id, elapsed_sec,
+                        retry_count[a$task_idx], max_retries))
+          pending <- c(a$task_idx, pending)
+        } else {
+          failed <- c(failed, a$task_idx)
+          tail_lines <- .log_tail(a$log_file)
+          tail_msg <- if (!is.null(tail_lines))
+            paste(tail_lines, collapse = "\n") else "(no log)"
+          warning(sprintf(
+            "Worker %s %d timed out after %d attempt(s), %.0fs. Last log:\n%s",
+            task$prefix, task$id, max_retries + 1L, elapsed_sec, tail_msg),
+            call. = FALSE)
+        }
+
+      } else {
+        # --- RUNNING: still within timeout ---
+        still_active[[length(still_active) + 1]] <- a
+      }
     }
+    active <- still_active
+
+    # Backfill freed slots from pending queue
+    while (length(active) < cores && length(pending) > 0) {
+      tidx <- pending[1]
+      pending <- pending[-1]
+      active[[length(active) + 1]] <- launch_one(tidx)
+    }
+  }
+
+  list(completed = completed, failed = failed)
+}
+
+# ============================================================================
+# Internal: unified parallel pool for conformal + bootstrap
+# ============================================================================
+
+.run.parallel.pool <- function(reftable, param.cols, observed, best_hp,
+                                type, sfs.dims, do_conformal, do_bootstrap,
+                                n_ensemble, n_boot, cal.frac, max_epochs,
+                                cores, gpus, seed, verbose,
+                                point_est = NULL) {
+
+  nuisance    <- c("mean.rate", "sd.rate")
+  target_cols <- setdiff(param.cols, nuisance)
+  n_params    <- length(target_cols)
+
+  # Create temp working directory
+  work_dir    <- tempfile("nn_pool_")
+  dir.create(work_dir, recursive = TRUE)
+  results_dir <- file.path(work_dir, "results")
+  dir.create(results_dir)
+
+  # Prepare and save shared data
+  all_rows   <- seq_len(nrow(reftable))
+  full_split <- .prep.reftable.split(reftable, param.cols, all_rows, type, sfs.dims)
+  features_all <- full_split$features
+  targets_all  <- full_split$targets
+  n_rows     <- nrow(features_all)
+  cal_frac   <- cal.frac
+
+  shared_file <- file.path(work_dir, "shared_data.RData")
+  save(features_all, targets_all, observed, best_hp,
+       type, sfs.dims, n_rows, n_params, max_epochs, seed, target_cols,
+       cal_frac, point_est,
+       file = shared_file)
+
+  # Write model builder script
+  .write.builder.script(file.path(work_dir, "_build_model.R"), type)
+
+  # Build task list: conformal first (priority), then bootstrap
+  tasks <- list()
+
+  if (do_conformal) {
+    .write.conformal.worker.script(file.path(work_dir, "_conf_worker.R"))
+    for (i in seq_len(n_ensemble)) {
+      tasks[[length(tasks) + 1]] <- list(
+        script = "_conf_worker.R", id = i,
+        result = sprintf("results/conf_%04d.csv", i),
+        prefix = "conf"
+      )
+    }
+  }
+
+  if (do_bootstrap) {
+    .write.bootstrap.worker.script(file.path(work_dir, "_boot_worker.R"))
+    for (b in seq_len(n_boot)) {
+      tasks[[length(tasks) + 1]] <- list(
+        script = "_boot_worker.R", id = b,
+        result = sprintf("results/boot_%04d.csv", b),
+        prefix = "boot"
+      )
+    }
+  }
+
+  n_conf <- if (do_conformal) n_ensemble else 0L
+  n_boot_tasks <- if (do_bootstrap) n_boot else 0L
+
+  if (verbose)
+    cat(sprintf("\nPipeMaster:: Unified pool: %d conformal + %d bootstrap tasks, %d cores%s\n",
+                n_conf, n_boot_tasks, cores,
+                if (gpus > 0) sprintf(", %d GPUs", gpus) else ""))
+
+  # Launch pool
+  pool_result <- .launch.rscript.pool(tasks, cores, work_dir,
+                                       timeout_per_task = max_epochs * 10,
+                                       gpus = gpus, verbose = verbose)
+
+  # Collect conformal results
+  result <- list(conformal = NULL, bootstrap = NULL)
+
+  if (do_conformal) {
+    conf_list <- list()
+    for (i in seq_len(n_ensemble)) {
+      csv_file <- file.path(results_dir, sprintf("conf_%04d.csv", i))
+      if (file.exists(csv_file)) {
+        conf_list[[length(conf_list) + 1]] <- as.matrix(read.csv(csv_file))
+      }
+    }
+    if (length(conf_list) > 0)
+      result$conformal <- do.call(rbind, conf_list)
 
     if (verbose)
-      cat(sprintf("  Progress: %d/%d\n", batch_end, n_boot))
+      cat(sprintf("PipeMaster:: Conformal: %d samples from %d/%d ensemble models\n",
+                  if (!is.null(result$conformal)) nrow(result$conformal) else 0L,
+                  length(conf_list), n_ensemble))
   }
+
+  # Collect bootstrap results
+  if (do_bootstrap) {
+    boot_matrix <- matrix(NA, nrow = n_boot, ncol = n_params)
+    for (b in seq_len(n_boot)) {
+      csv_file <- file.path(results_dir, sprintf("boot_%04d.csv", b))
+      if (file.exists(csv_file)) {
+        row <- read.csv(csv_file)
+        boot_matrix[b, ] <- as.numeric(row[1, ])
+      }
+    }
+    result$bootstrap <- boot_matrix
+
+    n_fail <- sum(is.na(boot_matrix[, 1]))
+    if (verbose)
+      cat(sprintf("PipeMaster:: Bootstrap: %d/%d successful\n",
+                  n_boot - n_fail, n_boot))
+  }
+
+  # Clean up temp files
+  unlink(work_dir, recursive = TRUE)
+
+  result
+}
+
+# ============================================================================
+# Internal: parallel bootstrap via Rscript workers
+# ============================================================================
+
+.run.bootstrap.parallel <- function(reftable, param.cols, observed, best_hp,
+                                    type, sfs.dims, n_boot, max_epochs,
+                                    cores, gpus = 0, seed, verbose) {
+
+  nuisance <- c("mean.rate", "sd.rate")
+  target_cols <- setdiff(param.cols, nuisance)
+  n_params <- length(target_cols)
+
+  if (verbose)
+    cat(sprintf("\nPipeMaster:: Bootstrap (%d replicates, %d cores)...\n", n_boot, cores))
+
+  # Create temp working directory
+  work_dir <- tempfile("nn_boot_")
+  dir.create(work_dir, recursive = TRUE)
+  results_dir <- file.path(work_dir, "results")
+  dir.create(results_dir)
+
+  # Prepare full data and save shared .RData
+  all_rows <- seq_len(nrow(reftable))
+  full_split <- .prep.reftable.split(reftable, param.cols, all_rows, type, sfs.dims)
+  features_all <- full_split$features
+  targets_all  <- full_split$targets
+  n_rows <- nrow(features_all)
+
+  shared_file <- file.path(work_dir, "shared_data.RData")
+  save(features_all, targets_all, observed, best_hp,
+       type, sfs.dims, n_rows, n_params, max_epochs, seed, target_cols,
+       file = shared_file)
+
+  # Write model builder and worker scripts
+  .write.builder.script(file.path(work_dir, "_build_model.R"), type)
+  .write.bootstrap.worker.script(file.path(work_dir, "_boot_worker.R"))
+
+  # Build task list
+  tasks <- list()
+  for (b in seq_len(n_boot)) {
+    tasks[[b]] <- list(
+      script = "_boot_worker.R", id = b,
+      result = sprintf("results/boot_%04d.csv", b),
+      prefix = "boot"
+    )
+  }
+
+  # Launch via continuous pool
+  pool_result <- .launch.rscript.pool(tasks, cores, work_dir,
+                                       timeout_per_task = max_epochs * 10,
+                                       gpus = gpus, verbose = verbose)
 
   # Collect results
   boot_matrix <- matrix(NA, nrow = n_boot, ncol = n_params)
