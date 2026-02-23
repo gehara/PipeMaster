@@ -1312,40 +1312,59 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   par(mfrow = c(1, n_params))
   for (j in seq_len(n_params)) {
     pname <- param_names[j]
-    first <- TRUE
 
-    # Plot density curves for sample-based methods (including prior)
+    # Use prior range as valid bounds for density estimation and x-axis
+    prior_range <- if (!is.null(x$prior)) range(x$prior[, j], na.rm = TRUE) else NULL
+
+    # --- Pre-compute all density objects ---
+    densities   <- list()
+    density_lty <- list()
+
     for (m in sample_methods) {
       mat <- x[[m]]
       if (is.null(mat)) next
       vals <- mat[, j]
       vals <- vals[is.finite(vals)]
       if (length(vals) <= 2) next
-      d <- density(vals)
-      m_lty <- if (m == "prior") 3 else 1
-      if (first) {
-        plot(d, main = pname, xlab = pname, ylab = "Density",
-             col = method_cols[m], lwd = lwd, lty = m_lty, ...)
-        first <- FALSE
+      if (!is.null(prior_range)) {
+        d <- density(vals, from = prior_range[1], to = prior_range[2])
       } else {
-        lines(d, col = method_cols[m], lwd = lwd, lty = m_lty)
+        d <- density(vals)
       }
+      densities[[m]]   <- d
+      density_lty[[m]] <- if (m == "prior") 3 else 1
     }
 
-    # Quantile: interpolate inverse CDF to pseudo-samples, then plot density
     if (has_quantile && !is.null(x$quantile)) {
       qvals  <- x$quantile[, j]
       qprobs <- x$q_probs
       pseudo <- approx(qprobs, qvals, xout = seq(qprobs[1], qprobs[length(qprobs)],
                                                    length.out = 10000),
                         rule = 2)$y
-      d_q <- density(pseudo, n = 1024, adjust = 1.5)
+      if (!is.null(prior_range)) {
+        d_q <- density(pseudo, n = 1024, adjust = 1.5,
+                       from = prior_range[1], to = prior_range[2])
+      } else {
+        d_q <- density(pseudo, n = 1024, adjust = 1.5)
+      }
+      densities[["quantile"]]   <- d_q
+      density_lty[["quantile"]] <- 1
+    }
+
+    # --- Derive common y-range across all densities ---
+    combined_ylim <- c(0, max(vapply(densities, function(d) max(d$y), numeric(1))))
+
+    # --- Plot all curves with shared axes ---
+    first <- TRUE
+    for (m in names(densities)) {
+      d <- densities[[m]]
       if (first) {
-        plot(d_q, main = pname, xlab = pname, ylab = "Density",
-             col = method_cols["quantile"], lwd = lwd, ...)
+        plot(d, main = pname, xlab = pname, ylab = "Density",
+             col = method_cols[m], lwd = lwd, lty = density_lty[[m]],
+             xlim = prior_range, ylim = combined_ylim, ...)
         first <- FALSE
       } else {
-        lines(d_q, col = method_cols["quantile"], lwd = lwd)
+        lines(d, col = method_cols[m], lwd = lwd, lty = density_lty[[m]])
       }
     }
 
@@ -1357,11 +1376,13 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     legend_cols   <- c()
     legend_lty    <- c()
     for (m in sample_methods) {
-      legend_labels <- c(legend_labels, m)
-      legend_cols   <- c(legend_cols, method_cols[m])
-      legend_lty    <- c(legend_lty, if (m == "prior") 3 else 1)
+      if (!is.null(densities[[m]])) {
+        legend_labels <- c(legend_labels, m)
+        legend_cols   <- c(legend_cols, method_cols[m])
+        legend_lty    <- c(legend_lty, if (m == "prior") 3 else 1)
+      }
     }
-    if (has_quantile) {
+    if (has_quantile && !is.null(densities[["quantile"]])) {
       legend_labels <- c(legend_labels, "quantile")
       legend_cols   <- c(legend_cols, method_cols["quantile"])
       legend_lty    <- c(legend_lty, 1)
