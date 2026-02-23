@@ -49,6 +49,32 @@ tune.nn <- function(reftable, param.cols,
          "Install with: install.packages(c('keras', 'tensorflow'))\n",
          "Then run: keras::install_keras()")
 
+  # --- Memory guard for parallel mode ---
+  if (cores > 1L) {
+    avail_gb <- tryCatch({
+      mem_info <- system("free -b 2>/dev/null", intern = TRUE)
+      if (length(mem_info) >= 2) {
+        fields <- as.numeric(strsplit(trimws(mem_info[2]), "\\s+")[[1]])
+        fields[7] / 1e9  # "available" column (7th field)
+      } else {
+        NA_real_
+      }
+    }, error = function(e) NA_real_)
+
+    if (!is.na(avail_gb)) {
+      est_per_worker <- 1.5  # ~1.5 GB per TF worker (runtime + data copy)
+      est_total <- cores * est_per_worker
+      if (est_total > avail_gb * 0.85) {
+        safe_cores <- max(1L, floor(avail_gb * 0.85 / est_per_worker))
+        warning(sprintf(
+          paste0("Requested cores=%d may exceed available RAM (%.1f GB free, ",
+                 "~%.0f GB needed). Consider cores=%d or fewer to avoid swapping."),
+          cores, avail_gb, est_total, safe_cores),
+          call. = FALSE)
+      }
+    }
+  }
+
   # --- Enable GPU memory growth (prevent TF from grabbing all VRAM) ---
   # Only in sequential mode; parallel workers set CUDA_VISIBLE_DEVICES per-process
   if (cores <= 1L) {
