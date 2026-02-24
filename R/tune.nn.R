@@ -1021,7 +1021,7 @@ tune.nn <- function(reftable, param.cols,
 
   search_seeds        <- seed + (seq_len(n_searches) - 1L) * 10000L
   saved_lib_paths     <- .libPaths()
-  threads_per_worker  <- max(1L, floor(parallel::detectCores(logical = FALSE) / n_concurrent))
+  threads_per_worker  <- .compute.threads.per.worker(n_concurrent)
   search_max_epochs   <- as.integer(max_epochs)
   search_eta          <- as.integer(eta)
   search_space_saved  <- search_space
@@ -2504,12 +2504,13 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     'args <- commandArgs(trailingOnly = TRUE)',
     'task_id <- as.integer(args[1])',
     '',
-    '# Threading env (GPU env set externally by pool launcher)',
-    'Sys.setenv(TF_NUM_INTRAOP_THREADS = "1",',
-    '           TF_NUM_INTEROP_THREADS = "1",',
-    '           OMP_NUM_THREADS = "1")',
-    '',
     'load("shared_data.RData")',
+    '',
+    '# Threading env (GPU env set externally by pool launcher)',
+    'n_threads <- as.character(threads_per_worker)',
+    'Sys.setenv(TF_NUM_INTRAOP_THREADS = n_threads,',
+    '           TF_NUM_INTEROP_THREADS = "1",',
+    '           OMP_NUM_THREADS = n_threads)',
     '',
     'out_file <- file.path("results", sprintf("conf_%04d.csv", task_id))',
     'if (file.exists(out_file)) { cat("skip\\n"); q("no") }',
@@ -2974,12 +2975,13 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     'args <- commandArgs(trailingOnly = TRUE)',
     'task_id <- as.integer(args[1])',
     '',
-    '# Threading env (GPU env set externally by pool launcher)',
-    'Sys.setenv(TF_NUM_INTRAOP_THREADS = "1",',
-    '           TF_NUM_INTEROP_THREADS = "1",',
-    '           OMP_NUM_THREADS = "1")',
-    '',
     'load("shared_data.RData")',
+    '',
+    '# Threading env (GPU env set externally by pool launcher)',
+    'n_threads <- as.character(threads_per_worker)',
+    'Sys.setenv(TF_NUM_INTRAOP_THREADS = n_threads,',
+    '           TF_NUM_INTEROP_THREADS = "1",',
+    '           OMP_NUM_THREADS = n_threads)',
     '',
     'out_file <- file.path("results", sprintf("boot_%04d.csv", task_id))',
     'if (file.exists(out_file)) { cat("skip\\n"); q("no") }',
@@ -3079,6 +3081,19 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     'cat(sprintf("  boot %d done\\n", task_id))',
     'k_clear_session()'
   ), filepath)
+}
+
+# ============================================================================
+# Internal: compute how many TF intra-op threads each worker should use
+# ============================================================================
+
+.compute.threads.per.worker <- function(cores) {
+  n_physical <- tryCatch(
+    parallel::detectCores(logical = FALSE),
+    error = function(e) parallel::detectCores()
+  )
+  if (is.na(n_physical)) n_physical <- cores
+  max(1L, floor(n_physical / cores))
 }
 
 # ============================================================================
@@ -3290,10 +3305,11 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   n_rows     <- nrow(features_all)
   cal_frac   <- cal.frac
 
+  threads_per_worker <- .compute.threads.per.worker(cores)
   shared_file <- file.path(work_dir, "shared_data.RData")
   save(features_all, targets_all, observed, best_hp,
        type, sfs.dims, n_rows, n_params, max_epochs, seed, target_cols,
-       cal_frac, point_est,
+       cal_frac, point_est, threads_per_worker,
        file = shared_file)
 
   # Write model builder script
@@ -3328,8 +3344,8 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   n_boot_tasks <- if (do_bootstrap) n_boot else 0L
 
   if (verbose)
-    cat(sprintf("\nPipeMaster:: Unified pool: %d conformal + %d bootstrap tasks, %d cores%s\n",
-                n_conf, n_boot_tasks, cores,
+    cat(sprintf("\nPipeMaster:: Unified pool: %d conformal + %d bootstrap tasks, %d cores (%d threads/worker)%s\n",
+                n_conf, n_boot_tasks, cores, threads_per_worker,
                 if (gpus > 0) sprintf(", %d GPUs", gpus) else ""))
 
   # Launch pool
@@ -3393,9 +3409,11 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   nuisance <- c("mean.rate", "sd.rate")
   target_cols <- setdiff(param.cols, nuisance)
   n_params <- length(target_cols)
+  threads_per_worker <- .compute.threads.per.worker(cores)
 
   if (verbose)
-    cat(sprintf("\nPipeMaster:: Bootstrap (%d replicates, %d cores)...\n", n_boot, cores))
+    cat(sprintf("\nPipeMaster:: Bootstrap (%d replicates, %d cores, %d threads/worker)...\n",
+                n_boot, cores, threads_per_worker))
 
   # Create temp working directory
   work_dir <- tempfile("nn_boot_")
@@ -3414,6 +3432,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   shared_file <- file.path(work_dir, "shared_data.RData")
   save(features_all, targets_all, observed, best_hp,
        type, sfs.dims, n_rows, n_params, max_epochs, seed, target_cols,
+       threads_per_worker,
        file = shared_file)
 
   # Write model builder and worker scripts
@@ -4195,9 +4214,11 @@ load.gan.result <- function(path) {
   dir.create(weights_dir)
 
   # Save shared training data
+  threads_per_worker <- .compute.threads.per.worker(cores)
   shared_file <- file.path(work_dir, "shared_data.RData")
   save(X_train, X_val, Y_train, Y_val,
        n_features, n_targets, max_epochs, patience, seed,
+       threads_per_worker,
        file = shared_file)
 
   # Save task data (configs)
@@ -4220,8 +4241,8 @@ load.gan.result <- function(path) {
   })
 
   if (verbose)
-    cat(sprintf("PipeMaster:: [parallel] %d GAN configs on %d cores%s\n",
-                n_configs, cores,
+    cat(sprintf("PipeMaster:: [parallel] %d GAN configs on %d cores (%d threads/worker)%s\n",
+                n_configs, cores, threads_per_worker,
                 if (gpus > 0) sprintf(", %d GPUs", gpus) else ""))
 
   # Launch pool
@@ -4312,13 +4333,14 @@ load.gan.result <- function(path) {
     'args <- commandArgs(trailingOnly = TRUE)',
     'task_id <- as.integer(args[1])',
     '',
-    '# Threading env (GPU env set externally by pool launcher)',
-    'Sys.setenv(TF_NUM_INTRAOP_THREADS = "1",',
-    '           TF_NUM_INTEROP_THREADS = "1",',
-    '           OMP_NUM_THREADS = "1")',
-    '',
     'load("shared_data.RData")',
     'load("gan_tasks.RData")',
+    '',
+    '# Threading env (GPU env set externally by pool launcher)',
+    'n_threads <- as.character(threads_per_worker)',
+    'Sys.setenv(TF_NUM_INTRAOP_THREADS = n_threads,',
+    '           TF_NUM_INTEROP_THREADS = "1",',
+    '           OMP_NUM_THREADS = n_threads)',
     '',
     'out_file <- file.path("results", sprintf("gan_%04d.csv", task_id))',
     'if (file.exists(out_file)) { cat("skip\\n"); q("no") }',
