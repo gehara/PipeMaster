@@ -1148,15 +1148,7 @@ tune.nn <- function(reftable, param.cols,
     '',
     '# Restore library paths and load PipeMaster',
     '.libPaths(saved_lib_paths)',
-    'pm_loaded <- tryCatch({',
-    '  suppressPackageStartupMessages(library(PipeMaster))',
-    '  TRUE',
-    '}, error = function(e) FALSE)',
-    'if (!pm_loaded) {',
-    '  if (requireNamespace("devtools", quietly = TRUE)) {',
-    '    devtools::load_all(".", quiet = TRUE)',
-    '  } else stop("Cannot load PipeMaster")',
-    '}',
+    'suppressPackageStartupMessages(library(PipeMaster))',
     '',
     'suppressPackageStartupMessages({',
     '  library(keras)',
@@ -1324,7 +1316,9 @@ load.tune.result <- function(path) {
 #'   or \code{"sfs2d"}. If NULL, uses the type stored in tune.result.
 #' @param sfs.dims integer vector — for 2D CNN only. If NULL, uses tune.result.
 #' @param method character — one or more of \code{"conformal"}, \code{"bootstrap"},
-#'   \code{"mc_dropout"}, \code{"quantile"}.
+#'   \code{"mc_dropout"}, \code{"quantile"}, \code{"point"}.
+#'   Use \code{"point"} alone for a fast point estimate with no retraining or
+#'   resampling (\code{reftable} and \code{param.cols} are not required).
 #' @param n_boot integer — number of bootstrap replicates (default 20).
 #' @param n_ensemble integer — number of ensemble models for conformal (default 1).
 #' @param cal.frac numeric — fraction of reftable used as calibration set (default 0.1).
@@ -1368,7 +1362,7 @@ load.tune.result <- function(path) {
 #' @export
 nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL,
                        type = NULL, sfs.dims = NULL,
-                       method = c("conformal", "bootstrap", "mc_dropout", "quantile"),
+                       method = c("conformal", "bootstrap", "mc_dropout", "quantile", "point"),
                        n_boot = 20, n_ensemble = 1, cal.frac = 0.1,
                        n_mc = 1000L, mc_dropout_rate = NULL,
                        n_quantiles = 19L, q_probs = NULL,
@@ -1380,8 +1374,9 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
       !requireNamespace("tensorflow", quietly = TRUE))
     stop("nn.predict() requires the 'keras' and 'tensorflow' R packages.")
 
-  method <- match.arg(method, c("conformal", "bootstrap", "mc_dropout", "quantile"),
+  method <- match.arg(method, c("conformal", "bootstrap", "mc_dropout", "quantile", "point"),
                       several.ok = TRUE)
+  point_only <- length(method) == 1L && method == "point"
 
   # Generate q_probs from n_quantiles if not provided
   if (is.null(q_probs)) {
@@ -1406,7 +1401,7 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
   needs_reftable <- any(c("conformal", "bootstrap", "quantile") %in% method)
   if (needs_reftable && is.null(reftable))
     stop("reftable is required for conformal, bootstrap, and quantile methods")
-  if (!is.null(reftable) && is.null(param.cols))
+  if (!point_only && !is.null(reftable) && is.null(param.cols))
     stop("param.cols is required when reftable is provided")
 
   param_names <- if (!is.null(param.cols)) param.cols else colnames(data$Y_train)
@@ -1423,7 +1418,8 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
 
   # --- Header ---
   method_labels <- c(conformal = "Conformal", bootstrap = "Bootstrap",
-                     mc_dropout = "MC Dropout", quantile = "Quantile Regression")
+                     mc_dropout = "MC Dropout", quantile = "Quantile Regression",
+                     point = "Point")
   method_str <- paste(method_labels[method], collapse = " + ")
 
   if (verbose) {
@@ -1447,6 +1443,22 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
   if (verbose) {
     est_str <- paste(sprintf("%s=%.0f", param_names, point_est), collapse = " ")
     cat(sprintf("PipeMaster:: Point estimate: %s\n", est_str))
+  }
+
+  # --- Early return for point-only ---
+  if (point_only) {
+    result <- list(
+      point_estimate = point_est,
+      conformal      = NULL,
+      bootstrap      = NULL,
+      mc_dropout     = NULL,
+      quantile       = NULL,
+      q_probs        = NULL,
+      prior          = NULL,
+      param_names    = param_names
+    )
+    class(result) <- "nn.posterior"
+    return(result)
   }
 
   # --- Uncertainty quantification ---
