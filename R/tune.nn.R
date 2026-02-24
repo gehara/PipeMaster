@@ -3924,7 +3924,7 @@ tune.gan <- function(reftable, param.cols,
     }, error = function(e) NA_real_)
 
     if (!is.na(avail_gb)) {
-      est_per_worker <- 1.5
+      est_per_worker <- 3.0  # GAN workers: R data + TF graph + generator + critic
       est_total <- cores * est_per_worker
       if (est_total > avail_gb * 0.85) {
         warning(sprintf(
@@ -4373,6 +4373,18 @@ load.gan.result <- function(path) {
     '  library(tensorflow)',
     '  library(reticulate)',
     '})',
+    '',
+    '# GPU memory growth (prevents TF from grabbing all VRAM)',
+    'tryCatch({',
+    '  tf_gpus <- tf$config$list_physical_devices("GPU")',
+    '  for (gpu in tf_gpus)',
+    '    tf$config$experimental$set_memory_growth(gpu, TRUE)',
+    '}, error = function(e) NULL)',
+    '',
+    '# Pin TF threading after library load',
+    'tf$config$threading$set_intra_op_parallelism_threads(as.integer(n_threads))',
+    'tf$config$threading$set_inter_op_parallelism_threads(1L)',
+    '',
     'source("_gan_builder.R")',
     '',
     'hp <- gan_configs[[task_id]]',
