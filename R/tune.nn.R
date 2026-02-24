@@ -61,7 +61,7 @@ tune.nn <- function(reftable, param.cols,
                     exclude.cols = NULL,
                     val.frac = 0.1,
                     n_searches = 1L, cores = 1L, gpus = 0L,
-                    gpu.threshold = 4L,
+                    gpu.threshold = 4L, greedy = TRUE,
                     seed = 42, verbose = TRUE) {
 
   # --- Dependency check ---
@@ -145,7 +145,8 @@ tune.nn <- function(reftable, param.cols,
       data = data, search_space = ss, type = type, sfs.dims = sfs.dims,
       max_epochs = max_epochs, eta = eta,
       n_searches = n_searches, cores = cores, gpus = gpus,
-      gpu.threshold = gpu.threshold, seed = seed, verbose = verbose)
+      gpu.threshold = gpu.threshold, greedy = greedy,
+      seed = seed, verbose = verbose)
 
     return(list(
       best_hp       = result$best_hp,
@@ -890,7 +891,7 @@ tune.nn <- function(reftable, param.cols,
 .parallel.hyperband.search <- function(data, search_space, type, sfs.dims,
                                         max_epochs, eta,
                                         n_searches, cores, gpus,
-                                        gpu.threshold, seed, verbose) {
+                                        gpu.threshold, greedy, seed, verbose) {
 
   n_concurrent <- min(as.integer(cores), as.integer(n_searches))
   s_max <- min(floor(log(max_epochs) / log(eta)), 3L)
@@ -1021,7 +1022,7 @@ tune.nn <- function(reftable, param.cols,
 
   search_seeds        <- seed + (seq_len(n_searches) - 1L) * 10000L
   saved_lib_paths     <- .libPaths()
-  threads_per_worker  <- .compute.threads.per.worker(n_concurrent)
+  threads_per_worker  <- .compute.threads.per.worker(n_concurrent, greedy)
   search_max_epochs   <- as.integer(max_epochs)
   search_eta          <- as.integer(eta)
   search_space_saved  <- search_space
@@ -1371,8 +1372,8 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
                        n_boot = 20, n_ensemble = 1, cal.frac = 0.1,
                        n_mc = 1000L, mc_dropout_rate = NULL,
                        n_quantiles = 19L, q_probs = NULL,
-                       max_epochs = 1000, cores = 1, gpus = 0, seed = 42,
-                       verbose = TRUE) {
+                       max_epochs = 1000, cores = 1, gpus = 0, greedy = TRUE,
+                       seed = 42, verbose = TRUE) {
 
   # --- Dependency check ---
   if (!requireNamespace("keras", quietly = TRUE) ||
@@ -1549,7 +1550,7 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
     pool_out <- .run.parallel.pool(
       reftable, param.cols, observed, best_hp, type, sfs.dims,
       do_conformal, do_bootstrap, n_ensemble, n_boot,
-      cal.frac, max_epochs, cores, gpus, seed, verbose,
+      cal.frac, max_epochs, cores, gpus, greedy, seed, verbose,
       point_est = point_est, exclude.cols = exclude.cols
     )
     if (do_conformal && !is.null(pool_out$conformal)) {
@@ -2846,7 +2847,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   # Parallel bootstrap via Rscript workers
   .run.bootstrap.parallel(
     reftable, param.cols, observed, best_hp, type, sfs.dims,
-    n_boot, max_epochs, cores, gpus = gpus, seed, verbose,
+    n_boot, max_epochs, cores, gpus = gpus, greedy = greedy, seed, verbose,
     exclude.cols = exclude.cols
   )
 }
@@ -3087,7 +3088,8 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 # Internal: compute how many TF intra-op threads each worker should use
 # ============================================================================
 
-.compute.threads.per.worker <- function(cores) {
+.compute.threads.per.worker <- function(cores, greedy = TRUE) {
+  if (!greedy) return(1L)
   n_physical <- tryCatch(
     parallel::detectCores(logical = FALSE),
     error = function(e) parallel::detectCores()
@@ -3174,9 +3176,11 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     active[[length(active) + 1]] <- launch_one(tidx)
   }
 
-  if (verbose)
+  if (verbose) {
     cat(sprintf("  [pool] Launched %d / %d tasks (%d pending)\n",
                 length(active), n_tasks, length(pending)))
+    flush.console()
+  }
 
   # Poll loop — check every second, 4-way detection
   while (length(active) > 0) {
@@ -3190,10 +3194,13 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
       if (file.exists(task$result)) {
         # --- SUCCESS: result CSV exists ---
         completed <- c(completed, a$task_idx)
-        if (verbose)
-          cat(sprintf("  [pool] %s %d done (%d/%d, %.0fs)\n",
+        if (verbose) {
+          elapsed_min <- elapsed_sec / 60
+          cat(sprintf("  [pool] %s %d done (%d/%d, %.1f min)\n",
                       task$prefix, task$id,
-                      length(completed), n_tasks, elapsed_sec))
+                      length(completed), n_tasks, elapsed_min))
+          flush.console()
+        }
 
       } else if (file.exists(a$done_file)) {
         # --- CRASH: process exited but no result CSV ---
@@ -3204,12 +3211,14 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
         if (retry_count[a$task_idx] < max_retries) {
           retry_count[a$task_idx] <- retry_count[a$task_idx] + 1L
-          if (verbose)
+          if (verbose) {
             cat(sprintf("  [pool] %s %d CRASHED (exit %s, %.0fs) — retry %d/%d\n",
                         task$prefix, task$id,
                         if (is.na(exit_code)) "?" else as.character(exit_code),
                         elapsed_sec,
                         retry_count[a$task_idx], max_retries))
+            flush.console()
+          }
           # Re-queue at front of pending so it gets the next free slot
           pending <- c(a$task_idx, pending)
         } else {
@@ -3242,10 +3251,12 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
         if (retry_count[a$task_idx] < max_retries) {
           retry_count[a$task_idx] <- retry_count[a$task_idx] + 1L
-          if (verbose)
+          if (verbose) {
             cat(sprintf("  [pool] %s %d TIMEOUT (%.0fs) — retry %d/%d\n",
                         task$prefix, task$id, elapsed_sec,
                         retry_count[a$task_idx], max_retries))
+            flush.console()
+          }
           pending <- c(a$task_idx, pending)
         } else {
           failed <- c(failed, a$task_idx)
@@ -3283,7 +3294,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 .run.parallel.pool <- function(reftable, param.cols, observed, best_hp,
                                 type, sfs.dims, do_conformal, do_bootstrap,
                                 n_ensemble, n_boot, cal.frac, max_epochs,
-                                cores, gpus, seed, verbose,
+                                cores, gpus, greedy, seed, verbose,
                                 point_est = NULL, exclude.cols = NULL) {
 
   nuisance    <- c("mean.rate", "sd.rate")
@@ -3305,7 +3316,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   n_rows     <- nrow(features_all)
   cal_frac   <- cal.frac
 
-  threads_per_worker <- .compute.threads.per.worker(cores)
+  threads_per_worker <- .compute.threads.per.worker(cores, greedy)
   shared_file <- file.path(work_dir, "shared_data.RData")
   save(features_all, targets_all, observed, best_hp,
        type, sfs.dims, n_rows, n_params, max_epochs, seed, target_cols,
@@ -3403,13 +3414,13 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
 .run.bootstrap.parallel <- function(reftable, param.cols, observed, best_hp,
                                     type, sfs.dims, n_boot, max_epochs,
-                                    cores, gpus = 0, seed, verbose,
+                                    cores, gpus = 0, greedy = TRUE, seed, verbose,
                                     exclude.cols = NULL) {
 
   nuisance <- c("mean.rate", "sd.rate")
   target_cols <- setdiff(param.cols, nuisance)
   n_params <- length(target_cols)
-  threads_per_worker <- .compute.threads.per.worker(cores)
+  threads_per_worker <- .compute.threads.per.worker(cores, greedy)
 
   if (verbose)
     cat(sprintf("\nPipeMaster:: Bootstrap (%d replicates, %d cores, %d threads/worker)...\n",
@@ -3879,7 +3890,7 @@ tune.gan <- function(reftable, param.cols,
                      n_configs = 20L, max_epochs = 2000L, patience = 100L,
                      search_space = NULL, exclude.cols = NULL,
                      val.frac = 0.1, cores = 1L, gpus = 0L,
-                     seed = 42, verbose = TRUE) {
+                     greedy = TRUE, seed = 42, verbose = TRUE) {
 
   # --- Dependency check ---
   if (!requireNamespace("keras", quietly = TRUE) ||
@@ -3963,7 +3974,7 @@ tune.gan <- function(reftable, param.cols,
     train_result <- .train.all.configs.parallel(
       configs, flat$X_train, data$Y_train, flat$X_val, data$Y_val,
       flat$n_feat_flat, n_targ, max_epochs, patience,
-      seed, cores, gpus, verbose)
+      seed, cores, gpus, greedy, verbose)
   } else {
     train_result <- .train.all.configs(
       configs, flat$X_train, data$Y_train, flat$X_val, data$Y_val,
@@ -4201,7 +4212,7 @@ load.gan.result <- function(path) {
 
 .train.all.configs.parallel <- function(configs, X_train, Y_train, X_val, Y_val,
                                          n_features, n_targets, max_epochs, patience,
-                                         seed, cores, gpus, verbose) {
+                                         seed, cores, gpus, greedy, verbose) {
 
   n_configs <- length(configs)
 
@@ -4214,7 +4225,7 @@ load.gan.result <- function(path) {
   dir.create(weights_dir)
 
   # Save shared training data
-  threads_per_worker <- .compute.threads.per.worker(cores)
+  threads_per_worker <- .compute.threads.per.worker(cores, greedy)
   shared_file <- file.path(work_dir, "shared_data.RData")
   save(X_train, X_val, Y_train, Y_val,
        n_features, n_targets, max_epochs, patience, seed,
