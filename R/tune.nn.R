@@ -14,7 +14,6 @@
 #'   of the joint SFS matrix.
 #' @param max_epochs integer — maximum epochs for Hyperband (default 500).
 #' @param eta numeric — Hyperband halving factor (default 3).
-#' @param hyperband_iterations integer — number of full Hyperband sweeps (default 1).
 #' @param search_space named list — overrides default HP ranges. NULL uses
 #'   architecture-specific defaults.
 #' @param exclude.cols character vector — additional column names to exclude from
@@ -23,24 +22,25 @@
 #'   parameter columns, to prevent other parameters from leaking into the feature
 #'   set. Default NULL (only \code{param.cols} and nuisance columns are excluded).
 #' @param val.frac numeric — validation fraction (default 0.1).
-#' @param cores integer — number of parallel Rscript workers for Hyperband rounds
-#'   (default 1, sequential). Values > 1 train multiple configs simultaneously.
-#'   Each worker spawns a separate R process that loads TensorFlow and a full
-#'   copy of the training data, so RAM usage scales linearly with \code{cores}
-#'   (~1.5 GB per worker). When \code{gpus > 0}, workers are assigned to GPUs
-#'   via round-robin: multiple workers can share a GPU (they allocate VRAM
-#'   incrementally), but too many workers per GPU may cause GPU out-of-memory
-#'   errors.
-#' @param gpus integer — number of GPUs to round-robin across workers (default 0,
-#'   CPU-only). When \code{gpus = 0}, all workers run on CPU with GPUs disabled.
-#'   Ignored when \code{cores = 1}.
-#' @param gpu.threshold integer — maximum number of workers per GPU before
-#'   switching to CPU-only for a round (default 4). When \code{gpus > 0},
-#'   Hyperband rounds with more than \code{gpu.threshold * gpus} configs run
-#'   on CPU (all \code{cores} workers, GPUs disabled), while rounds with fewer
-#'   configs use the GPU. This allows early brackets (many configs, few epochs)
-#'   to exploit CPU parallelism and later brackets (few configs, many epochs) to
-#'   use GPU throughput. Ignored when \code{gpus = 0}.
+#' @param n_searches integer — number of independent Hyperband searches to run
+#'   (default 1). Each search explores a different population of random HP
+#'   configurations (unique seed). Higher values increase the chance of finding a
+#'   good architecture. With \code{cores > 1}, searches run in parallel via
+#'   separate Rscript workers. With \code{cores = 1}, searches run sequentially
+#'   in the main process.
+#' @param cores integer — maximum number of concurrent search workers
+#'   (default 1, sequential). Each worker spawns a separate R process with its
+#'   own TensorFlow runtime and a full copy of the training data, so RAM usage
+#'   scales linearly (~1.5-2 GB per worker). Ignored when \code{n_searches = 1}.
+#' @param gpus integer — number of GPUs to distribute searches across
+#'   (default 0, CPU-only). Searches are assigned to GPUs round-robin, up to
+#'   \code{gpu.threshold} per GPU. Remaining searches run CPU-only. When
+#'   \code{n_searches = 1}, the single search uses all available GPUs directly.
+#' @param gpu.threshold integer — maximum searches per GPU (default 4).
+#'   Total GPU searches = \code{min(n_searches, gpu.threshold * gpus)}. Excess
+#'   searches run on CPU. Example: \code{n_searches=10, gpus=1, gpu.threshold=4}
+#'   assigns 4 searches to the GPU and 6 to CPU. Too many searches per GPU may
+#'   cause GPU out-of-memory errors. Ignored when \code{gpus = 0}.
 #' @param seed integer — random seed (default 42).
 #' @param verbose logical — print progress (default TRUE).
 #'
@@ -56,10 +56,11 @@
 tune.nn <- function(reftable, param.cols,
                     type = c("sumstat", "sfs1d", "sfs2d"),
                     sfs.dims = NULL,
-                    max_epochs = 500, eta = 3, hyperband_iterations = 1,
+                    max_epochs = 500, eta = 3,
                     search_space = NULL,
                     exclude.cols = NULL,
-                    val.frac = 0.1, cores = 1L, gpus = 0L,
+                    val.frac = 0.1,
+                    n_searches = 1L, cores = 1L, gpus = 0L,
                     gpu.threshold = 4L,
                     seed = 42, verbose = TRUE) {
 
@@ -70,37 +71,47 @@ tune.nn <- function(reftable, param.cols,
          "Install with: install.packages(c('keras', 'tensorflow'))\n",
          "Then run: keras::install_keras()")
 
-  # --- Memory guard for parallel mode ---
-  if (cores > 1L) {
+  n_concurrent <- min(as.integer(cores), as.integer(n_searches))
+
+  # --- Memory guard ---
+  if (n_concurrent > 1L) {
     avail_gb <- tryCatch({
       mem_info <- system("free -b 2>/dev/null", intern = TRUE)
       if (length(mem_info) >= 2) {
         fields <- as.numeric(strsplit(trimws(mem_info[2]), "\\s+")[[1]])
-        fields[7] / 1e9  # "available" column (7th field)
-      } else {
-        NA_real_
-      }
+        fields[7] / 1e9
+      } else NA_real_
     }, error = function(e) NA_real_)
 
     if (!is.na(avail_gb)) {
-      est_per_worker <- 1.5  # ~1.5 GB per TF worker (runtime + data copy)
-      est_total <- cores * est_per_worker
+      est_per_worker <- 1.5
+      est_total <- n_concurrent * est_per_worker
       if (est_total > avail_gb * 0.85) {
         warning(sprintf(
-          paste0("cores=%d workers may exceed available RAM ",
+          paste0("cores=%d concurrent searches may exceed available RAM ",
                  "(%.1f GB free, ~%.0f GB estimated). ",
-                 "This can cause swapping and severe slowdowns. ",
-                 "Reduce cores if you experience memory issues."),
-          cores, avail_gb, est_total),
-          call. = FALSE)
+                 "Each search loads TensorFlow + a full data copy (~1.5 GB). ",
+                 "Reduce cores or n_searches if you experience memory issues."),
+          n_concurrent, avail_gb, est_total), call. = FALSE)
       }
     }
-
   }
 
-  # --- Enable GPU memory growth (prevent TF from grabbing all VRAM) ---
-  # Only in sequential mode; parallel workers set CUDA_VISIBLE_DEVICES per-process
-  if (cores <= 1L) {
+  # --- GPU OOM warning ---
+  if (gpus > 0L && n_searches > 1L) {
+    n_gpu_searches <- min(n_searches, gpu.threshold * gpus)
+    per_gpu <- ceiling(n_gpu_searches / gpus)
+    if (per_gpu > 2L) {
+      warning(sprintf(
+        paste0("gpu.threshold=%d with %d GPU(s) puts up to %d searches per GPU. ",
+               "This may cause GPU out-of-memory. Reduce gpu.threshold ",
+               "if you experience OOM errors."),
+        gpu.threshold, gpus, per_gpu), call. = FALSE)
+    }
+  }
+
+  # --- GPU memory growth (single-search mode only) ---
+  if (n_searches <= 1L) {
     tryCatch({
       tf_gpus <- tensorflow::tf$config$list_physical_devices("GPU")
       for (gpu in tf_gpus)
@@ -129,6 +140,26 @@ tune.nn <- function(reftable, param.cols,
                            n_feat, n_targ, nrow(data$X_train), nrow(data$X_val)))
 
   # --- Run Hyperband ---
+  if (n_searches > 1L) {
+    result <- .parallel.hyperband.search(
+      data = data, search_space = ss, type = type, sfs.dims = sfs.dims,
+      max_epochs = max_epochs, eta = eta,
+      n_searches = n_searches, cores = cores, gpus = gpus,
+      gpu.threshold = gpu.threshold, seed = seed, verbose = verbose)
+
+    return(list(
+      best_hp       = result$best_hp,
+      best_val_loss = result$best_val_loss,
+      all_results   = result$all_results,
+      best_model    = result$best_model,
+      data          = data,
+      type          = type,
+      sfs.dims      = sfs.dims,
+      exclude.cols  = exclude.cols
+    ))
+  }
+
+  # --- Single search (sequential path) ---
   hb <- .hyperband(
     search_space = ss,
     data         = data,
@@ -136,10 +167,6 @@ tune.nn <- function(reftable, param.cols,
     sfs.dims     = sfs.dims,
     max_epochs   = max_epochs,
     eta          = eta,
-    n_iter       = hyperband_iterations,
-    cores        = cores,
-    gpus         = gpus,
-    gpu.threshold = gpu.threshold,
     seed         = seed,
     verbose      = verbose
   )
@@ -683,8 +710,7 @@ tune.nn <- function(reftable, param.cols,
 # ============================================================================
 
 .hyperband <- function(search_space, data, type, sfs.dims,
-                       max_epochs, eta, n_iter, cores, gpus,
-                       gpu.threshold, seed, verbose) {
+                       max_epochs, eta, seed, verbose) {
 
   s_max <- min(floor(log(max_epochs) / log(eta)), 3L)  # cap at 3 (max 27 configs/bracket)
 
@@ -701,186 +727,150 @@ tune.nn <- function(reftable, param.cols,
   global_best_epochs <- 0L
   best_weights_path  <- tempfile("hb_best_weights_")
 
-  for (iter in seq_len(n_iter)) {
-    if (verbose && n_iter > 1) cat(sprintf("=== Iteration %d ===\n", iter))
+  for (s in s_max:0) {
+    n <- ceiling((s_max + 1) / (s + 1)) * as.integer(eta^s)
+    r <- max_epochs / eta^s
 
-    for (s in s_max:0) {
-      n <- ceiling((s_max + 1) / (s + 1)) * as.integer(eta^s)
-      r <- max_epochs / eta^s
+    if (verbose) cat(sprintf("  Bracket %d | %d configs \u00d7 %d epochs\n",
+                             s, n, round(r)))
 
-      if (verbose) cat(sprintf("  Bracket %d | %d configs \u00d7 %d epochs\n",
-                               s, n, round(r)))
+    # Sample configs
+    set.seed(seed + s)
+    configs <- lapply(seq_len(n), function(i) .sample.config(search_space))
 
-      # Sample configs
-      set.seed(seed + iter * 1000 + s)
-      configs <- lapply(seq_len(n), function(i) .sample.config(search_space))
+    # Track how many epochs each model has been trained
+    prev_epochs <- rep(0L, n)
+    # Temp dir for per-config weight files (avoids GPU OOM from keeping all models)
+    weight_dir <- tempfile("hb_weights_")
+    dir.create(weight_dir, recursive = TRUE)
 
-      # Track how many epochs each model has been trained
-      prev_epochs <- rep(0L, n)
-      # Temp dir for per-config weight files (avoids GPU OOM from keeping all models)
-      weight_dir <- tempfile("hb_weights_")
-      dir.create(weight_dir, recursive = TRUE)
+    for (i in 0:s) {
+      r_i <- round(r * eta^i)
+      n_i <- max(1, floor(n / eta^i))
+      n_keep <- max(1, ceiling(n_i / eta))
 
-      for (i in 0:s) {
-        r_i <- round(r * eta^i)
-        n_i <- max(1, floor(n / eta^i))
-        n_keep <- max(1, ceiling(n_i / eta))
+      val_losses <- rep(Inf, length(configs))
 
-        val_losses <- rep(Inf, length(configs))
+      for (j in seq_along(configs)) {
+        tryCatch({
+          tensorflow::tf$random$set_seed(as.integer(seed + s + j))
+          model <- .build.nn(configs[[j]], data, type, sfs.dims)
 
-        if (cores > 1L && length(configs) > 1L) {
-          # PARALLEL: choose CPU vs GPU based on config count per round
-          if (gpus > 0L && length(configs) <= gpus * gpu.threshold) {
-            round_cores <- min(cores, gpus * gpu.threshold)
-            round_gpus  <- gpus
-          } else {
-            round_cores <- cores
-            round_gpus  <- 0L
+          # Load saved weights from previous round (if any)
+          wpath <- file.path(weight_dir, sprintf("cfg_%d", j))
+          wfile <- file.path(wpath, "ckpt")
+          if (prev_epochs[j] > 0 && dir.exists(wpath)) {
+            keras::load_model_weights_tf(model, wfile)
           }
 
-          val_losses <- .hyperband.round.parallel(
-            configs, data, type, sfs.dims, r_i, prev_epochs,
-            weight_dir, seed, iter, s, round_cores, round_gpus, verbose)
+          history <- model |> keras::fit(
+            x = data$X_train, y = data$Y_train,
+            validation_data = list(data$X_val, data$Y_val),
+            epochs        = as.integer(r_i),
+            initial_epoch = as.integer(prev_epochs[j]),
+            batch_size    = as.integer(configs[[j]]$batch_size),
+            callbacks     = list(
+              keras::callback_early_stopping(monitor = "val_loss",
+                                             patience = 10L,
+                                             restore_best_weights = TRUE),
+              keras::callback_reduce_lr_on_plateau(monitor = "val_loss",
+                                                    patience = 5L,
+                                                    factor = 0.5,
+                                                    min_lr = 1e-6,
+                                                    verbose = 0L)
+            ),
+            verbose = 0L
+          )
+          vl <- history$metrics$val_loss
+          if (is.null(vl)) vl <- history$history$val_loss
+          val_losses[j] <- min(unlist(vl))
 
-          # Update global best from parallel results
-          for (j in seq_along(configs)) {
-            if (val_losses[j] < global_best_loss) {
-              global_best_loss   <- val_losses[j]
-              global_best_hp     <- configs[[j]]
-              global_best_epochs <- as.integer(r_i)
-              wpath <- file.path(weight_dir, sprintf("cfg_%d", j))
-              if (dir.exists(wpath)) {
-                unlink(best_weights_path, recursive = TRUE)
-                dir.create(best_weights_path, recursive = TRUE, showWarnings = FALSE)
-                file.copy(list.files(wpath, full.names = TRUE),
-                          best_weights_path, recursive = TRUE)
-              }
-            }
-          }
-        } else {
-          # SEQUENTIAL: train each config one at a time
-          for (j in seq_along(configs)) {
+          # Save weights for this config (overwrite previous round's)
+          dir.create(wpath, recursive = TRUE, showWarnings = FALSE)
+          keras::save_model_weights_tf(model, wfile)
+
+          # Update global best
+          if (val_losses[j] < global_best_loss) {
+            global_best_loss   <- val_losses[j]
+            global_best_hp     <- configs[[j]]
+            global_best_epochs <- as.integer(r_i)
             tryCatch({
-              tensorflow::tf$random$set_seed(as.integer(seed + iter * 1000 + s + j))
-              model <- .build.nn(configs[[j]], data, type, sfs.dims)
-
-              # Load saved weights from previous round (if any)
-              wpath <- file.path(weight_dir, sprintf("cfg_%d", j))
-              wfile <- file.path(wpath, "ckpt")
-              if (prev_epochs[j] > 0 && dir.exists(wpath)) {
-                keras::load_model_weights_tf(model, wfile)
-              }
-
-              history <- model |> keras::fit(
-                x = data$X_train, y = data$Y_train,
-                validation_data = list(data$X_val, data$Y_val),
-                epochs        = as.integer(r_i),
-                initial_epoch = as.integer(prev_epochs[j]),
-                batch_size    = as.integer(configs[[j]]$batch_size),
-                callbacks     = list(
-                  keras::callback_early_stopping(monitor = "val_loss",
-                                                 patience = 10L,
-                                                 restore_best_weights = TRUE),
-                  keras::callback_reduce_lr_on_plateau(monitor = "val_loss",
-                                                        patience = 5L,
-                                                        factor = 0.5,
-                                                        min_lr = 1e-6,
-                                                        verbose = 0L)
-                ),
-                verbose = 0L
-              )
-              vl <- history$metrics$val_loss
-              if (is.null(vl)) vl <- history$history$val_loss
-              val_losses[j] <- min(unlist(vl))
-
-              # Save weights for this config (overwrite previous round's)
-              dir.create(wpath, recursive = TRUE, showWarnings = FALSE)
-              keras::save_model_weights_tf(model, wfile)
-
-              # Update global best
-              if (val_losses[j] < global_best_loss) {
-                global_best_loss   <- val_losses[j]
-                global_best_hp     <- configs[[j]]
-                global_best_epochs <- as.integer(r_i)
-                tryCatch({
-                  dir.create(best_weights_path, recursive = TRUE, showWarnings = FALSE)
-                  keras::save_model_weights_tf(model, file.path(best_weights_path, "ckpt"))
-                },
-                  error = function(e) NULL
-                )
-              }
-
-              # Free GPU memory immediately
-              rm(model); gc()
-              tryCatch(keras::k_clear_session(), error = function(e) NULL)
-
-            }, error = function(e) {
-              if (verbose) cat(sprintf("    [warn] config %d error: %s\n",
-                                       j, conditionMessage(e)))
-              val_losses[j] <<- Inf
-              tryCatch({ rm(model); gc(); keras::k_clear_session() },
-                       error = function(e2) NULL)
-            })
-          }
-        }
-
-        prev_epochs[seq_along(configs)] <- r_i
-
-        # Record results
-        for (j in seq_along(configs)) {
-          if (is.finite(val_losses[j])) {
-            all_results <- rbind(all_results, data.frame(
-              hp_string = .hp.to.string(configs[[j]], type),
-              val_loss  = val_losses[j],
-              bracket   = s,
-              round     = i,
-              stringsAsFactors = FALSE
-            ))
-          }
-        }
-
-        best_round_loss <- min(val_losses[is.finite(val_losses)])
-        if (verbose)
-          cat(sprintf("    Round %d: %d configs, %d ep \u2192 best val_loss=%.4f",
-                      i, length(configs), r_i, best_round_loss))
-
-        # Prune: keep top n_keep
-        if (i < s) {
-          ranking <- order(val_losses)
-          keep <- ranking[1:min(n_keep, length(ranking))]
-
-          if (verbose) cat(sprintf(" | pruning to %d\n", length(keep)))
-
-          # Remove weight files for discarded configs
-          discard <- setdiff(seq_along(configs), keep)
-          for (d in discard) {
-            wpath <- file.path(weight_dir, sprintf("cfg_%d", d))
-            unlink(wpath, recursive = TRUE)
+              dir.create(best_weights_path, recursive = TRUE, showWarnings = FALSE)
+              keras::save_model_weights_tf(model, file.path(best_weights_path, "ckpt"))
+            },
+              error = function(e) NULL
+            )
           }
 
-          # Renumber surviving configs/weights 1..n_keep
-          new_configs     <- configs[keep]
-          new_prev_epochs <- prev_epochs[keep]
-          for (k in seq_along(keep)) {
-            old_path <- file.path(weight_dir, sprintf("cfg_%d", keep[k]))
-            new_path <- file.path(weight_dir, sprintf("cfg_new_%d", k))
-            if (dir.exists(old_path)) file.rename(old_path, new_path)
-          }
-          for (k in seq_along(keep)) {
-            old_path <- file.path(weight_dir, sprintf("cfg_new_%d", k))
-            new_path <- file.path(weight_dir, sprintf("cfg_%d", k))
-            if (dir.exists(old_path)) file.rename(old_path, new_path)
-          }
-          configs     <- new_configs
-          prev_epochs <- new_prev_epochs
-        } else {
-          if (verbose) cat("\n")
+          # Free GPU memory immediately
+          rm(model); gc()
+          tryCatch(keras::k_clear_session(), error = function(e) NULL)
+
+        }, error = function(e) {
+          if (verbose) cat(sprintf("    [warn] config %d error: %s\n",
+                                   j, conditionMessage(e)))
+          val_losses[j] <<- Inf
+          tryCatch({ rm(model); gc(); keras::k_clear_session() },
+                   error = function(e2) NULL)
+        })
+      }
+
+      prev_epochs[seq_along(configs)] <- r_i
+
+      # Record results
+      for (j in seq_along(configs)) {
+        if (is.finite(val_losses[j])) {
+          all_results <- rbind(all_results, data.frame(
+            hp_string = .hp.to.string(configs[[j]], type),
+            val_loss  = val_losses[j],
+            bracket   = s,
+            round     = i,
+            stringsAsFactors = FALSE
+          ))
         }
       }
 
-      # Clean up bracket weight files
-      unlink(weight_dir, recursive = TRUE)
+      best_round_loss <- min(val_losses[is.finite(val_losses)])
+      if (verbose)
+        cat(sprintf("    Round %d: %d configs, %d ep \u2192 best val_loss=%.4f",
+                    i, length(configs), r_i, best_round_loss))
+
+      # Prune: keep top n_keep
+      if (i < s) {
+        ranking <- order(val_losses)
+        keep <- ranking[1:min(n_keep, length(ranking))]
+
+        if (verbose) cat(sprintf(" | pruning to %d\n", length(keep)))
+
+        # Remove weight files for discarded configs
+        discard <- setdiff(seq_along(configs), keep)
+        for (d in discard) {
+          wpath <- file.path(weight_dir, sprintf("cfg_%d", d))
+          unlink(wpath, recursive = TRUE)
+        }
+
+        # Renumber surviving configs/weights 1..n_keep
+        new_configs     <- configs[keep]
+        new_prev_epochs <- prev_epochs[keep]
+        for (k in seq_along(keep)) {
+          old_path <- file.path(weight_dir, sprintf("cfg_%d", keep[k]))
+          new_path <- file.path(weight_dir, sprintf("cfg_new_%d", k))
+          if (dir.exists(old_path)) file.rename(old_path, new_path)
+        }
+        for (k in seq_along(keep)) {
+          old_path <- file.path(weight_dir, sprintf("cfg_new_%d", k))
+          new_path <- file.path(weight_dir, sprintf("cfg_%d", k))
+          if (dir.exists(old_path)) file.rename(old_path, new_path)
+        }
+        configs     <- new_configs
+        prev_epochs <- new_prev_epochs
+      } else {
+        if (verbose) cat("\n")
+      }
     }
+
+    # Clean up bracket weight files
+    unlink(weight_dir, recursive = TRUE)
   }
 
   list(
@@ -892,108 +882,365 @@ tune.nn <- function(reftable, param.cols,
   )
 }
 
+
 # ============================================================================
-# Internal: parallel training of one Hyperband round via Rscript worker pool
+# Internal: orchestrate K independent serial Hyperband searches in parallel
 # ============================================================================
 
-.hyperband.round.parallel <- function(configs, data, type, sfs.dims, r_i,
-                                      prev_epochs, weight_dir, seed, iter, s,
-                                      cores, gpus, verbose) {
-  n_configs <- length(configs)
-  val_losses <- rep(Inf, n_configs)
+.parallel.hyperband.search <- function(data, search_space, type, sfs.dims,
+                                        max_epochs, eta,
+                                        n_searches, cores, gpus,
+                                        gpu.threshold, seed, verbose) {
 
-  # Create temp working directory
+  n_concurrent <- min(as.integer(cores), as.integer(n_searches))
+  s_max <- min(floor(log(max_epochs) / log(eta)), 3L)
 
-  work_dir <- tempfile("hb_round_")
+  # ==========================================================================
+  # Sequential mode (cores = 1): run searches in main process
+  # ==========================================================================
+  if (n_concurrent <= 1L) {
+    all_search_results <- list()
+    best_val_loss <- Inf
+    best_hp       <- NULL
+    best_model_dir <- tempfile("best_search_model_")
+
+    for (k in seq_len(n_searches)) {
+      search_seed <- seed + (k - 1L) * 10000L
+      if (verbose)
+        cat(sprintf("\n=== Search %d/%d (seed=%d) ===\n", k, n_searches, search_seed))
+
+      hb <- .hyperband(search_space = search_space, data = data,
+                       type = type, sfs.dims = sfs.dims,
+                       max_epochs = max_epochs, eta = eta,
+                       seed = search_seed, verbose = verbose)
+
+      # Retrain best config from this search
+      tensorflow::tf$random$set_seed(as.integer(search_seed))
+      model <- .build.nn(hb$best_hp, data, type, sfs.dims)
+
+      weights_loaded <- tryCatch({
+        keras::load_model_weights_tf(model, file.path(hb$best_weights_path, "ckpt"))
+        TRUE
+      }, error = function(e) FALSE)
+
+      start_epoch <- if (weights_loaded) as.integer(hb$best_epochs) else 0L
+      final_vl <- hb$best_val_loss
+
+      if (start_epoch < as.integer(max_epochs)) {
+        if (verbose)
+          cat(sprintf("PipeMaster:: Retraining search %d best for %d epochs (warm-start from %d)...\n",
+                      k, max_epochs, start_epoch))
+
+        retrain_history <- model |> keras::fit(
+          x = data$X_train, y = data$Y_train,
+          validation_data = list(data$X_val, data$Y_val),
+          epochs        = as.integer(max_epochs),
+          initial_epoch = as.integer(start_epoch),
+          batch_size    = as.integer(hb$best_hp$batch_size),
+          callbacks     = list(
+            keras::callback_early_stopping(monitor = "val_loss", patience = 30L,
+                                           restore_best_weights = TRUE),
+            keras::callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 15L,
+                                                 factor = 0.5, min_lr = 1e-6, verbose = 0L)
+          ),
+          verbose = 0L
+        )
+
+        retrain_vl <- retrain_history$metrics$val_loss
+        if (is.null(retrain_vl)) retrain_vl <- retrain_history$history$val_loss
+        retrain_vl <- unlist(retrain_vl)
+        if (length(retrain_vl) > 0 && any(is.finite(retrain_vl)))
+          final_vl <- min(final_vl, min(retrain_vl[is.finite(retrain_vl)]))
+      }
+
+      if (verbose)
+        cat(sprintf("PipeMaster:: Search %d final val_loss: %.6f\n", k, final_vl))
+
+      search_res <- hb$all_results
+      search_res$search <- k
+      all_search_results[[k]] <- search_res
+
+      if (final_vl < best_val_loss) {
+        best_val_loss <- final_vl
+        best_hp <- hb$best_hp
+        unlink(best_model_dir, recursive = TRUE)
+        keras::save_model_tf(model, best_model_dir)
+      }
+
+      # Clean up
+      unlink(hb$best_weights_path, recursive = TRUE)
+      rm(model); gc()
+      tryCatch(keras::k_clear_session(), error = function(e) NULL)
+    }
+
+    # Load best model from disk
+    best_model <- tryCatch(
+      keras::load_model_tf(best_model_dir),
+      error = function(e) {
+        warning("Could not reload best model: ", conditionMessage(e), call. = FALSE)
+        NULL
+      }
+    )
+    unlink(best_model_dir, recursive = TRUE)
+
+    combined_results <- do.call(rbind, all_search_results)
+
+    if (verbose) {
+      cat(sprintf("\nPipeMaster:: Best across %d searches: val_loss=%.6f\n",
+                  n_searches, best_val_loss))
+      cat(sprintf("PipeMaster:: Best config: %s\n", .hp.to.string(best_hp, type)))
+    }
+
+    return(list(
+      best_hp       = best_hp,
+      best_val_loss = best_val_loss,
+      all_results   = combined_results,
+      best_model    = best_model
+    ))
+  }
+
+  # ==========================================================================
+  # Parallel mode: launch Rscript workers
+  # ==========================================================================
+  if (verbose)
+    cat(sprintf("PipeMaster:: Launching %d parallel searches (%d concurrent workers)\n",
+                n_searches, n_concurrent))
+
+  work_dir <- tempfile("hb_search_")
   dir.create(work_dir, recursive = TRUE)
   results_dir <- file.path(work_dir, "results")
   dir.create(results_dir)
-  weights_work <- file.path(work_dir, "weights")
-  dir.create(weights_work)
 
-  # Save shared training data
-  X_train <- data$X_train
-  X_val   <- data$X_val
-  Y_train <- data$Y_train
-  Y_val   <- data$Y_val
+  # Save shared data for workers
+  X_train    <- data$X_train
+  X_val      <- data$X_val
+  Y_train    <- data$Y_train
+  Y_val      <- data$Y_val
   n_features <- if (type == "sumstat") ncol(data$X_train) else data$n_features
   n_bins     <- data$n_bins
-  shared_file <- file.path(work_dir, "shared_data.RData")
+
+  search_seeds        <- seed + (seq_len(n_searches) - 1L) * 10000L
+  saved_lib_paths     <- .libPaths()
+  threads_per_worker  <- max(1L, floor(parallel::detectCores(logical = FALSE) / n_concurrent))
+  search_max_epochs   <- as.integer(max_epochs)
+  search_eta          <- as.integer(eta)
+  search_space_saved  <- search_space
+
   save(X_train, X_val, Y_train, Y_val,
        type, sfs.dims, n_features, n_bins,
-       file = shared_file)
+       search_seeds, saved_lib_paths, threads_per_worker,
+       search_max_epochs, search_eta, search_space_saved,
+       file = file.path(work_dir, "shared_search.RData"))
 
-  # Save round-specific task data (configs, epochs, seeds)
-  round_configs <- configs
-  round_r_i     <- as.integer(r_i)
-  round_prev_epochs <- as.integer(prev_epochs)
-  round_seeds <- vapply(seq_len(n_configs), function(j) {
-    as.integer(seed + iter * 1000 + s + j)
-  }, integer(1))
-  round_file <- file.path(work_dir, "round_tasks.RData")
-  save(round_configs, round_r_i, round_prev_epochs, round_seeds,
-       file = round_file)
+  # Write worker script
+  .write.search.worker.script(file.path(work_dir, "_search_worker.R"))
 
-  # Copy existing weights from weight_dir/cfg_* → work_dir/weights/cfg_*
-  for (j in seq_len(n_configs)) {
-    src <- file.path(weight_dir, sprintf("cfg_%d", j))
-    if (prev_epochs[j] > 0 && dir.exists(src)) {
-      dst <- file.path(weights_work, sprintf("cfg_%d", j))
-      dir.create(dst, recursive = TRUE, showWarnings = FALSE)
-      file.copy(list.files(src, full.names = TRUE), dst, recursive = TRUE)
+  # Build task list with per-task GPU assignment
+  n_gpu_searches <- if (gpus > 0L) min(n_searches, gpu.threshold * gpus) else 0L
+
+  tasks <- lapply(seq_len(n_searches), function(k) {
+    if (gpus > 0L && k <= n_gpu_searches) {
+      gpu_id <- (k - 1L) %% gpus
+      task_gpu_env <- sprintf("CUDA_VISIBLE_DEVICES=%d TF_FORCE_GPU_ALLOW_GROWTH=true", gpu_id)
+    } else {
+      task_gpu_env <- "CUDA_VISIBLE_DEVICES=-1"
     }
-  }
-
-  # Write scripts
-  .write.builder.script(file.path(work_dir, "_build_model.R"), type)
-  .write.hyperband.worker.script(file.path(work_dir, "_hb_worker.R"))
-
-  # Build task list for the pool
-  tasks <- lapply(seq_len(n_configs), function(j) {
     list(
-      script = "_hb_worker.R",
-      id     = j,
-      result = sprintf("results/hb_%04d.csv", j),
-      prefix = "hb"
+      script  = "_search_worker.R",
+      id      = k,
+      result  = sprintf("results/search_%04d/done.txt", k),
+      prefix  = "search",
+      gpu_env = task_gpu_env
     )
   })
 
-  if (verbose)
-    cat(sprintf("    [parallel] %d configs on %d cores%s\n",
-                n_configs, cores,
-                if (gpus > 0) sprintf(", %d GPUs", gpus) else ""))
+  # Generous timeout: full Hyperband + retrain per search
+  timeout_per_search <- as.integer(max_epochs * 15 * (s_max + 1))
 
-  # Launch pool
-  pool_result <- .launch.rscript.pool(tasks, cores, work_dir,
-                                       timeout_per_task = r_i * 10,
-                                       gpus = gpus, verbose = verbose,
-                                       max_retries = 1L)
+  pool_result <- .launch.rscript.pool(
+    tasks, n_concurrent, work_dir,
+    timeout_per_task = timeout_per_search,
+    gpus = 0L,
+    verbose = verbose, max_retries = 1L)
 
-  # Collect val_losses from result CSVs
-  for (j in seq_len(n_configs)) {
-    csv_file <- file.path(results_dir, sprintf("hb_%04d.csv", j))
-    if (file.exists(csv_file)) {
-      row <- tryCatch(read.csv(csv_file), error = function(e) NULL)
-      if (!is.null(row) && "val_loss" %in% names(row))
-        val_losses[j] <- as.numeric(row$val_loss[1])
+  # Collect results
+  best_val_loss      <- Inf
+  best_hp            <- NULL
+  best_search_dir    <- NULL
+  all_search_results <- list()
+
+  for (k in seq_len(n_searches)) {
+    search_dir <- file.path(results_dir, sprintf("search_%04d", k))
+    rds_file   <- file.path(search_dir, "result.rds")
+
+    if (file.exists(rds_file)) {
+      res <- tryCatch(readRDS(rds_file), error = function(e) NULL)
+      if (!is.null(res)) {
+        search_res <- res$all_results
+        search_res$search <- k
+        all_search_results[[length(all_search_results) + 1L]] <- search_res
+
+        if (verbose)
+          cat(sprintf("  Search %d: val_loss=%.6f\n", k, res$best_val_loss))
+
+        if (res$best_val_loss < best_val_loss) {
+          best_val_loss   <- res$best_val_loss
+          best_hp         <- res$best_hp
+          best_search_dir <- search_dir
+        }
+      }
+    } else {
+      if (verbose) cat(sprintf("  Search %d: FAILED (no result)\n", k))
     }
   }
 
-  # Copy updated weights back: work_dir/weights/cfg_* → weight_dir/cfg_*
-  for (j in seq_len(n_configs)) {
-    src <- file.path(weights_work, sprintf("cfg_%d", j))
-    if (dir.exists(src)) {
-      dst <- file.path(weight_dir, sprintf("cfg_%d", j))
-      unlink(dst, recursive = TRUE)
-      dir.create(dst, recursive = TRUE, showWarnings = FALSE)
-      file.copy(list.files(src, full.names = TRUE), dst, recursive = TRUE)
+  if (is.null(best_hp))
+    stop("All parallel searches failed. Check worker logs in ", work_dir)
+
+  # Load the winning model
+  best_model <- tryCatch(
+    keras::load_model_tf(file.path(best_search_dir, "best_model")),
+    error = function(e) {
+      warning("Could not load best model from search: ", conditionMessage(e), call. = FALSE)
+      NULL
     }
+  )
+
+  combined_results <- if (length(all_search_results) > 0)
+    do.call(rbind, all_search_results) else data.frame()
+
+  if (verbose) {
+    cat(sprintf("\nPipeMaster:: Best across %d searches: val_loss=%.6f\n",
+                n_searches, best_val_loss))
+    cat(sprintf("PipeMaster:: Best config: %s\n", .hp.to.string(best_hp, type)))
   }
 
-  # Clean up
+  Sys.sleep(1)
   unlink(work_dir, recursive = TRUE)
 
-  val_losses
+  list(
+    best_hp       = best_hp,
+    best_val_loss = best_val_loss,
+    all_results   = combined_results,
+    best_model    = best_model
+  )
+}
+
+# ============================================================================
+# Internal: write standalone search worker Rscript
+# ============================================================================
+
+.write.search.worker.script <- function(filepath) {
+  writeLines(c(
+    '#!/usr/bin/env Rscript',
+    'args <- commandArgs(trailingOnly = TRUE)',
+    'task_id <- as.integer(args[1])',
+    '',
+    '# Load shared data',
+    'load("shared_search.RData")',
+    '',
+    '# Threading env',
+    'n_threads <- as.character(threads_per_worker)',
+    'Sys.setenv(TF_NUM_INTRAOP_THREADS = n_threads,',
+    '           TF_NUM_INTEROP_THREADS = "1",',
+    '           OMP_NUM_THREADS = n_threads)',
+    '',
+    '# Restore library paths and load PipeMaster',
+    '.libPaths(saved_lib_paths)',
+    'pm_loaded <- tryCatch({',
+    '  suppressPackageStartupMessages(library(PipeMaster))',
+    '  TRUE',
+    '}, error = function(e) FALSE)',
+    'if (!pm_loaded) {',
+    '  if (requireNamespace("devtools", quietly = TRUE)) {',
+    '    devtools::load_all(".", quiet = TRUE)',
+    '  } else stop("Cannot load PipeMaster")',
+    '}',
+    '',
+    'suppressPackageStartupMessages({',
+    '  library(keras)',
+    '  library(tensorflow)',
+    '})',
+    '',
+    '# Enable GPU memory growth',
+    'tryCatch({',
+    '  tf_gpus <- tf$config$list_physical_devices("GPU")',
+    '  for (gpu in tf_gpus)',
+    '    tf$config$experimental$set_memory_growth(gpu, TRUE)',
+    '}, error = function(e) NULL)',
+    '',
+    '# Create task-specific output directory',
+    'out_dir <- file.path("results", sprintf("search_%04d", task_id))',
+    'dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)',
+    '',
+    '# Build data list',
+    'hb_data <- list(',
+    '  X_train = X_train, X_val = X_val,',
+    '  Y_train = Y_train, Y_val = Y_val,',
+    '  n_features = n_features, n_bins = n_bins',
+    ')',
+    '',
+    '# Run full Hyperband search',
+    'worker_seed <- search_seeds[task_id]',
+    'cat(sprintf("Search %d starting (seed=%d)\\n", task_id, worker_seed))',
+    '',
+    'hb <- PipeMaster:::.hyperband(',
+    '  search_space = search_space_saved,',
+    '  data = hb_data, type = type, sfs.dims = sfs.dims,',
+    '  max_epochs = search_max_epochs, eta = search_eta,',
+    '  seed = worker_seed, verbose = TRUE)',
+    '',
+    '# Retrain best config to max_epochs',
+    'tf$random$set_seed(as.integer(worker_seed))',
+    'model <- PipeMaster:::.build.nn(hb$best_hp, hb_data, type, sfs.dims)',
+    '',
+    'weights_loaded <- tryCatch({',
+    '  load_model_weights_tf(model, file.path(hb$best_weights_path, "ckpt"))',
+    '  TRUE',
+    '}, error = function(e) FALSE)',
+    '',
+    'start_epoch <- if (weights_loaded) as.integer(hb$best_epochs) else 0L',
+    'final_vl <- hb$best_val_loss',
+    '',
+    'if (start_epoch < search_max_epochs) {',
+    '  cat(sprintf("Search %d: retraining from epoch %d to %d\\n",',
+    '              task_id, start_epoch, search_max_epochs))',
+    '  retrain_h <- model |> fit(',
+    '    x = hb_data$X_train, y = hb_data$Y_train,',
+    '    validation_data = list(hb_data$X_val, hb_data$Y_val),',
+    '    epochs        = search_max_epochs,',
+    '    initial_epoch = as.integer(start_epoch),',
+    '    batch_size    = as.integer(hb$best_hp$batch_size),',
+    '    callbacks     = list(',
+    '      callback_early_stopping(monitor = "val_loss", patience = 30L,',
+    '                              restore_best_weights = TRUE),',
+    '      callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 15L,',
+    '                                    factor = 0.5, min_lr = 1e-6, verbose = 0L)',
+    '    ),',
+    '    verbose = 0L',
+    '  )',
+    '  rvl <- retrain_h$metrics$val_loss',
+    '  if (is.null(rvl)) rvl <- retrain_h$history$val_loss',
+    '  rvl <- unlist(rvl)',
+    '  if (length(rvl) > 0 && any(is.finite(rvl)))',
+    '    final_vl <- min(final_vl, min(rvl[is.finite(rvl)]))',
+    '}',
+    '',
+    '# Save model and results',
+    'save_model_tf(model, file.path(out_dir, "best_model"))',
+    'saveRDS(list(',
+    '  best_hp       = hb$best_hp,',
+    '  best_val_loss = final_vl,',
+    '  all_results   = hb$all_results',
+    '), file.path(out_dir, "result.rds"))',
+    '',
+    '# Clean up Hyperband temp weights',
+    'unlink(hb$best_weights_path, recursive = TRUE)',
+    '',
+    'cat(sprintf("Search %d done (val_loss=%.6f)\\n", task_id, final_vl))',
+    'writeLines("done", file.path(out_dir, "done.txt"))',
+    'k_clear_session()'
+  ), filepath)
 }
 
 # ============================================================================
@@ -1406,6 +1653,8 @@ summary.nn.posterior <- function(object, probs = c(0.025, 0.25, 0.5, 0.75, 0.975
     out$bootstrap <- .summarize(object$bootstrap)
   if (!is.null(object$mc_dropout))
     out$mc_dropout <- .summarize(object$mc_dropout)
+  if (!is.null(object$gan))
+    out$gan <- .summarize(object$gan)
   if (!is.null(object$quantile)) {
     # Quantile matrix is (n_quantiles x n_params) — report directly
     tbl <- t(object$quantile)
@@ -1434,6 +1683,10 @@ print.summary.nn.posterior <- function(x, digits = 2, ...) {
     cat("\nMC Dropout posterior:\n")
     print(round(x$mc_dropout, digits))
   }
+  if (!is.null(x$gan)) {
+    cat("\nGAN posterior:\n")
+    print(round(x$gan, digits))
+  }
   if (!is.null(x$quantile)) {
     cat("\nQuantile Regression:\n")
     print(round(x$quantile, digits))
@@ -1447,6 +1700,7 @@ print.nn.posterior <- function(x, ...) {
   if (!is.null(x$conformal))  methods <- c(methods, sprintf("conformal (%d samples)", nrow(x$conformal)))
   if (!is.null(x$bootstrap))  methods <- c(methods, sprintf("bootstrap (%d samples)", nrow(x$bootstrap)))
   if (!is.null(x$mc_dropout)) methods <- c(methods, sprintf("mc_dropout (%d samples)", nrow(x$mc_dropout)))
+  if (!is.null(x$gan))        methods <- c(methods, sprintf("gan (%d samples)", nrow(x$gan)))
   if (!is.null(x$quantile))   methods <- c(methods, sprintf("quantile (%d quantiles)", nrow(x$quantile)))
   cat(sprintf("nn.posterior object — %s\n", paste(methods, collapse = " + ")))
   cat("Point estimate:\n")
@@ -1458,7 +1712,7 @@ print.nn.posterior <- function(x, ...) {
 #' @export
 density.nn.posterior <- function(x, method = NULL, ...) {
   param_names <- x$param_names
-  sample_methods <- c("conformal", "bootstrap", "mc_dropout")
+  sample_methods <- c("conformal", "bootstrap", "mc_dropout", "gan")
 
   if (is.null(method)) {
     for (m in sample_methods) {
@@ -1485,7 +1739,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   param_names <- x$param_names
   n_params <- length(param_names)
 
-  all_methods <- c("prior", "conformal", "bootstrap", "mc_dropout", "quantile")
+  all_methods <- c("prior", "conformal", "bootstrap", "mc_dropout", "gan", "quantile")
 
   # Pick methods
   if (is.null(method)) {
@@ -1505,12 +1759,12 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
   # Colors for methods
   method_cols <- c(prior = "grey50", conformal = "red", bootstrap = "blue",
-                   mc_dropout = "darkgreen", quantile = "purple")
+                   mc_dropout = "darkgreen", gan = "orange", quantile = "purple")
   if (length(col) == 1 && length(post_methods) == 1)
     method_cols[post_methods] <- col
 
   # Separate sample-based methods from quantile method
-  sample_methods <- intersect(methods, c("prior", "conformal", "bootstrap", "mc_dropout"))
+  sample_methods <- intersect(methods, c("prior", "conformal", "bootstrap", "mc_dropout", "gan"))
   has_quantile <- "quantile" %in% methods
 
   par(mfrow = c(1, n_params))
@@ -2241,91 +2495,6 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 }
 
 # ============================================================================
-# Internal: write standalone Hyperband worker Rscript
-# ============================================================================
-
-.write.hyperband.worker.script <- function(filepath) {
-  writeLines(c(
-    '#!/usr/bin/env Rscript',
-    'args <- commandArgs(trailingOnly = TRUE)',
-    'task_id <- as.integer(args[1])',
-    '',
-    '# Threading env (GPU env set externally by pool launcher)',
-    'Sys.setenv(TF_NUM_INTRAOP_THREADS = "1",',
-    '           TF_NUM_INTEROP_THREADS = "1",',
-    '           OMP_NUM_THREADS = "1")',
-    '',
-    'load("shared_data.RData")',
-    'load("round_tasks.RData")',
-    '',
-    'out_file <- file.path("results", sprintf("hb_%04d.csv", task_id))',
-    'if (file.exists(out_file)) { cat("skip\\n"); q("no") }',
-    '',
-    'suppressPackageStartupMessages({',
-    '  library(keras)',
-    '  library(tensorflow)',
-    '})',
-    'source("_build_model.R")',
-    '',
-    '# Build data list for builder',
-    'hb_data <- list(',
-    '  X_train = X_train, X_val = X_val,',
-    '  Y_train = Y_train, Y_val = Y_val,',
-    '  n_features = n_features,',
-    '  n_bins = n_bins',
-    ')',
-    '',
-    'cfg <- round_configs[[task_id]]',
-    'prev_ep <- round_prev_epochs[task_id]',
-    'target_ep <- round_r_i',
-    'worker_seed <- round_seeds[task_id]',
-    '',
-    'tf$random$set_seed(as.integer(worker_seed))',
-    'model <- build_nn(cfg, hb_data, type, sfs.dims)',
-    '',
-    '# Load weights from previous round (if any)',
-    'wpath <- file.path("weights", sprintf("cfg_%d", task_id))',
-    'wfile <- file.path(wpath, "ckpt")',
-    'if (prev_ep > 0 && dir.exists(wpath)) {',
-    '  load_model_weights_tf(model, wfile)',
-    '}',
-    '',
-    'history <- model |> fit(',
-    '  x = hb_data$X_train, y = hb_data$Y_train,',
-    '  validation_data = list(hb_data$X_val, hb_data$Y_val),',
-    '  epochs        = as.integer(target_ep),',
-    '  initial_epoch = as.integer(prev_ep),',
-    '  batch_size    = as.integer(cfg$batch_size),',
-    '  callbacks     = list(',
-    '    callback_early_stopping(monitor = "val_loss",',
-    '                            patience = 10L,',
-    '                            restore_best_weights = TRUE),',
-    '    callback_reduce_lr_on_plateau(monitor = "val_loss",',
-    '                                  patience = 5L,',
-    '                                  factor = 0.5,',
-    '                                  min_lr = 1e-6,',
-    '                                  verbose = 0L)',
-    '  ),',
-    '  verbose = 0L',
-    ')',
-    '',
-    'vl <- history$metrics$val_loss',
-    'if (is.null(vl)) vl <- history$history$val_loss',
-    'best_vl <- min(unlist(vl))',
-    '',
-    '# Save weights',
-    'dir.create(wpath, recursive = TRUE, showWarnings = FALSE)',
-    'save_model_weights_tf(model, wfile)',
-    '',
-    '# Write result',
-    'write.csv(data.frame(task_id = task_id, val_loss = best_vl),',
-    '          out_file, row.names = FALSE)',
-    'cat(sprintf("  hb %d done (val_loss=%.4f)\\n", task_id, best_vl))',
-    'k_clear_session()'
-  ), filepath)
-}
-
-# ============================================================================
 # Internal: write standalone conformal worker Rscript
 # ============================================================================
 
@@ -2948,8 +3117,10 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     pid_file  <- file.path(sentinels_dir,
                            sprintf("%s_%04d_a%d.pid", task$prefix, task$id, attempt))
 
-    # GPU environment
-    if (gpus > 0) {
+    # GPU environment: per-task override or pool-level round-robin
+    if (!is.null(task$gpu_env)) {
+      gpu_env <- task$gpu_env
+    } else if (gpus > 0) {
       gpu_id <- gpu_counter %% gpus
       gpu_counter <<- gpu_counter + 1L
       gpu_env <- sprintf("CUDA_VISIBLE_DEVICES=%d TF_FORCE_GPU_ALLOW_GROWTH=true",
@@ -2959,8 +3130,10 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     }
 
     # Shell wrapper: run Rscript, capture exit code in .done file, record PID
+    # setsid creates a new process group so we can kill Rscript + children on timeout
+    # echo $? stderr redirected to /dev/null to avoid "Directory nonexistent" on cleanup
     cmd <- sprintf(
-      "{ env %s Rscript %s %d > %s 2>&1; echo $? > %s; } & echo $! > %s",
+      "{ setsid env %s Rscript %s %d > %s 2>&1; echo $? > %s 2>/dev/null; } & echo $! > %s",
       gpu_env, shQuote(task$script), task$id,
       shQuote(log_file), shQuote(done_file), shQuote(pid_file))
     system(cmd, wait = FALSE)
@@ -3009,9 +3182,9 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
       } else if (file.exists(a$done_file)) {
         # --- CRASH: process exited but no result CSV ---
-        exit_code <- tryCatch(
+        exit_code <- suppressWarnings(tryCatch(
           as.integer(trimws(readLines(a$done_file, n = 1L, warn = FALSE))),
-          error = function(e) NA_integer_)
+          error = function(e) NA_integer_))
         tail_lines <- .log_tail(a$log_file)
 
         if (retry_count[a$task_idx] < max_retries) {
@@ -3038,12 +3211,18 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
       } else if (elapsed_sec > timeout_per_task) {
         # --- TIMEOUT: kill process and fail/retry ---
-        # Try to kill the child process
+        # Kill the entire process group (Rscript + children) via negative PID
         if (file.exists(a$pid_file)) {
-          pid <- tryCatch(
+          pid <- suppressWarnings(tryCatch(
             as.integer(trimws(readLines(a$pid_file, n = 1L, warn = FALSE))),
-            error = function(e) NA_integer_)
-          if (!is.na(pid)) tryCatch(tools::pskill(pid), error = function(e) NULL)
+            error = function(e) NA_integer_))
+          if (!is.na(pid)) {
+            # Kill child processes first (Rscript), then the shell wrapper
+            tryCatch(
+              system(sprintf("pkill -P %d 2>/dev/null; kill %d 2>/dev/null", pid, pid),
+                     ignore.stdout = TRUE, ignore.stderr = TRUE),
+              error = function(e) NULL)
+          }
         }
 
         if (retry_count[a$task_idx] < max_retries) {
@@ -3274,4 +3453,1012 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   unlink(work_dir, recursive = TRUE)
 
   boot_matrix
+}
+
+# ============================================================================
+# ============================================================================
+#
+#  WGAN-GP: Adversarial Posterior Estimation
+#
+# ============================================================================
+# ============================================================================
+
+# ============================================================================
+# Internal: default GAN hyperparameter search space
+# ============================================================================
+
+.default.gan.search.space <- function() {
+  list(
+    noise_dim   = c(32, 64, 128),
+    g_units     = c(128, 256, 512),
+    g_n_layers  = 3:5,
+    c_units     = c(128, 256, 512),
+    c_n_layers  = 3:5,
+    g_lr        = c(1e-5, 1e-3),
+    c_lr        = c(1e-5, 1e-3),
+    lambda_gp   = c(1, 10, 20),
+    n_critic    = c(3, 5, 10),
+    batch_size  = c(256, 512, 1024),
+    leaky_alpha = c(0.1, 0.2, 0.3)
+  )
+}
+
+# ============================================================================
+# Internal: sample one GAN HP configuration
+# ============================================================================
+
+.sample.gan.config <- function(search_space) {
+  hp <- list()
+  log_uniform_params <- c("g_lr", "c_lr")
+
+  for (nm in names(search_space)) {
+    vals <- search_space[[nm]]
+
+    if (nm %in% log_uniform_params && length(vals) == 2 && is.numeric(vals)) {
+      hp[[nm]] <- 10^runif(1, log10(vals[1]), log10(vals[2]))
+    } else {
+      hp[[nm]] <- sample(vals, 1)
+    }
+  }
+  hp
+}
+
+# ============================================================================
+# Internal: GAN HP config to string
+# ============================================================================
+
+.gan.hp.to.string <- function(hp) {
+  sprintf("z=%d g=%dx%d c=%dx%d glr=%.1e clr=%.1e gp=%g nc=%d bs=%d la=%.1f",
+          hp$noise_dim,
+          hp$g_n_layers, hp$g_units,
+          hp$c_n_layers, hp$c_units,
+          hp$g_lr, hp$c_lr,
+          hp$lambda_gp, hp$n_critic,
+          hp$batch_size, hp$leaky_alpha)
+}
+
+# ============================================================================
+# Internal: flatten features for Dense-only GAN architecture
+# ============================================================================
+
+.flatten.features <- function(data, type) {
+  # sumstat: already 2D matrix, pass through
+  # sfs1d:  (n, bins, 1) -> (n, bins)
+  # sfs2d:  (n, d1, d2, 1) -> (n, d1*d2)
+
+  flatten_one <- function(X) {
+    if (type == "sumstat") {
+      return(X)
+    } else if (type == "sfs1d") {
+      dims <- dim(X)
+      return(matrix(X, nrow = dims[1], ncol = dims[2]))
+    } else {
+      dims <- dim(X)
+      return(matrix(X, nrow = dims[1], ncol = prod(dims[2:3])))
+    }
+  }
+
+  X_train_flat <- flatten_one(data$X_train)
+  X_val_flat   <- flatten_one(data$X_val)
+
+  list(
+    X_train    = X_train_flat,
+    X_val      = X_val_flat,
+    n_feat_flat = ncol(X_train_flat)
+  )
+}
+
+# ============================================================================
+# Internal: build generator G(z, x) -> theta
+# ============================================================================
+
+.build.generator <- function(hp, n_features, n_targets) {
+  z_input <- keras::layer_input(shape = as.integer(hp$noise_dim), name = "z_input")
+  x_input <- keras::layer_input(shape = as.integer(n_features), name = "x_input")
+
+  x <- keras::layer_concatenate(list(z_input, x_input))
+
+  for (i in seq_len(hp$g_n_layers)) {
+    x <- x |>
+      keras::layer_dense(units = as.integer(hp$g_units), use_bias = FALSE) |>
+      keras::layer_batch_normalization() |>
+      keras::layer_activation("relu")
+  }
+
+  out <- x |> keras::layer_dense(units = as.integer(n_targets), activation = "linear",
+                                  name = "g_output")
+
+  keras::keras_model(inputs = list(z_input, x_input), outputs = out, name = "generator")
+}
+
+# ============================================================================
+# Internal: build critic C(theta, x) -> score
+# ============================================================================
+
+.build.critic <- function(hp, n_features, n_targets) {
+  theta_input <- keras::layer_input(shape = as.integer(n_targets), name = "theta_input")
+  x_input     <- keras::layer_input(shape = as.integer(n_features), name = "x_input_c")
+
+  x <- keras::layer_concatenate(list(theta_input, x_input))
+
+  for (i in seq_len(hp$c_n_layers)) {
+    x <- x |>
+      keras::layer_dense(units = as.integer(hp$c_units)) |>
+      keras::layer_layer_normalization() |>
+      keras::layer_activation_leaky_relu(alpha = hp$leaky_alpha)
+  }
+
+  out <- x |> keras::layer_dense(units = 1L, activation = "linear", name = "c_output")
+
+  keras::keras_model(inputs = list(theta_input, x_input), outputs = out, name = "critic")
+}
+
+# ============================================================================
+# Internal: GAN validation metric (MSE of generator mean prediction)
+# ============================================================================
+
+.gan.val.metric <- function(generator, X_val, Y_val, noise_dim, K = 10L) {
+  tf <- tensorflow::tf
+  n_val <- as.integer(nrow(X_val))
+  n_targets <- as.integer(ncol(Y_val))
+
+  X_val_tf <- tf$constant(X_val, dtype = "float32")
+  Y_val_tf <- tf$constant(Y_val, dtype = "float32")
+  noise_dim_i <- as.integer(noise_dim)
+
+  # Generate K samples, accumulate
+  sum_pred <- tf$zeros(c(n_val, n_targets), dtype = "float32")
+  for (k in seq_len(K)) {
+    z <- tf$random$normal(c(n_val, noise_dim_i))
+    sum_pred <- sum_pred + generator(list(z, X_val_tf), training = FALSE)
+  }
+
+  mse <- tf$reduce_mean((sum_pred / as.numeric(K) - Y_val_tf)^2)
+  as.numeric(mse)
+}
+
+# ============================================================================
+# Internal: WGAN-GP training loop
+# ============================================================================
+
+.train.wgan <- function(generator, critic, hp, X_train, Y_train,
+                        X_val, Y_val, max_epochs, patience, seed, verbose) {
+  tf <- tensorflow::tf
+
+  noise_dim  <- as.integer(hp$noise_dim)
+  lambda_gp  <- tf$constant(hp$lambda_gp, dtype = "float32")
+  n_critic   <- as.integer(hp$n_critic)
+  batch_size <- as.integer(hp$batch_size)
+  n_train    <- as.integer(nrow(X_train))
+  noise_dim_t <- tf$constant(noise_dim, dtype = "int32")
+
+  g_opt <- keras::optimizer_adam(learning_rate = hp$g_lr, beta_1 = 0.5, beta_2 = 0.9)
+  c_opt <- keras::optimizer_adam(learning_rate = hp$c_lr, beta_1 = 0.5, beta_2 = 0.9)
+
+  # --- Define compiled @tf.function training steps in Python ---
+  reticulate::py_run_string("
+import tensorflow as tf
+
+def make_train_steps(generator, critic, g_opt, c_opt, noise_dim, lambda_gp):
+    noise_dim = tf.cast(noise_dim, tf.int32)
+    lambda_gp = tf.cast(lambda_gp, tf.float32)
+
+    @tf.function
+    def train_critic_step(x_batch, y_batch):
+        bs = tf.shape(x_batch)[0]
+        z = tf.random.normal([bs, noise_dim])
+        fake_theta = generator([z, x_batch], training=False)
+
+        with tf.GradientTape() as c_tape:
+            real_score = critic([y_batch, x_batch], training=True)
+            fake_score = critic([fake_theta, x_batch], training=True)
+            c_wass = tf.reduce_mean(fake_score) - tf.reduce_mean(real_score)
+
+            # Gradient penalty
+            eps = tf.random.uniform([bs, 1], 0.0, 1.0)
+            interp = eps * y_batch + (1.0 - eps) * tf.stop_gradient(fake_theta)
+
+            with tf.GradientTape() as gp_tape:
+                gp_tape.watch(interp)
+                interp_score = critic([interp, x_batch], training=True)
+            grads_interp = gp_tape.gradient(interp_score, interp)
+            gn = tf.sqrt(tf.reduce_sum(grads_interp**2, axis=1) + 1e-8)
+            gp = tf.reduce_mean((gn - 1.0)**2)
+
+            c_total = c_wass + lambda_gp * gp
+
+        c_grads = c_tape.gradient(c_total, critic.trainable_variables)
+        c_opt.apply_gradients(zip(c_grads, critic.trainable_variables))
+        return c_total
+
+    @tf.function
+    def train_generator_step(x_batch):
+        bs = tf.shape(x_batch)[0]
+        z = tf.random.normal([bs, noise_dim])
+
+        with tf.GradientTape() as g_tape:
+            fake_theta = generator([z, x_batch], training=True)
+            fake_score = critic([fake_theta, x_batch], training=False)
+            g_loss = -tf.reduce_mean(fake_score)
+
+        g_grads = g_tape.gradient(g_loss, generator.trainable_variables)
+        g_opt.apply_gradients(zip(g_grads, generator.trainable_variables))
+        return g_loss
+
+    return train_critic_step, train_generator_step
+")
+  make_steps <- reticulate::py$make_train_steps
+  steps <- make_steps(generator, critic, g_opt, c_opt, noise_dim_t, lambda_gp)
+  train_critic_step    <- steps[[1]]
+  train_generator_step <- steps[[2]]
+
+  # Precompute TF constants
+  X_tf <- tf$constant(X_train, dtype = "float32")
+  Y_tf <- tf$constant(Y_train, dtype = "float32")
+
+  dataset <- tf$data$Dataset$from_tensor_slices(reticulate::tuple(X_tf, Y_tf))
+  dataset <- dataset$shuffle(n_train, seed = as.integer(seed))
+  dataset <- dataset$batch(batch_size, drop_remainder = TRUE)
+  dataset <- dataset$prefetch(tf$data$AUTOTUNE)
+
+  # Early stopping state
+  best_val <- Inf
+  best_weights_g <- generator$get_weights()
+  wait <- 0L
+
+  for (epoch in seq_len(max_epochs)) {
+    epoch_ds <- dataset$shuffle(n_train, seed = as.integer(seed + epoch))
+    iter <- reticulate::as_iterator(epoch_ds)
+
+    repeat {
+      batch <- tryCatch(reticulate::iter_next(iter), error = function(e) NULL)
+      if (is.null(batch)) break
+
+      x_batch <- batch[[1]]
+      y_batch <- batch[[2]]
+
+      # Train critic n_critic times (compiled step)
+      for (ci in seq_len(n_critic))
+        train_critic_step(x_batch, y_batch)
+
+      # Train generator once (compiled step)
+      train_generator_step(x_batch)
+    }
+
+    # --- End of epoch: compute validation metric ---
+    val_metric <- .gan.val.metric(generator, X_val, Y_val, noise_dim)
+
+    if (verbose && (epoch %% 50 == 0 || epoch == 1))
+      cat(sprintf("    Epoch %d: val_mse=%.6f\n", epoch, val_metric))
+
+    if (val_metric < best_val) {
+      best_val <- val_metric
+      best_weights_g <- generator$get_weights()
+      wait <- 0L
+    } else {
+      wait <- wait + 1L
+      if (wait >= patience) {
+        if (verbose)
+          cat(sprintf("    Early stop at epoch %d (best val_mse=%.6f)\n",
+                      epoch, best_val))
+        break
+      }
+    }
+  }
+
+  # Restore best weights
+  generator$set_weights(best_weights_g)
+
+  list(
+    generator       = generator,
+    best_val_metric = best_val,
+    epochs_trained  = epoch
+  )
+}
+
+# ============================================================================
+# Internal: sequential training of all GAN configs
+# ============================================================================
+
+.train.all.configs <- function(configs, X_train, Y_train, X_val, Y_val,
+                                n_features, n_targets, max_epochs, patience,
+                                seed, verbose) {
+
+  n_configs <- length(configs)
+  best_val  <- Inf
+  best_hp   <- NULL
+  best_gen_weights <- NULL
+
+  for (i in seq_len(n_configs)) {
+    hp <- configs[[i]]
+
+    if (verbose)
+      cat(sprintf("\nPipeMaster:: Config %d/%d: %s\n",
+                  i, n_configs, .gan.hp.to.string(hp)))
+
+    tryCatch({
+      tensorflow::tf$random$set_seed(as.integer(seed + i))
+
+      generator <- .build.generator(hp, n_features, n_targets)
+      critic    <- .build.critic(hp, n_features, n_targets)
+
+      result <- .train.wgan(generator, critic, hp,
+                            X_train, Y_train, X_val, Y_val,
+                            max_epochs, patience, seed + i, verbose)
+
+      if (verbose)
+        cat(sprintf("    Config %d: val_mse=%.6f (%d epochs)\n",
+                    i, result$best_val_metric, result$epochs_trained))
+
+      if (result$best_val_metric < best_val) {
+        best_val <- result$best_val_metric
+        best_hp  <- hp
+        best_gen_weights <- result$generator$get_weights()
+      }
+
+      rm(generator, critic, result); gc()
+      tryCatch(keras::k_clear_session(), error = function(e) NULL)
+
+    }, error = function(e) {
+      if (verbose) cat(sprintf("    [warn] config %d error: %s\n",
+                               i, conditionMessage(e)))
+      tryCatch({ gc(); keras::k_clear_session() }, error = function(e2) NULL)
+    })
+  }
+
+  list(
+    best_hp          = best_hp,
+    best_val_metric  = best_val,
+    best_gen_weights = best_gen_weights
+  )
+}
+
+# ============================================================================
+# tune.gan — main entry point for WGAN-GP posterior estimation
+# ============================================================================
+
+#' Tune a WGAN-GP for Adversarial Posterior Estimation
+#'
+#' Trains a conditional Wasserstein GAN with gradient penalty (WGAN-GP) that
+#' learns to generate posterior samples for demographic parameters directly.
+#' Uses random search over hyperparameter configurations with early stopping.
+#'
+#' @param reftable data.frame — output of \code{sim.sumstat()} or \code{sim.sfs()}
+#'   containing both parameter columns and statistic columns.
+#' @param param.cols character vector — names of parameter columns (targets).
+#' @param type character — feature type: \code{"sumstat"}, \code{"sfs1d"}, or
+#'   \code{"sfs2d"}. All are flattened to 1D for the Dense-only GAN architecture.
+#' @param sfs.dims integer vector — for \code{type = "sfs2d"} only: \code{c(dim1, dim2)}.
+#' @param n_configs integer — number of random configurations to evaluate (default 20).
+#' @param max_epochs integer — maximum training epochs per config (default 2000).
+#' @param patience integer — early stopping patience (default 100).
+#' @param search_space named list — overrides default GAN HP ranges. NULL uses defaults.
+#' @param exclude.cols character vector — columns to exclude from features.
+#' @param val.frac numeric — validation fraction (default 0.1).
+#' @param cores integer — number of parallel workers (default 1, sequential).
+#' @param gpus integer — number of GPUs for parallel workers (default 0).
+#' @param seed integer — random seed (default 42).
+#' @param verbose logical — print progress (default TRUE).
+#'
+#' @return A list with:
+#' \describe{
+#'   \item{best_hp}{named list of best hyperparameters}
+#'   \item{best_val_metric}{best validation MSE achieved}
+#'   \item{all_results}{data.frame of all evaluated configs}
+#'   \item{best_generator}{trained keras generator model}
+#'   \item{data}{preprocessed data (normalization params, splits)}
+#'   \item{flat}{flattened feature info}
+#'   \item{type}{architecture type used}
+#'   \item{sfs.dims}{SFS dimensions (if applicable)}
+#'   \item{exclude.cols}{excluded columns}
+#' }
+#'
+#' @export
+tune.gan <- function(reftable, param.cols,
+                     type = c("sumstat", "sfs1d", "sfs2d"),
+                     sfs.dims = NULL,
+                     n_configs = 20L, max_epochs = 2000L, patience = 100L,
+                     search_space = NULL, exclude.cols = NULL,
+                     val.frac = 0.1, cores = 1L, gpus = 0L,
+                     seed = 42, verbose = TRUE) {
+
+  # --- Dependency check ---
+  if (!requireNamespace("keras", quietly = TRUE) ||
+      !requireNamespace("tensorflow", quietly = TRUE))
+    stop("tune.gan() requires the 'keras' and 'tensorflow' R packages.\n",
+         "Install with: install.packages(c('keras', 'tensorflow'))\n",
+         "Then run: keras::install_keras()")
+
+  # --- Memory guard for parallel mode ---
+  if (cores > 1L) {
+    avail_gb <- tryCatch({
+      mem_info <- system("free -b 2>/dev/null", intern = TRUE)
+      if (length(mem_info) >= 2) {
+        fields <- as.numeric(strsplit(trimws(mem_info[2]), "\\s+")[[1]])
+        fields[7] / 1e9
+      } else {
+        NA_real_
+      }
+    }, error = function(e) NA_real_)
+
+    if (!is.na(avail_gb)) {
+      est_per_worker <- 1.5
+      est_total <- cores * est_per_worker
+      if (est_total > avail_gb * 0.85) {
+        warning(sprintf(
+          paste0("cores=%d workers may exceed available RAM ",
+                 "(%.1f GB free, ~%.0f GB estimated). ",
+                 "Reduce cores if you experience memory issues."),
+          cores, avail_gb, est_total),
+          call. = FALSE)
+      }
+    }
+  }
+
+  # --- Enable GPU memory growth ---
+  if (cores <= 1L) {
+    tryCatch({
+      tf_gpus <- tensorflow::tf$config$list_physical_devices("GPU")
+      for (gpu in tf_gpus)
+        tensorflow::tf$config$experimental$set_memory_growth(gpu, TRUE)
+    }, error = function(e) NULL)
+  }
+
+  type <- match.arg(type)
+
+  if (type == "sfs2d" && (is.null(sfs.dims) || length(sfs.dims) != 2))
+    stop("sfs.dims must be c(dim1, dim2) for type='sfs2d'")
+
+  # --- Search space ---
+  ss <- if (is.null(search_space)) .default.gan.search.space() else search_space
+
+  # --- Prepare data (reuse existing) ---
+  if (verbose) cat(sprintf("PipeMaster:: tune.gan \u2014 WGAN-GP (%s)\n", type))
+
+  data <- .prep.data(reftable, param.cols, type, sfs.dims, exclude.cols, val.frac, seed)
+
+  n_targ <- ncol(data$Y_train)
+
+  # --- Flatten features for Dense GAN ---
+  flat <- .flatten.features(data, type)
+
+  if (verbose) cat(sprintf("PipeMaster:: %d features (flat), %d targets | %d train, %d val\n",
+                           flat$n_feat_flat, n_targ, nrow(flat$X_train), nrow(flat$X_val)))
+
+  # --- Sample configs ---
+  set.seed(seed)
+  configs <- lapply(seq_len(n_configs), function(i) .sample.gan.config(ss))
+
+  # --- Track all results ---
+  all_results <- data.frame(
+    hp_string  = character(),
+    val_metric = numeric(),
+    stringsAsFactors = FALSE
+  )
+
+  if (verbose) cat(sprintf("PipeMaster:: %d configs, max %d epochs, patience %d\n\n",
+                           n_configs, max_epochs, patience))
+
+  # --- Train all configs ---
+  if (cores > 1L && n_configs > 1L) {
+    train_result <- .train.all.configs.parallel(
+      configs, flat$X_train, data$Y_train, flat$X_val, data$Y_val,
+      flat$n_feat_flat, n_targ, max_epochs, patience,
+      seed, cores, gpus, verbose)
+  } else {
+    train_result <- .train.all.configs(
+      configs, flat$X_train, data$Y_train, flat$X_val, data$Y_val,
+      flat$n_feat_flat, n_targ, max_epochs, patience, seed, verbose)
+  }
+
+  # --- Rebuild best generator from saved weights ---
+  best_hp <- train_result$best_hp
+  if (is.null(best_hp))
+    stop("All GAN configurations failed. Check training logs.")
+
+  if (verbose)
+    cat(sprintf("\nPipeMaster:: Best config: %s\n", .gan.hp.to.string(best_hp)))
+
+  tensorflow::tf$random$set_seed(as.integer(seed))
+  best_generator <- .build.generator(best_hp, flat$n_feat_flat, n_targ)
+  best_generator$set_weights(train_result$best_gen_weights)
+
+  if (verbose)
+    cat(sprintf("PipeMaster:: Final val_mse: %.6f\n", train_result$best_val_metric))
+
+  list(
+    best_hp          = best_hp,
+    best_val_metric  = train_result$best_val_metric,
+    all_results      = all_results,
+    best_generator   = best_generator,
+    data             = data,
+    flat             = flat,
+    type             = type,
+    sfs.dims         = sfs.dims,
+    exclude.cols     = exclude.cols
+  )
+}
+
+# ============================================================================
+# gan.predict — posterior sampling via trained WGAN-GP generator
+# ============================================================================
+
+#' Posterior Estimation via WGAN-GP Generator
+#'
+#' Generates posterior samples for observed data using a trained WGAN-GP
+#' generator from \code{tune.gan()}.
+#'
+#' @param gan.result list — output from \code{tune.gan()}.
+#' @param observed named numeric vector or 1-row data.frame of observed summary
+#'   statistics (or SFS bins).
+#' @param reftable data.frame — original reference table (used for prior bounds
+#'   to clip posterior samples).
+#' @param param.cols character vector — parameter column names.
+#' @param n_samples integer — number of posterior samples to generate (default 10000).
+#' @param seed integer — random seed (default 42).
+#' @param verbose logical — print progress (default TRUE).
+#'
+#' @return An object of class \code{"nn.posterior"} with a \code{$gan} slot
+#'   containing posterior samples (n_samples x n_params matrix).
+#'
+#' @export
+gan.predict <- function(gan.result, observed, reftable = NULL, param.cols = NULL,
+                        n_samples = 10000L, seed = 42, verbose = TRUE) {
+
+  if (!requireNamespace("keras", quietly = TRUE) ||
+      !requireNamespace("tensorflow", quietly = TRUE))
+    stop("gan.predict() requires the 'keras' and 'tensorflow' R packages.")
+
+  tf <- tensorflow::tf
+
+  generator <- gan.result$best_generator
+  data      <- gan.result$data
+  flat      <- gan.result$flat
+  type      <- gan.result$type
+  sfs.dims  <- gan.result$sfs.dims
+  best_hp   <- gan.result$best_hp
+
+  if (is.null(generator) || is.null(data) || is.null(best_hp))
+    stop("gan.result must be output from tune.gan()")
+
+  param_names <- colnames(data$Y_train)
+  if (is.null(param_names)) {
+    nuisance <- c("mean.rate", "sd.rate")
+    param_names <- if (!is.null(param.cols)) setdiff(param.cols, nuisance) else
+      paste0("param_", seq_len(ncol(data$Y_train)))
+  }
+  n_params <- length(param_names)
+
+  # Coerce observed to numeric vector
+  if (is.data.frame(observed)) {
+    stat_cols <- data$stat_cols
+    if (!is.null(stat_cols) && all(stat_cols %in% colnames(observed))) {
+      observed <- as.numeric(observed[1, stat_cols])
+    } else {
+      observed <- as.numeric(observed[1, ])
+    }
+  }
+
+  if (verbose)
+    cat(sprintf("PipeMaster:: gan.predict \u2014 %d posterior samples\n", n_samples))
+
+  # --- Prepare observed features (reuse existing .prep.observed) ---
+  X_obs <- .prep.observed(observed, data, type, sfs.dims)
+
+  # Flatten observed to 1D
+  if (type == "sfs1d") {
+    X_obs_flat <- matrix(X_obs, nrow = 1, ncol = dim(X_obs)[2])
+  } else if (type == "sfs2d") {
+    X_obs_flat <- matrix(X_obs, nrow = 1, ncol = prod(dim(X_obs)[2:3]))
+  } else {
+    X_obs_flat <- X_obs
+  }
+
+  # Replicate to n_samples rows
+  X_obs_rep <- X_obs_flat[rep(1, n_samples), , drop = FALSE]
+  X_obs_tf  <- tf$constant(X_obs_rep, dtype = "float32")
+
+  # Generate noise and forward pass
+  tf$random$set_seed(as.integer(seed))
+  z <- tf$random$normal(c(as.integer(n_samples), as.integer(best_hp$noise_dim)))
+  gen_out <- generator(list(z, X_obs_tf), training = FALSE)
+  gen_out <- as.matrix(gen_out)
+
+  # Inverse transform: z-scored log-space -> original scale
+  gan_samples <- .inv.transform(gen_out, data$target_mu, data$target_sd)
+  colnames(gan_samples) <- param_names
+
+  # Point estimate: mean of generated samples
+  point_est <- colMeans(gan_samples)
+  names(point_est) <- param_names
+
+  if (verbose) {
+    est_str <- paste(sprintf("%s=%.0f", param_names, point_est), collapse = " ")
+    cat(sprintf("PipeMaster:: Point estimate (GAN mean): %s\n", est_str))
+  }
+
+  # Clip to prior range if reftable provided
+  if (!is.null(reftable) && !is.null(param.cols)) {
+    for (j in seq_along(param_names)) {
+      p <- param_names[j]
+      if (p %in% colnames(reftable)) {
+        lo <- min(reftable[[p]])
+        hi <- max(reftable[[p]])
+        gan_samples[, j] <- pmax(lo, pmin(hi, gan_samples[, j]))
+      }
+    }
+  } else {
+    gan_samples[gan_samples < 0] <- 0
+  }
+
+  # Store prior samples from reftable
+  prior_samples <- NULL
+  if (!is.null(reftable) && !is.null(param.cols)) {
+    nuisance <- c("mean.rate", "sd.rate")
+    pcols <- setdiff(param.cols, nuisance)
+    prior_samples <- as.matrix(reftable[, pcols, drop = FALSE])
+    colnames(prior_samples) <- pcols
+  }
+
+  if (verbose) cat("PipeMaster:: Done.\n")
+
+  result <- list(
+    point_estimate = point_est,
+    conformal      = NULL,
+    bootstrap      = NULL,
+    mc_dropout     = NULL,
+    quantile       = NULL,
+    q_probs        = NULL,
+    gan            = gan_samples,
+    prior          = prior_samples,
+    param_names    = param_names
+  )
+  class(result) <- "nn.posterior"
+  result
+}
+
+# ============================================================================
+# save.gan.result / load.gan.result — serialization for WGAN-GP results
+# ============================================================================
+
+#' Save tune.gan Result to Disk
+#'
+#' Saves the output of \code{tune.gan()} so it can be loaded later.
+#' The keras generator model is serialized separately.
+#'
+#' @param gan.result list — output from \code{tune.gan()}.
+#' @param path character — directory path where files will be saved.
+#'
+#' @export
+save.gan.result <- function(gan.result, path) {
+  if (!requireNamespace("keras", quietly = TRUE))
+    stop("save.gan.result() requires the 'keras' package.")
+
+  dir.create(path, showWarnings = FALSE, recursive = TRUE)
+
+  # Save generator model
+  model_dir <- file.path(path, "best_generator")
+  keras::save_model_tf(gan.result$best_generator, model_dir)
+
+  # Save everything else as RDS
+  result_no_model <- gan.result
+  result_no_model$best_generator <- NULL
+  saveRDS(result_no_model, file.path(path, "gan_result.rds"))
+
+  cat(sprintf("PipeMaster:: Saved tune.gan result to %s\n", path))
+}
+
+#' Load tune.gan Result from Disk
+#'
+#' Loads a tune.gan() result previously saved with \code{save.gan.result()}.
+#'
+#' @param path character — directory path where files were saved.
+#'
+#' @return A list identical to the output of \code{tune.gan()}.
+#'
+#' @export
+load.gan.result <- function(path) {
+  if (!requireNamespace("keras", quietly = TRUE))
+    stop("load.gan.result() requires the 'keras' package.")
+
+  rds_file  <- file.path(path, "gan_result.rds")
+  model_dir <- file.path(path, "best_generator")
+
+  if (!file.exists(rds_file))
+    stop("gan_result.rds not found in: ", path)
+  if (!dir.exists(model_dir))
+    stop("best_generator/ directory not found in: ", path)
+
+  result <- readRDS(rds_file)
+  result$best_generator <- keras::load_model_tf(model_dir)
+
+  cat(sprintf("PipeMaster:: Loaded tune.gan result from %s\n", path))
+  result
+}
+
+# ============================================================================
+# Internal: parallel training of all GAN configs via Rscript worker pool
+# ============================================================================
+
+.train.all.configs.parallel <- function(configs, X_train, Y_train, X_val, Y_val,
+                                         n_features, n_targets, max_epochs, patience,
+                                         seed, cores, gpus, verbose) {
+
+  n_configs <- length(configs)
+
+  # Create temp working directory
+  work_dir <- tempfile("gan_pool_")
+  dir.create(work_dir, recursive = TRUE)
+  results_dir <- file.path(work_dir, "results")
+  dir.create(results_dir)
+  weights_dir <- file.path(work_dir, "weights")
+  dir.create(weights_dir)
+
+  # Save shared training data
+  shared_file <- file.path(work_dir, "shared_data.RData")
+  save(X_train, X_val, Y_train, Y_val,
+       n_features, n_targets, max_epochs, patience, seed,
+       file = shared_file)
+
+  # Save task data (configs)
+  gan_configs <- configs
+  gan_file <- file.path(work_dir, "gan_tasks.RData")
+  save(gan_configs, file = gan_file)
+
+  # Write scripts
+  .write.gan.builder.script(file.path(work_dir, "_gan_builder.R"))
+  .write.gan.worker.script(file.path(work_dir, "_gan_worker.R"))
+
+  # Build task list for the pool
+  tasks <- lapply(seq_len(n_configs), function(j) {
+    list(
+      script = "_gan_worker.R",
+      id     = j,
+      result = sprintf("results/gan_%04d.csv", j),
+      prefix = "gan"
+    )
+  })
+
+  if (verbose)
+    cat(sprintf("PipeMaster:: [parallel] %d GAN configs on %d cores%s\n",
+                n_configs, cores,
+                if (gpus > 0) sprintf(", %d GPUs", gpus) else ""))
+
+  # Launch pool
+  pool_result <- .launch.rscript.pool(tasks, cores, work_dir,
+                                       timeout_per_task = max_epochs * 15,
+                                       gpus = gpus, verbose = verbose,
+                                       max_retries = 1L)
+
+  # Collect results and find best
+  best_val <- Inf
+  best_hp  <- NULL
+  best_gen_weights <- NULL
+
+  for (j in seq_len(n_configs)) {
+    csv_file <- file.path(results_dir, sprintf("gan_%04d.csv", j))
+    if (file.exists(csv_file)) {
+      row <- tryCatch(read.csv(csv_file), error = function(e) NULL)
+      if (!is.null(row) && "val_metric" %in% names(row)) {
+        vm <- as.numeric(row$val_metric[1])
+        if (is.finite(vm) && vm < best_val) {
+          best_val <- vm
+          best_hp  <- configs[[j]]
+          # Load generator weights
+          wfile <- file.path(weights_dir, sprintf("gen_%04d.rds", j))
+          if (file.exists(wfile)) {
+            best_gen_weights <- readRDS(wfile)
+          }
+        }
+      }
+    }
+  }
+
+  # Clean up
+  unlink(work_dir, recursive = TRUE)
+
+  list(
+    best_hp          = best_hp,
+    best_val_metric  = best_val,
+    best_gen_weights = best_gen_weights
+  )
+}
+
+# ============================================================================
+# Internal: write standalone GAN model builder script for parallel workers
+# ============================================================================
+
+.write.gan.builder.script <- function(filepath) {
+  writeLines(c(
+    '# Auto-generated GAN model builder for parallel workers',
+    'build_generator <- function(hp, n_features, n_targets) {',
+    '  z_input <- layer_input(shape = as.integer(hp$noise_dim), name = "z_input")',
+    '  x_input <- layer_input(shape = as.integer(n_features), name = "x_input")',
+    '  x <- layer_concatenate(list(z_input, x_input))',
+    '  for (i in seq_len(hp$g_n_layers)) {',
+    '    x <- x |>',
+    '      layer_dense(units = as.integer(hp$g_units), use_bias = FALSE) |>',
+    '      layer_batch_normalization() |>',
+    '      layer_activation("relu")',
+    '  }',
+    '  out <- x |> layer_dense(units = as.integer(n_targets), activation = "linear",',
+    '                           name = "g_output")',
+    '  keras_model(inputs = list(z_input, x_input), outputs = out, name = "generator")',
+    '}',
+    '',
+    'build_critic <- function(hp, n_features, n_targets) {',
+    '  theta_input <- layer_input(shape = as.integer(n_targets), name = "theta_input")',
+    '  x_input <- layer_input(shape = as.integer(n_features), name = "x_input_c")',
+    '  x <- layer_concatenate(list(theta_input, x_input))',
+    '  for (i in seq_len(hp$c_n_layers)) {',
+    '    x <- x |>',
+    '      layer_dense(units = as.integer(hp$c_units)) |>',
+    '      layer_layer_normalization() |>',
+    '      layer_activation_leaky_relu(alpha = hp$leaky_alpha)',
+    '  }',
+    '  out <- x |> layer_dense(units = 1L, activation = "linear", name = "c_output")',
+    '  keras_model(inputs = list(theta_input, x_input), outputs = out, name = "critic")',
+    '}'
+  ), filepath)
+}
+
+# ============================================================================
+# Internal: write standalone GAN worker script for parallel training
+# ============================================================================
+
+.write.gan.worker.script <- function(filepath) {
+  writeLines(c(
+    '#!/usr/bin/env Rscript',
+    'args <- commandArgs(trailingOnly = TRUE)',
+    'task_id <- as.integer(args[1])',
+    '',
+    '# Threading env (GPU env set externally by pool launcher)',
+    'Sys.setenv(TF_NUM_INTRAOP_THREADS = "1",',
+    '           TF_NUM_INTEROP_THREADS = "1",',
+    '           OMP_NUM_THREADS = "1")',
+    '',
+    'load("shared_data.RData")',
+    'load("gan_tasks.RData")',
+    '',
+    'out_file <- file.path("results", sprintf("gan_%04d.csv", task_id))',
+    'if (file.exists(out_file)) { cat("skip\\n"); q("no") }',
+    '',
+    'suppressPackageStartupMessages({',
+    '  library(keras)',
+    '  library(tensorflow)',
+    '  library(reticulate)',
+    '})',
+    'source("_gan_builder.R")',
+    '',
+    'hp <- gan_configs[[task_id]]',
+    'worker_seed <- as.integer(seed + task_id)',
+    '',
+    'tf$random$set_seed(worker_seed)',
+    '',
+    'generator <- build_generator(hp, n_features, n_targets)',
+    'critic    <- build_critic(hp, n_features, n_targets)',
+    '',
+    'noise_dim  <- as.integer(hp$noise_dim)',
+    'batch_size <- as.integer(hp$batch_size)',
+    'n_critic_steps <- as.integer(hp$n_critic)',
+    '',
+    'g_opt <- optimizer_adam(learning_rate = hp$g_lr, beta_1 = 0.5, beta_2 = 0.9)',
+    'c_opt <- optimizer_adam(learning_rate = hp$c_lr, beta_1 = 0.5, beta_2 = 0.9)',
+    '',
+    'n_train <- nrow(X_train)',
+    '',
+    '# Define compiled training steps via Python @tf.function',
+    'reticulate::py_run_string(sprintf("',
+    'import tensorflow as tf',
+    '',
+    'def make_worker_steps(gen, crt, g_opt, c_opt, ndim, lgp):',
+    '    ndim = tf.cast(ndim, tf.int32)',
+    '    lgp  = tf.cast(lgp, tf.float32)',
+    '',
+    '    @tf.function',
+    '    def critic_step(xb, yb):',
+    '        bs = tf.shape(xb)[0]',
+    '        z  = tf.random.normal([bs, ndim])',
+    '        fake = gen([z, xb], training=False)',
+    '        with tf.GradientTape() as ct:',
+    '            rs = crt([yb, xb], training=True)',
+    '            fs = crt([fake, xb], training=True)',
+    '            wl = tf.reduce_mean(fs) - tf.reduce_mean(rs)',
+    '            ep = tf.random.uniform([bs, 1], 0.0, 1.0)',
+    '            ip = ep * yb + (1.0 - ep) * tf.stop_gradient(fake)',
+    '            with tf.GradientTape() as gt:',
+    '                gt.watch(ip)',
+    '                isc = crt([ip, xb], training=True)',
+    '            gi = gt.gradient(isc, ip)',
+    '            gn = tf.sqrt(tf.reduce_sum(gi**2, axis=1) + 1e-8)',
+    '            gp = tf.reduce_mean((gn - 1.0)**2)',
+    '            ct_loss = wl + lgp * gp',
+    '        cg = ct.gradient(ct_loss, crt.trainable_variables)',
+    '        c_opt.apply_gradients(zip(cg, crt.trainable_variables))',
+    '',
+    '    @tf.function',
+    '    def gen_step(xb):',
+    '        bs = tf.shape(xb)[0]',
+    '        z  = tf.random.normal([bs, ndim])',
+    '        with tf.GradientTape() as gt:',
+    '            ft = gen([z, xb], training=True)',
+    '            fs = crt([ft, xb], training=False)',
+    '            gl = -tf.reduce_mean(fs)',
+    '        gg = gt.gradient(gl, gen.trainable_variables)',
+    '        g_opt.apply_gradients(zip(gg, gen.trainable_variables))',
+    '',
+    '    return critic_step, gen_step',
+    '"))',
+    '',
+    'make_steps <- reticulate::py$make_worker_steps',
+    'steps <- make_steps(generator, critic, g_opt, c_opt,',
+    '                    tf$constant(noise_dim, dtype = "int32"),',
+    '                    tf$constant(as.numeric(hp$lambda_gp), dtype = "float32"))',
+    'train_c <- steps[[1]]',
+    'train_g <- steps[[2]]',
+    '',
+    'X_tf <- tf$constant(X_train, dtype = "float32")',
+    'Y_tf <- tf$constant(Y_train, dtype = "float32")',
+    '',
+    'dataset <- tf$data$Dataset$from_tensor_slices(reticulate::tuple(X_tf, Y_tf))',
+    'dataset <- dataset$shuffle(as.integer(n_train), seed = worker_seed)',
+    'dataset <- dataset$batch(batch_size, drop_remainder = TRUE)',
+    'dataset <- dataset$prefetch(tf$data$AUTOTUNE)',
+    '',
+    '# Validation metric function',
+    'gan_val_metric <- function(gen, Xv, Yv, ndim, K = 10L) {',
+    '  nv <- as.integer(nrow(Xv))',
+    '  nt <- as.integer(ncol(Yv))',
+    '  Xv_tf <- tf$constant(Xv, dtype = "float32")',
+    '  sp <- tf$zeros(c(nv, nt), dtype = "float32")',
+    '  for (k in seq_len(K)) {',
+    '    zk <- tf$random$normal(c(nv, as.integer(ndim)))',
+    '    sp <- sp + gen(list(zk, Xv_tf), training = FALSE)',
+    '  }',
+    '  as.numeric(tf$reduce_mean((sp / as.numeric(K) - tf$constant(Yv, dtype = "float32"))^2))',
+    '}',
+    '',
+    'best_val <- Inf',
+    'best_weights_g <- generator$get_weights()',
+    'wait <- 0L',
+    '',
+    'for (epoch in seq_len(max_epochs)) {',
+    '  epoch_ds <- dataset$shuffle(as.integer(n_train), seed = worker_seed + epoch)',
+    '  iter <- reticulate::as_iterator(epoch_ds)',
+    '',
+    '  repeat {',
+    '    batch <- tryCatch(reticulate::iter_next(iter), error = function(e) NULL)',
+    '    if (is.null(batch)) break',
+    '    x_batch <- batch[[1]]',
+    '    y_batch <- batch[[2]]',
+    '',
+    '    for (ci in seq_len(n_critic_steps)) train_c(x_batch, y_batch)',
+    '    train_g(x_batch)',
+    '  }',
+    '',
+    '  val_m <- gan_val_metric(generator, X_val, Y_val, noise_dim)',
+    '',
+    '  if (val_m < best_val) {',
+    '    best_val <- val_m',
+    '    best_weights_g <- generator$get_weights()',
+    '    wait <- 0L',
+    '  } else {',
+    '    wait <- wait + 1L',
+    '    if (wait >= patience) break',
+    '  }',
+    '}',
+    '',
+    '# Restore best weights and save',
+    'generator$set_weights(best_weights_g)',
+    '',
+    '# Save generator weights as raw R list',
+    'wts <- lapply(best_weights_g, function(w) as.array(w))',
+    'saveRDS(wts, file.path("weights", sprintf("gen_%04d.rds", task_id)))',
+    '',
+    '# Write result CSV',
+    'write.csv(data.frame(task_id = task_id, val_metric = best_val),',
+    '          out_file, row.names = FALSE)',
+    'cat(sprintf("  gan %d done (val_metric=%.6f)\\n", task_id, best_val))',
+    'k_clear_session()'
+  ), filepath)
 }
