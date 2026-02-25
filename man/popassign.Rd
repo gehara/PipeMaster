@@ -11,7 +11,7 @@ A data frame with 88 rows and 2 columns (\code{sample}, \code{pop}).
 data(popassign, package = "PipeMaster")
 }
 \description{
-\lifecycle{deprecated}
+\strong{[Deprecated]}
 This dataset is deprecated and will be replaced in a future version.
 Population assignment table mapping samples to populations.
 }

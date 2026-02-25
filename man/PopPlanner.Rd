@@ -7,7 +7,7 @@
 PopPlanner()
 }
 \description{
-\lifecycle{deprecated}
+\strong{[Deprecated]}
 
 `PopPlanner()` is deprecated. Use [main.menu.gui()] instead to build
 demographic models interactively.

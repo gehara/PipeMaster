@@ -1,6 +1,6 @@
 #' Calls PopPlanner, a java application with GUI to build ms population models generating the corresponding ms string.
 #' @description
-#' \lifecycle{deprecated}
+#' \strong{[Deprecated]}
 #'
 #' `PopPlanner()` is deprecated. Use [main.menu.gui()] instead to build
 #' demographic models interactively.

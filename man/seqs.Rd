@@ -11,7 +11,7 @@ A list of 200 \code{DNAbin} matrices.
 data(seqs, package = "PipeMaster")
 }
 \description{
-\lifecycle{deprecated}
+\strong{[Deprecated]}
 This dataset is deprecated and will be replaced in a future version.
 200 sequences stored in a list of DNAbin matrices.
 }

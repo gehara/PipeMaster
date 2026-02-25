@@ -1,6 +1,6 @@
 #' 200 sequences of the Dermatonotus muelleri frog (Deprecated)
 #'
-#' \lifecycle{deprecated}
+#' \strong{[Deprecated]}
 #' This dataset is deprecated and will be replaced in a future version.
 #' 200 sequences stored in a list of DNAbin matrices.
 #'

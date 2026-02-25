@@ -1,6 +1,6 @@
 #' Population assignment file for Dermatonotus muelleri sequences (Deprecated)
 #'
-#' \lifecycle{deprecated}
+#' \strong{[Deprecated]}
 #' This dataset is deprecated and will be replaced in a future version.
 #' Population assignment table mapping samples to populations.
 #'
