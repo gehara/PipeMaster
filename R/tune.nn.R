@@ -3589,6 +3589,97 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     log_lines[max(1L, n_lines - n + 1L):n_lines]
   }
 
+  # Helper: extract one-line progress status from a worker's log file
+  .worker.progress <- function(log_rel_path) {
+    log_path <- file.path(work_dir, log_rel_path)
+    if (!file.exists(log_path)) return("(starting...)")
+    lines <- readLines(log_path, warn = FALSE)
+    if (length(lines) == 0L) return("(starting...)")
+
+    # Extract total brackets (s_max) from header line
+    n_brackets <- NA_integer_
+    smax_idx <- grep("s_max=", lines, fixed = TRUE)
+    if (length(smax_idx) > 0L) {
+      m <- regmatches(lines[smax_idx[1L]],
+                      regexpr("s_max=(\\d+)", lines[smax_idx[1L]]))
+      if (length(m) == 1L)
+        n_brackets <- as.integer(sub("s_max=", "", m)) + 1L
+    }
+
+    # Extract latest best val_loss from Round lines (scan from bottom)
+    best_loss <- NA_real_
+    for (j in seq.int(length(lines), 1L)) {
+      if (grepl("best val_loss=", lines[j], fixed = TRUE)) {
+        m <- regmatches(lines[j],
+                        regexpr("best val_loss=([0-9.]+)", lines[j]))
+        if (length(m) == 1L)
+          best_loss <- as.numeric(sub("best val_loss=", "", m))
+        break
+      }
+    }
+
+    # Scan from bottom for status (highest priority first)
+    for (j in seq.int(length(lines), 1L)) {
+      ln <- lines[j]
+
+      # 1. Search done
+      if (grepl("^Search .* done", ln)) {
+        m <- regmatches(ln, regexpr("val_loss=([0-9.]+)", ln))
+        vl <- if (length(m) == 1L) sub("val_loss=", "", m) else "?"
+        return(sprintf("done (val_loss=%s)", vl))
+      }
+
+      # 2. Retraining phase
+      if (grepl("retraining from epoch", ln, fixed = TRUE))
+        return("retraining best model...")
+
+      # 3. Bracket done with ETA
+      if (grepl("Bracket.*done.*elapsed", ln)) {
+        m_bracket <- regmatches(ln, regexpr("Bracket (\\d+)", ln))
+        bnum <- if (length(m_bracket) == 1L)
+          as.integer(sub("Bracket ", "", m_bracket)) else NA_integer_
+
+        m_eta <- regmatches(ln, regexpr("~(\\d+) min remaining", ln))
+        eta_str <- if (length(m_eta) == 1L) {
+          paste0("~", sub(" min remaining", "m left", m_eta))
+        } else NULL
+
+        bracket_str <- if (!is.na(bnum) && !is.na(n_brackets)) {
+          # brackets count down from s_max to 0, so done count = s_max - bnum + 1
+          # but the last bracket done is bnum, meaning brackets s_max..bnum are done
+          done_count <- n_brackets - bnum
+          sprintf("bracket %d/%d", done_count, n_brackets)
+        } else if (!is.na(bnum)) {
+          sprintf("after bracket %d", bnum)
+        } else "between brackets"
+
+        parts <- bracket_str
+        if (!is.na(best_loss)) parts <- paste0(parts, sprintf(", best=%.4f", best_loss))
+        if (!is.null(eta_str)) parts <- paste0(parts, ", ", eta_str)
+        return(parts)
+      }
+
+      # 4. Currently inside a bracket (not done yet)
+      if (grepl("Bracket.*\\|.*configs", ln)) {
+        m_bracket <- regmatches(ln, regexpr("Bracket (\\d+)", ln))
+        bnum <- if (length(m_bracket) == 1L)
+          as.integer(sub("Bracket ", "", m_bracket)) else NA_integer_
+
+        bracket_str <- if (!is.na(bnum) && !is.na(n_brackets)) {
+          in_count <- n_brackets - bnum
+          sprintf("in bracket %d/%d", in_count + 1L, n_brackets)
+        } else if (!is.na(bnum)) {
+          sprintf("in bracket %d", bnum)
+        } else "running bracket"
+
+        if (!is.na(best_loss))
+          bracket_str <- paste0(bracket_str, sprintf(", best=%.4f", best_loss))
+        return(bracket_str)
+      }
+    }
+    "(starting...)"
+  }
+
   # Fill initial slots (conformal tasks come first = priority)
   while (length(active) < cores && length(pending) > 0) {
     tidx <- pending[1]
@@ -3603,6 +3694,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   }
 
   # Poll loop — check every second, 4-way detection
+  last_progress <- Sys.time()
   while (length(active) > 0) {
     Sys.sleep(1)
 
@@ -3665,6 +3757,23 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
       tidx <- pending[1]
       pending <- pending[-1]
       active[[length(active) + 1]] <- launch_one(tidx)
+    }
+
+    # Periodic progress report from worker logs
+    if (verbose && length(active) > 0 &&
+        as.numeric(difftime(Sys.time(), last_progress, units = "secs")) >= 60) {
+      last_progress <- Sys.time()
+      cat(sprintf("  [pool] Progress (%s):\n",
+                  format(Sys.time(), "%H:%M:%S")))
+      for (a in active) {
+        task <- tasks[[a$task_idx]]
+        elapsed_min <- as.numeric(difftime(Sys.time(), a$start_time,
+                                           units = "mins"))
+        status <- .worker.progress(a$log_file)
+        cat(sprintf("    %s %d: %.0fm \u2014 %s\n",
+                    task$prefix, task$id, elapsed_min, status))
+      }
+      flush.console()
     }
   }
 
