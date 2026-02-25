@@ -728,7 +728,23 @@ tune.nn <- function(reftable, param.cols,
   global_best_epochs <- 0L
   best_weights_path  <- tempfile("hb_best_weights_")
 
+  # Precompute total Hyperband budget (config-epochs) for ETA estimation
+  total_budget <- 0
+  for (ss in s_max:0) {
+    nn <- ceiling((s_max + 1) / (ss + 1)) * as.integer(eta^ss)
+    rr <- max_epochs / eta^ss
+    for (ii in 0:ss) {
+      r_ii   <- round(rr * eta^ii)
+      prev_r <- if (ii > 0) round(rr * eta^(ii - 1)) else 0L
+      n_ii   <- max(1L, floor(nn / eta^ii))
+      total_budget <- total_budget + n_ii * (r_ii - prev_r)
+    }
+  }
+  consumed_budget <- 0
+  global_t0 <- proc.time()[3]
+
   for (s in s_max:0) {
+    bracket_t0 <- proc.time()[3]
     n <- ceiling((s_max + 1) / (s + 1)) * as.integer(eta^s)
     r <- max_epochs / eta^s
 
@@ -751,9 +767,11 @@ tune.nn <- function(reftable, param.cols,
       n_keep <- max(1, ceiling(n_i / eta))
 
       val_losses <- rep(Inf, length(configs))
+      cfg_times  <- rep(NA_real_, length(configs))
 
       for (j in seq_along(configs)) {
         tryCatch({
+          cfg_t0 <- proc.time()[3]
           tensorflow::tf$random$set_seed(as.integer(seed + s + j))
           model <- .build.nn(configs[[j]], data, type, sfs.dims)
 
@@ -785,6 +803,7 @@ tune.nn <- function(reftable, param.cols,
           vl <- history$metrics$val_loss
           if (is.null(vl)) vl <- history$history$val_loss
           val_losses[j] <- min(unlist(vl))
+          cfg_times[j]  <- proc.time()[3] - cfg_t0
 
           # Save weights for this config (overwrite previous round's)
           dir.create(wpath, recursive = TRUE, showWarnings = FALSE)
@@ -801,6 +820,8 @@ tune.nn <- function(reftable, param.cols,
             },
               error = function(e) NULL
             )
+            if (verbose) cat(sprintf("    \u2605 new best: val_loss=%.4f (bracket %d, round %d)\n",
+                                      val_losses[j], s, i))
           }
 
           # Free GPU memory immediately
@@ -814,6 +835,21 @@ tune.nn <- function(reftable, param.cols,
           tryCatch({ rm(model); gc(); keras::k_clear_session() },
                    error = function(e2) NULL)
         })
+        consumed_budget <- consumed_budget + (r_i - prev_epochs[j])
+      }
+
+      # Log per-config val_loss and timing
+      if (verbose) {
+        items <- character(length(configs))
+        for (k in seq_along(configs)) {
+          vl_str <- if (is.finite(val_losses[k])) sprintf("%.4f", val_losses[k]) else "  NA "
+          t_str  <- if (!is.na(cfg_times[k])) sprintf("%.1fs", cfg_times[k]) else "?"
+          items[k] <- sprintf("cfg %d: %s (%s)", k, vl_str, t_str)
+        }
+        for (start in seq(1, length(items), by = 4)) {
+          end <- min(start + 3, length(items))
+          cat("    ", paste(items[start:end], collapse = "   "), "\n")
+        }
       }
 
       prev_epochs[seq_along(configs)] <- r_i
@@ -842,6 +878,20 @@ tune.nn <- function(reftable, param.cols,
         keep <- ranking[1:min(n_keep, length(ranking))]
 
         if (verbose) cat(sprintf(" | pruning to %d\n", length(keep)))
+
+        if (verbose && length(configs) > 1) {
+          sorted_losses <- val_losses[ranking]
+          kept_str <- paste(sprintf("%.4f", sorted_losses[seq_len(length(keep))]),
+                            collapse = " ")
+          if (length(ranking) > length(keep)) {
+            pruned_str <- paste(sprintf("%.4f",
+                                sorted_losses[(length(keep) + 1):length(ranking)]),
+                                collapse = " ")
+            cat(sprintf("    Ranking: %s | %s\n", kept_str, pruned_str))
+            pad <- nchar(sprintf("    Ranking: %s ", kept_str))
+            cat(sprintf("%s^-- cutoff (top %d kept)\n", strrep(" ", pad), length(keep)))
+          }
+        }
 
         # Remove weight files for discarded configs
         discard <- setdiff(seq_along(configs), keep)
@@ -872,6 +922,19 @@ tune.nn <- function(reftable, param.cols,
 
     # Clean up bracket weight files
     unlink(weight_dir, recursive = TRUE)
+
+    if (verbose) {
+      bracket_elapsed <- (proc.time()[3] - bracket_t0) / 60
+      global_elapsed  <- (proc.time()[3] - global_t0) / 60
+      if (consumed_budget > 0 && consumed_budget < total_budget) {
+        eta_min <- global_elapsed * (total_budget - consumed_budget) / consumed_budget
+        cat(sprintf("    Bracket %d done in %.1f min | elapsed %.1f min, ~%.0f min remaining\n\n",
+                    s, bracket_elapsed, global_elapsed, eta_min))
+      } else {
+        cat(sprintf("    Bracket %d done in %.1f min | elapsed %.1f min\n\n",
+                    s, bracket_elapsed, global_elapsed))
+      }
+    }
   }
 
   list(
@@ -885,6 +948,38 @@ tune.nn <- function(reftable, param.cols,
 
 
 # ============================================================================
+# Internal: generate diverse (eta, max_epochs) configs for parallel searches
+# ============================================================================
+
+.generate.search.configs <- function(n_searches, base_max_epochs, base_eta) {
+  base_max_epochs <- as.integer(base_max_epochs)
+  base_eta        <- as.integer(base_eta)
+
+  if (n_searches == 1L)
+    return(data.frame(eta = base_eta, max_epochs = base_max_epochs))
+
+  # Pool of diverse (eta, max_epochs) combos
+  pool_eta <- c(2L, 3L, 4L)
+  pool_me  <- unique(as.integer(round(
+    base_max_epochs * c(0.6, 1.0, 2.0)
+  )))
+  pool <- expand.grid(eta = pool_eta, max_epochs = pool_me,
+                      KEEP.OUT.ATTRS = FALSE)
+
+  # Put the user's base config first
+  base_idx <- which(pool$eta == base_eta & pool$max_epochs == base_max_epochs)
+  if (length(base_idx) > 0L) {
+    pool <- rbind(pool[base_idx[1L], ], pool[-base_idx[1L], ])
+  } else {
+    pool <- rbind(data.frame(eta = base_eta, max_epochs = base_max_epochs), pool)
+  }
+
+  # Cycle through pool to fill n_searches rows
+  idx <- rep_len(seq_len(nrow(pool)), n_searches)
+  pool[idx, , drop = FALSE]
+}
+
+# ============================================================================
 # Internal: orchestrate K independent serial Hyperband searches in parallel
 # ============================================================================
 
@@ -894,7 +989,26 @@ tune.nn <- function(reftable, param.cols,
                                         gpu.threshold, greedy, seed, verbose) {
 
   n_concurrent <- min(as.integer(cores), as.integer(n_searches))
-  s_max <- min(floor(log(max_epochs) / log(eta)), 3L)
+
+  # Build per-search (eta, max_epochs) configs
+  if (length(max_epochs) == 1L && length(eta) == 1L) {
+    cfgs <- .generate.search.configs(n_searches, max_epochs, eta)
+  } else {
+    cfgs <- data.frame(
+      eta        = rep_len(as.integer(eta), n_searches),
+      max_epochs = rep_len(as.integer(max_epochs), n_searches)
+    )
+  }
+  search_max_epochs <- cfgs$max_epochs   # integer vector, length n_searches
+  search_eta        <- cfgs$eta          # integer vector, length n_searches
+
+  if (verbose) {
+    cat(sprintf("PipeMaster:: Launching %d searches (%d concurrent)\n",
+                n_searches, n_concurrent))
+    for (k in seq_len(n_searches))
+      cat(sprintf("  Search %d: eta=%d, max_epochs=%d\n",
+                  k, search_eta[k], search_max_epochs[k]))
+  }
 
   # ==========================================================================
   # Sequential mode (cores = 1): run searches in main process
@@ -912,7 +1026,7 @@ tune.nn <- function(reftable, param.cols,
 
       hb <- .hyperband(search_space = search_space, data = data,
                        type = type, sfs.dims = sfs.dims,
-                       max_epochs = max_epochs, eta = eta,
+                       max_epochs = search_max_epochs[k], eta = search_eta[k],
                        seed = search_seed, verbose = verbose)
 
       # Retrain best config from this search
@@ -927,15 +1041,15 @@ tune.nn <- function(reftable, param.cols,
       start_epoch <- if (weights_loaded) as.integer(hb$best_epochs) else 0L
       final_vl <- hb$best_val_loss
 
-      if (start_epoch < as.integer(max_epochs)) {
+      if (start_epoch < search_max_epochs[k]) {
         if (verbose)
           cat(sprintf("PipeMaster:: Retraining search %d best for %d epochs (warm-start from %d)...\n",
-                      k, max_epochs, start_epoch))
+                      k, search_max_epochs[k], start_epoch))
 
         retrain_history <- model |> keras::fit(
           x = data$X_train, y = data$Y_train,
           validation_data = list(data$X_val, data$Y_val),
-          epochs        = as.integer(max_epochs),
+          epochs        = as.integer(search_max_epochs[k]),
           initial_epoch = as.integer(start_epoch),
           batch_size    = as.integer(hb$best_hp$batch_size),
           callbacks     = list(
@@ -1003,10 +1117,6 @@ tune.nn <- function(reftable, param.cols,
   # ==========================================================================
   # Parallel mode: launch Rscript workers
   # ==========================================================================
-  if (verbose)
-    cat(sprintf("PipeMaster:: Launching %d parallel searches (%d concurrent workers)\n",
-                n_searches, n_concurrent))
-
   work_dir <- tempfile("hb_search_")
   dir.create(work_dir, recursive = TRUE)
   results_dir <- file.path(work_dir, "results")
@@ -1023,14 +1133,20 @@ tune.nn <- function(reftable, param.cols,
   search_seeds        <- seed + (seq_len(n_searches) - 1L) * 10000L
   saved_lib_paths     <- .libPaths()
   threads_per_worker  <- .compute.threads.per.worker(n_concurrent, greedy)
-  search_max_epochs   <- as.integer(max_epochs)
-  search_eta          <- as.integer(eta)
   search_space_saved  <- search_space
+
+  # Detect if PipeMaster was loaded via devtools::load_all()
+  pkg_source_dir <- ""
+  if ("devtools_shims" %in% search()) {
+    pkg_path <- find.package("PipeMaster", quiet = TRUE)
+    if (file.exists(file.path(pkg_path, "DESCRIPTION"))) pkg_source_dir <- pkg_path
+  }
 
   save(X_train, X_val, Y_train, Y_val,
        type, sfs.dims, n_features, n_bins,
        search_seeds, saved_lib_paths, threads_per_worker,
        search_max_epochs, search_eta, search_space_saved,
+       pkg_source_dir,
        file = file.path(work_dir, "shared_search.RData"))
 
   # Write worker script
@@ -1056,7 +1172,9 @@ tune.nn <- function(reftable, param.cols,
   })
 
   # Generous timeout: full Hyperband + retrain per search
-  timeout_per_search <- as.integer(max_epochs * 15 * (s_max + 1))
+  global_max_epochs <- max(search_max_epochs)
+  global_s_max <- min(floor(log(global_max_epochs) / log(min(search_eta))), 3L)
+  timeout_per_search <- as.integer(global_max_epochs * 15 * (global_s_max + 1))
 
   pool_result <- .launch.rscript.pool(
     tasks, n_concurrent, work_dir,
@@ -1148,7 +1266,11 @@ tune.nn <- function(reftable, param.cols,
     '',
     '# Restore library paths and load PipeMaster',
     '.libPaths(saved_lib_paths)',
-    'suppressPackageStartupMessages(library(PipeMaster))',
+    'if (nzchar(pkg_source_dir)) {',
+    '  suppressPackageStartupMessages(devtools::load_all(pkg_source_dir, quiet = TRUE))',
+    '} else {',
+    '  suppressPackageStartupMessages(library(PipeMaster))',
+    '}',
     '',
     'suppressPackageStartupMessages({',
     '  library(keras)',
@@ -1173,17 +1295,20 @@ tune.nn <- function(reftable, param.cols,
     '  n_features = n_features, n_bins = n_bins',
     ')',
     '',
-    '# Run full Hyperband search',
-    'worker_seed <- search_seeds[task_id]',
-    'cat(sprintf("Search %d starting (seed=%d)\\n", task_id, worker_seed))',
+    '# Per-search config',
+    'worker_seed       <- search_seeds[task_id]',
+    'worker_max_epochs <- search_max_epochs[task_id]',
+    'worker_eta        <- search_eta[task_id]',
+    'cat(sprintf("Search %d starting (seed=%d, eta=%d, max_epochs=%d)\\n",',
+    '            task_id, worker_seed, worker_eta, worker_max_epochs))',
     '',
     'hb <- PipeMaster:::.hyperband(',
     '  search_space = search_space_saved,',
     '  data = hb_data, type = type, sfs.dims = sfs.dims,',
-    '  max_epochs = search_max_epochs, eta = search_eta,',
+    '  max_epochs = worker_max_epochs, eta = worker_eta,',
     '  seed = worker_seed, verbose = TRUE)',
     '',
-    '# Retrain best config to max_epochs',
+    '# Retrain best config to worker_max_epochs',
     'tf$random$set_seed(as.integer(worker_seed))',
     'model <- PipeMaster:::.build.nn(hb$best_hp, hb_data, type, sfs.dims)',
     '',
@@ -1195,13 +1320,13 @@ tune.nn <- function(reftable, param.cols,
     'start_epoch <- if (weights_loaded) as.integer(hb$best_epochs) else 0L',
     'final_vl <- hb$best_val_loss',
     '',
-    'if (start_epoch < search_max_epochs) {',
+    'if (start_epoch < worker_max_epochs) {',
     '  cat(sprintf("Search %d: retraining from epoch %d to %d\\n",',
-    '              task_id, start_epoch, search_max_epochs))',
+    '              task_id, start_epoch, worker_max_epochs))',
     '  retrain_h <- model |> fit(',
     '    x = hb_data$X_train, y = hb_data$Y_train,',
     '    validation_data = list(hb_data$X_val, hb_data$Y_val),',
-    '    epochs        = search_max_epochs,',
+    '    epochs        = worker_max_epochs,',
     '    initial_epoch = as.integer(start_epoch),',
     '    batch_size    = as.integer(hb$best_hp$batch_size),',
     '    callbacks     = list(',
