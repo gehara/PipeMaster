@@ -41,6 +41,11 @@
 #'   searches run on CPU. Example: \code{n_searches=10, gpus=1, gpu.threshold=4}
 #'   assigns 4 searches to the GPU and 6 to CPU. Too many searches per GPU may
 #'   cause GPU out-of-memory errors. Ignored when \code{gpus = 0}.
+#' @param top_k integer — number of top models to keep from parallel searches
+#'   (default 1). When \code{top_k > 1} and \code{n_searches > 1}, the best K
+#'   models (by validation loss) are retained. At prediction time,
+#'   \code{nn.predict()} uses a proximity-weighted ensemble of these models for
+#'   more stable point estimates. Capped at \code{n_searches}.
 #' @param seed integer — random seed (default 42).
 #' @param verbose logical — print progress (default TRUE).
 #'
@@ -50,6 +55,9 @@
 #'   \item{best_val_loss}{best validation loss achieved}
 #'   \item{all_results}{data.frame of all evaluated configs (hp_string, val_loss, bracket, round)}
 #'   \item{best_model}{trained keras model (best config, retrained to max_epochs)}
+#'   \item{models}{list of top-K keras models, sorted by val_loss (length 1 when \code{top_k = 1})}
+#'   \item{models_val_loss}{numeric vector of validation losses for each model in \code{models}}
+#'   \item{models_metrics}{list of per-model metrics (each element: \code{list(r2, mpe)} with named vectors in original parameter scale)}
 #' }
 #'
 #' @export
@@ -62,6 +70,7 @@ tune.nn <- function(reftable, param.cols,
                     val.frac = 0.1,
                     n_searches = 1L, cores = 1L, gpus = 0L,
                     gpu.threshold = 4L, greedy = TRUE,
+                    top_k = 1L,
                     seed = 42, verbose = TRUE) {
 
   # --- Dependency check ---
@@ -70,6 +79,12 @@ tune.nn <- function(reftable, param.cols,
     stop("tune.nn() requires the 'keras' and 'tensorflow' R packages.\n",
          "Install with: install.packages(c('keras', 'tensorflow'))\n",
          "Then run: keras::install_keras()")
+
+  # --- Validate top_k ---
+  top_k <- as.integer(top_k)
+  if (top_k < 1L) stop("top_k must be >= 1")
+  if (n_searches > 1L && top_k > n_searches)
+    top_k <- n_searches
 
   n_concurrent <- min(as.integer(cores), as.integer(n_searches))
 
@@ -145,18 +160,21 @@ tune.nn <- function(reftable, param.cols,
       data = data, search_space = ss, type = type, sfs.dims = sfs.dims,
       max_epochs = max_epochs, eta = eta,
       n_searches = n_searches, cores = cores, gpus = gpus,
-      gpu.threshold = gpu.threshold, greedy = greedy,
+      gpu.threshold = gpu.threshold, greedy = greedy, top_k = top_k,
       seed = seed, verbose = verbose)
 
     return(list(
-      best_hp       = result$best_hp,
-      best_val_loss = result$best_val_loss,
-      all_results   = result$all_results,
-      best_model    = result$best_model,
-      data          = data,
-      type          = type,
-      sfs.dims      = sfs.dims,
-      exclude.cols  = exclude.cols
+      best_hp         = result$best_hp,
+      best_val_loss   = result$best_val_loss,
+      all_results     = result$all_results,
+      best_model      = result$best_model,
+      models          = result$models,
+      models_val_loss = result$models_val_loss,
+      models_metrics  = result$models_metrics,
+      data            = data,
+      type            = type,
+      sfs.dims        = sfs.dims,
+      exclude.cols    = exclude.cols
     ))
   }
 
@@ -226,15 +244,22 @@ tune.nn <- function(reftable, param.cols,
   unlink(hb$best_weights_path, recursive = TRUE)
   if (verbose) cat(sprintf("PipeMaster:: Final val_loss: %.6f\n", final_val_loss))
 
+  # Compute R² and MPE
+  models_metrics <- list(.compute.model.metrics(best_model, data, type))
+  if (verbose) .print.model.metrics(models_metrics, final_val_loss, verbose)
+
   list(
-    best_hp       = hb$best_hp,
-    best_val_loss = final_val_loss,
-    all_results   = hb$all_results,
-    best_model    = best_model,
-    data          = data,
-    type          = type,
-    sfs.dims      = sfs.dims,
-    exclude.cols  = exclude.cols
+    best_hp         = hb$best_hp,
+    best_val_loss   = final_val_loss,
+    all_results     = hb$all_results,
+    best_model      = best_model,
+    models          = list(best_model),
+    models_val_loss = final_val_loss,
+    models_metrics  = models_metrics,
+    data            = data,
+    type            = type,
+    sfs.dims        = sfs.dims,
+    exclude.cols    = exclude.cols
   )
 }
 
@@ -986,7 +1011,7 @@ tune.nn <- function(reftable, param.cols,
 .parallel.hyperband.search <- function(data, search_space, type, sfs.dims,
                                         max_epochs, eta,
                                         n_searches, cores, gpus,
-                                        gpu.threshold, greedy, seed, verbose) {
+                                        gpu.threshold, greedy, top_k, seed, verbose) {
 
   n_concurrent <- min(as.integer(cores), as.integer(n_searches))
 
@@ -1015,9 +1040,8 @@ tune.nn <- function(reftable, param.cols,
   # ==========================================================================
   if (n_concurrent <= 1L) {
     all_search_results <- list()
-    best_val_loss <- Inf
-    best_hp       <- NULL
-    best_model_dir <- tempfile("best_search_model_")
+    # Ranked list of top-K: each entry = list(val_loss, hp, model_dir)
+    topk_entries <- list()
 
     for (k in seq_len(n_searches)) {
       search_seed <- seed + (k - 1L) * 10000L
@@ -1075,11 +1099,24 @@ tune.nn <- function(reftable, param.cols,
       search_res$search <- k
       all_search_results[[k]] <- search_res
 
-      if (final_vl < best_val_loss) {
-        best_val_loss <- final_vl
-        best_hp <- hb$best_hp
-        unlink(best_model_dir, recursive = TRUE)
-        keras::save_model_tf(model, best_model_dir)
+      # Save model to temp dir and insert into ranked top-K list
+      model_dir <- tempfile(sprintf("topk_model_%d_", k))
+      keras::save_model_tf(model, model_dir)
+
+      topk_entries[[length(topk_entries) + 1L]] <- list(
+        val_loss  = final_vl,
+        hp        = hb$best_hp,
+        model_dir = model_dir
+      )
+
+      # Sort by val_loss and prune to top_k
+      if (length(topk_entries) > top_k) {
+        vl_vec <- vapply(topk_entries, `[[`, numeric(1), "val_loss")
+        ord <- order(vl_vec)
+        # Remove worst entry (last after sorting)
+        worst_idx <- ord[length(ord)]
+        unlink(topk_entries[[worst_idx]]$model_dir, recursive = TRUE)
+        topk_entries <- topk_entries[ord[seq_len(top_k)]]
       }
 
       # Clean up
@@ -1088,29 +1125,59 @@ tune.nn <- function(reftable, param.cols,
       tryCatch(keras::k_clear_session(), error = function(e) NULL)
     }
 
-    # Load best model from disk
-    best_model <- tryCatch(
-      keras::load_model_tf(best_model_dir),
-      error = function(e) {
-        warning("Could not reload best model: ", conditionMessage(e), call. = FALSE)
-        NULL
-      }
-    )
-    unlink(best_model_dir, recursive = TRUE)
+    # Sort final entries by val_loss
+    vl_vec <- vapply(topk_entries, `[[`, numeric(1), "val_loss")
+    topk_entries <- topk_entries[order(vl_vec)]
+
+    # Load all top-K models from disk
+    models <- lapply(topk_entries, function(entry) {
+      tryCatch(
+        keras::load_model_tf(entry$model_dir),
+        error = function(e) {
+          warning("Could not reload model (val_loss=",
+                  sprintf("%.6f", entry$val_loss), "): ",
+                  conditionMessage(e), call. = FALSE)
+          NULL
+        }
+      )
+    })
+    models_val_loss <- vapply(topk_entries, `[[`, numeric(1), "val_loss")
+
+    # Clean up temp dirs
+    for (entry in topk_entries) unlink(entry$model_dir, recursive = TRUE)
+
+    # Remove NULLs from failed loads
+    keep <- !vapply(models, is.null, logical(1))
+    models <- models[keep]
+    models_val_loss <- models_val_loss[keep]
+
+    if (length(models) == 0L)
+      stop("All models failed to reload from disk")
 
     combined_results <- do.call(rbind, all_search_results)
+    best_hp <- topk_entries[[1L]]$hp
+
+    # Compute R² and MPE for each model
+    models_metrics <- lapply(models, .compute.model.metrics, data = data, type = type)
 
     if (verbose) {
       cat(sprintf("\nPipeMaster:: Best across %d searches: val_loss=%.6f\n",
-                  n_searches, best_val_loss))
+                  n_searches, models_val_loss[1L]))
+      cat(sprintf("PipeMaster:: Kept top %d models (val_loss: %s)\n",
+                  length(models),
+                  paste(sprintf("%.6f", models_val_loss), collapse = ", ")))
       cat(sprintf("PipeMaster:: Best config: %s\n", .hp.to.string(best_hp, type)))
+      .print.model.metrics(models_metrics, models_val_loss, verbose)
     }
 
     return(list(
-      best_hp       = best_hp,
-      best_val_loss = best_val_loss,
-      all_results   = combined_results,
-      best_model    = best_model
+      best_hp         = best_hp,
+      best_val_loss   = models_val_loss[1L],
+      all_results     = combined_results,
+      best_model      = models[[1L]],
+      models          = models,
+      models_val_loss = models_val_loss,
+      models_metrics  = models_metrics
     ))
   }
 
@@ -1171,22 +1238,14 @@ tune.nn <- function(reftable, param.cols,
     )
   })
 
-  # Generous timeout: full Hyperband + retrain per search
-  global_max_epochs <- max(search_max_epochs)
-  global_s_max <- min(floor(log(global_max_epochs) / log(min(search_eta))), 3L)
-  timeout_per_search <- as.integer(global_max_epochs * 15 * (global_s_max + 1))
-
   pool_result <- .launch.rscript.pool(
     tasks, n_concurrent, work_dir,
-    timeout_per_task = timeout_per_search,
     gpus = 0L,
     verbose = verbose, max_retries = 1L)
 
-  # Collect results
-  best_val_loss      <- Inf
-  best_hp            <- NULL
-  best_search_dir    <- NULL
+  # Collect results with val_loss for ranking
   all_search_results <- list()
+  search_entries <- list()  # list of (val_loss, hp, search_dir)
 
   for (k in seq_len(n_searches)) {
     search_dir <- file.path(results_dir, sprintf("search_%04d", k))
@@ -1202,46 +1261,78 @@ tune.nn <- function(reftable, param.cols,
         if (verbose)
           cat(sprintf("  Search %d: val_loss=%.6f\n", k, res$best_val_loss))
 
-        if (res$best_val_loss < best_val_loss) {
-          best_val_loss   <- res$best_val_loss
-          best_hp         <- res$best_hp
-          best_search_dir <- search_dir
-        }
+        search_entries[[length(search_entries) + 1L]] <- list(
+          val_loss   = res$best_val_loss,
+          hp         = res$best_hp,
+          search_dir = search_dir
+        )
       }
     } else {
       if (verbose) cat(sprintf("  Search %d: FAILED (no result)\n", k))
     }
   }
 
-  if (is.null(best_hp))
+  if (length(search_entries) == 0L)
     stop("All parallel searches failed. Check worker logs in ", work_dir)
 
-  # Load the winning model
-  best_model <- tryCatch(
-    keras::load_model_tf(file.path(best_search_dir, "best_model")),
-    error = function(e) {
-      warning("Could not load best model from search: ", conditionMessage(e), call. = FALSE)
-      NULL
-    }
-  )
+  # Sort by val_loss and take top-K
+  vl_vec <- vapply(search_entries, `[[`, numeric(1), "val_loss")
+  ord <- order(vl_vec)
+  n_keep <- min(top_k, length(search_entries))
+  search_entries <- search_entries[ord[seq_len(n_keep)]]
+
+  # Load top-K models before cleaning work_dir (suppressWarnings: TF/reticulate
+  # emits benign "NAs introduced by coercion" during model deserialization)
+  models <- lapply(search_entries, function(entry) {
+    tryCatch(
+      suppressWarnings(keras::load_model_tf(file.path(entry$search_dir, "best_model"))),
+      error = function(e) {
+        warning("Could not load model (val_loss=",
+                sprintf("%.6f", entry$val_loss), "): ",
+                conditionMessage(e), call. = FALSE)
+        NULL
+      }
+    )
+  })
+  models_val_loss <- vapply(search_entries, `[[`, numeric(1), "val_loss")
+
+  # Remove NULLs from failed loads
+  keep <- !vapply(models, is.null, logical(1))
+  models <- models[keep]
+  models_val_loss <- models_val_loss[keep]
+
+  if (length(models) == 0L)
+    stop("All top-K models failed to load. Check worker logs in ", work_dir)
+
+  best_hp <- search_entries[[1L]]$hp
 
   combined_results <- if (length(all_search_results) > 0)
     do.call(rbind, all_search_results) else data.frame()
 
+  # Compute R² and MPE for each model
+  models_metrics <- lapply(models, .compute.model.metrics, data = data, type = type)
+
   if (verbose) {
     cat(sprintf("\nPipeMaster:: Best across %d searches: val_loss=%.6f\n",
-                n_searches, best_val_loss))
+                n_searches, models_val_loss[1L]))
+    cat(sprintf("PipeMaster:: Kept top %d models (val_loss: %s)\n",
+                length(models),
+                paste(sprintf("%.6f", models_val_loss), collapse = ", ")))
     cat(sprintf("PipeMaster:: Best config: %s\n", .hp.to.string(best_hp, type)))
+    .print.model.metrics(models_metrics, models_val_loss, verbose)
   }
 
   Sys.sleep(1)
   unlink(work_dir, recursive = TRUE)
 
   list(
-    best_hp       = best_hp,
-    best_val_loss = best_val_loss,
-    all_results   = combined_results,
-    best_model    = best_model
+    best_hp         = best_hp,
+    best_val_loss   = models_val_loss[1L],
+    all_results     = combined_results,
+    best_model      = models[[1L]],
+    models          = models,
+    models_val_loss = models_val_loss,
+    models_metrics  = models_metrics
   )
 }
 
@@ -1369,6 +1460,8 @@ tune.nn <- function(reftable, param.cols,
 #'
 #' Saves the output of \code{tune.nn()} so it can be loaded on another machine.
 #' The keras model is serialized separately using \code{keras::save_model_tf()}.
+#' When multiple models are present (from \code{top_k > 1}), each model is saved
+#' to a separate subdirectory under \code{models/}.
 #'
 #' @param tune.result list — output from \code{tune.nn()}.
 #' @param path character — directory path where files will be saved (created if needed).
@@ -1380,21 +1473,38 @@ save.tune.result <- function(tune.result, path) {
 
   dir.create(path, showWarnings = FALSE, recursive = TRUE)
 
-  # Save keras model
+  # Save best_model (backward compat)
   model_dir <- file.path(path, "best_model")
   keras::save_model_tf(tune.result$best_model, model_dir)
 
-  # Save everything else as RData
+  # Save all top-K models if present
+  models <- tune.result$models
+  if (!is.null(models) && length(models) > 0L) {
+    models_dir <- file.path(path, "models")
+    dir.create(models_dir, showWarnings = FALSE, recursive = TRUE)
+    for (i in seq_along(models)) {
+      keras::save_model_tf(models[[i]],
+                           file.path(models_dir, sprintf("model_%03d", i)))
+    }
+  }
+
+  # Save everything else as RDS (strip keras objects)
   result_no_model <- tune.result
   result_no_model$best_model <- NULL
+  result_no_model$models <- NULL
   saveRDS(result_no_model, file.path(path, "tune_result.rds"))
 
-  cat(sprintf("PipeMaster:: Saved tune.nn result to %s\n", path))
+  cat(sprintf("PipeMaster:: Saved tune.nn result to %s (%d models)\n",
+              path, length(models)))
 }
 
 #' Load tune.nn Result from Disk
 #'
 #' Loads a tune.nn() result previously saved with \code{save.tune.result()}.
+#' If the saved result contains multiple models (from \code{top_k > 1}),
+#' all models are loaded from the \code{models/} subdirectory. For results
+#' saved before \code{top_k} support, falls back to wrapping the single
+#' best model in a length-1 list.
 #'
 #' @param path character — directory path where files were saved.
 #'
@@ -1416,7 +1526,37 @@ load.tune.result <- function(path) {
   result <- readRDS(rds_file)
   result$best_model <- keras::load_model_tf(model_dir)
 
-  cat(sprintf("PipeMaster:: Loaded tune.nn result from %s\n", path))
+  # Load top-K models if saved, otherwise fall back to list(best_model)
+  models_dir <- file.path(path, "models")
+  if (dir.exists(models_dir)) {
+    model_subdirs <- sort(list.dirs(models_dir, recursive = FALSE, full.names = TRUE))
+    if (length(model_subdirs) > 0L) {
+      result$models <- lapply(model_subdirs, function(d) {
+        tryCatch(keras::load_model_tf(d), error = function(e) {
+          warning("Could not load model from ", d, ": ",
+                  conditionMessage(e), call. = FALSE)
+          NULL
+        })
+      })
+      # Remove failed loads
+      keep <- !vapply(result$models, is.null, logical(1))
+      result$models <- result$models[keep]
+      if (!is.null(result$models_val_loss))
+        result$models_val_loss <- result$models_val_loss[keep]
+      cat(sprintf("PipeMaster:: Loaded tune.nn result from %s (%d models)\n",
+                  path, length(result$models)))
+    } else {
+      result$models <- list(result$best_model)
+      cat(sprintf("PipeMaster:: Loaded tune.nn result from %s\n", path))
+    }
+  } else {
+    # Old save format: no models/ directory
+    result$models <- list(result$best_model)
+    if (is.null(result$models_val_loss))
+      result$models_val_loss <- result$best_val_loss
+    cat(sprintf("PipeMaster:: Loaded tune.nn result from %s\n", path))
+  }
+
   result
 }
 
@@ -1429,7 +1569,10 @@ load.tune.result <- function(path) {
 #' Estimates posterior distributions for observed data using a trained neural
 #' network from \code{tune.nn()}, with multiple methods for uncertainty
 #' quantification: conformal prediction, bootstrap, MC dropout, and quantile
-#' regression.
+#' regression. When the tune result contains multiple models (from
+#' \code{top_k > 1}), the point estimate is computed as a proximity-weighted
+#' ensemble average, where each model is weighted by how well it predicts
+#' validation samples near the observed data point.
 #'
 #' @param tune.result list — output from \code{tune.nn()}.
 #' @param observed named numeric vector or 1-row data.frame of observed summary
@@ -1560,14 +1703,26 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
                 if (type == "sumstat") "summary statistics" else "SFS bins"))
   }
 
-  # --- Point estimate from best model ---
-  Y_z <- predict(best_model, X_obs, verbose = 0L)
-  point_est <- as.numeric(.inv.transform(Y_z, data$target_mu, data$target_sd))
-  names(point_est) <- param_names
+  # --- Point estimate ---
+  models <- tune.result$models
+  models_val_loss <- tune.result$models_val_loss
+  use_ensemble <- !is.null(models) && length(models) > 1L
 
-  if (verbose) {
-    est_str <- paste(sprintf("%s=%.0f", param_names, point_est), collapse = " ")
-    cat(sprintf("PipeMaster:: Point estimate: %s\n", est_str))
+  if (use_ensemble) {
+    point_est <- .ensemble.predict(models, models_val_loss, X_obs, data, type, verbose)
+    names(point_est) <- param_names
+    if (verbose) {
+      est_str <- paste(sprintf("%s=%.0f", param_names, point_est), collapse = " ")
+      cat(sprintf("PipeMaster:: Ensemble point estimate: %s\n", est_str))
+    }
+  } else {
+    Y_z <- predict(best_model, X_obs, verbose = 0L)
+    point_est <- as.numeric(.inv.transform(Y_z, data$target_mu, data$target_sd))
+    names(point_est) <- param_names
+    if (verbose) {
+      est_str <- paste(sprintf("%s=%.0f", param_names, point_est), collapse = " ")
+      cat(sprintf("PipeMaster:: Point estimate: %s\n", est_str))
+    }
   }
 
   # --- Early return for point-only ---
@@ -2055,6 +2210,134 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
 .inv.transform <- function(Y_z, target_mu, target_sd) {
   exp(t(t(Y_z) * target_sd + target_mu))
+}
+
+# ============================================================================
+# Internal: compute R² and MPE on validation set in original scale
+# ============================================================================
+
+.compute.model.metrics <- function(model, data, type) {
+  pred_z <- predict(model, data$X_val, verbose = 0L)
+  true_orig <- as.matrix(.inv.transform(data$Y_val, data$target_mu, data$target_sd))
+  pred_orig <- as.matrix(.inv.transform(pred_z, data$target_mu, data$target_sd))
+
+  param_names <- names(data$target_mu)
+  n_params <- length(param_names)
+  r2  <- numeric(n_params)
+  mpe <- numeric(n_params)
+
+  for (j in seq_len(n_params)) {
+    tru <- true_orig[, j]
+    prd <- pred_orig[, j]
+    ss_res <- sum((tru - prd)^2)
+    ss_tot <- sum((tru - mean(tru))^2)
+    r2[j]  <- if (ss_tot > 0) 1 - ss_res / ss_tot else NA_real_
+    mpe[j] <- mean(abs(tru - prd) / pmax(abs(tru), 1e-12)) * 100
+  }
+  names(r2)  <- param_names
+  names(mpe) <- param_names
+
+  list(r2 = r2, mpe = mpe)
+}
+
+.print.model.metrics <- function(models_metrics, models_val_loss, verbose) {
+  if (!verbose || length(models_metrics) == 0L) return(invisible(NULL))
+
+  param_names <- names(models_metrics[[1L]]$r2)
+  n_params <- length(param_names)
+
+  # Build header
+  hdr <- sprintf("  %-5s %10s", "Model", "val_loss")
+  for (p in param_names) hdr <- paste0(hdr, sprintf("  R2(%-6s)", substr(p, 1, 6)))
+  for (p in param_names) hdr <- paste0(hdr, sprintf("  MPE(%-5s)", substr(p, 1, 5)))
+
+  cat("PipeMaster:: Model metrics (validation set, original scale):\n")
+  cat(hdr, "\n")
+
+  for (i in seq_along(models_metrics)) {
+    row <- sprintf("  %-5d %10.6f", i, models_val_loss[i])
+    for (j in seq_len(n_params))
+      row <- paste0(row, sprintf("  %10.3f", models_metrics[[i]]$r2[j]))
+    for (j in seq_len(n_params))
+      row <- paste0(row, sprintf("  %9.1f%%", models_metrics[[i]]$mpe[j]))
+    cat(row, "\n")
+  }
+}
+
+# ============================================================================
+# Internal: proximity-weighted ensemble prediction from top-K models
+# ============================================================================
+
+.ensemble.predict <- function(models, models_val_loss, X_obs, data, type, verbose) {
+  n_models <- length(models)
+
+  # 1. Flatten X_val and X_obs to 2D for distance computation
+  flat <- .flatten.features(data, type)
+  X_val_flat <- flat$X_val  # (n_val, d)
+
+  # Flatten X_obs (single observation) to match X_val_flat columns
+  if (type == "sumstat") {
+    x_obs_flat <- as.numeric(X_obs)
+  } else if (type == "sfs1d") {
+    x_obs_flat <- as.numeric(X_obs[1, , 1])
+  } else {
+    # sfs2d: (1, d1, d2, 1) -> vector of length d1*d2
+    x_obs_flat <- as.numeric(X_obs[1, , , 1])
+  }
+
+  # 2. Euclidean distances from X_obs to each validation sample
+  diffs <- sweep(X_val_flat, 2, x_obs_flat, `-`)
+  dists <- sqrt(rowSums(diffs^2))
+
+  # 3. Gaussian kernel weights (bandwidth = median distance)
+  bandwidth <- median(dists)
+  if (bandwidth < .Machine$double.eps) bandwidth <- 1.0
+  w <- exp(-dists^2 / (2 * bandwidth^2))
+  w <- w / sum(w)  # normalize
+
+  # 4. Per-model proximity-weighted loss on validation set
+  Y_val <- data$Y_val  # (n_val, n_params), Z-scored
+  prox_losses <- numeric(n_models)
+
+  for (m in seq_len(n_models)) {
+    pred_z <- predict(models[[m]], data$X_val, verbose = 0L)  # (n_val, n_params)
+    per_sample_mse <- rowSums((pred_z - Y_val)^2)  # (n_val,)
+    prox_losses[m] <- sum(w * per_sample_mse)
+  }
+
+  # 5. Softmax ensemble weights (temperature = median proximity loss)
+  temperature <- median(prox_losses)
+  if (temperature < .Machine$double.eps) temperature <- 1.0
+  log_weights <- -prox_losses / temperature
+  log_weights <- log_weights - max(log_weights)  # shift for numerical stability
+  ensemble_w <- exp(log_weights)
+  ensemble_w <- ensemble_w / sum(ensemble_w)
+
+  if (verbose) {
+    w_str <- paste(sprintf("%.3f", ensemble_w), collapse = ", ")
+    vl_str <- paste(sprintf("%.6f", models_val_loss), collapse = ", ")
+    pl_str <- paste(sprintf("%.6f", prox_losses), collapse = ", ")
+    cat(sprintf("PipeMaster:: Ensemble %d models\n", n_models))
+    cat(sprintf("PipeMaster::   val_loss:    [%s]\n", vl_str))
+    cat(sprintf("PipeMaster::   prox_loss:   [%s]\n", pl_str))
+    cat(sprintf("PipeMaster::   weights:     [%s]\n", w_str))
+  }
+
+  # 6. Weighted average of model predictions in Z-space
+  pred_z_list <- lapply(seq_len(n_models), function(m) {
+    as.numeric(predict(models[[m]], X_obs, verbose = 0L))
+  })
+
+  ensemble_z <- rep(0, length(pred_z_list[[1L]]))
+  for (m in seq_len(n_models)) {
+    ensemble_z <- ensemble_z + ensemble_w[m] * pred_z_list[[m]]
+  }
+
+  # Inverse transform from Z-space to original scale
+  point_est <- as.numeric(.inv.transform(
+    matrix(ensemble_z, nrow = 1), data$target_mu, data$target_sd
+  ))
+  point_est
 }
 
 # ============================================================================
@@ -3240,7 +3523,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 # ============================================================================
 
 .launch.rscript.pool <- function(tasks, cores, work_dir,
-                                  timeout_per_task, gpus, verbose,
+                                  gpus, verbose,
                                   max_retries = 2L) {
   old_wd <- getwd()
   setwd(work_dir)
@@ -3284,7 +3567,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     }
 
     # Shell wrapper: run Rscript, capture exit code in .done file, record PID
-    # setsid creates a new process group so we can kill Rscript + children on timeout
+    # setsid creates a new process group so we can kill Rscript + children
     # echo $? stderr redirected to /dev/null to avoid "Directory nonexistent" on cleanup
     cmd <- sprintf(
       "{ setsid env %s Rscript %s %d > %s 2>&1; echo $? > %s 2>/dev/null; } & echo $! > %s",
@@ -3370,44 +3653,8 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
             call. = FALSE)
         }
 
-      } else if (elapsed_sec > timeout_per_task) {
-        # --- TIMEOUT: kill process and fail/retry ---
-        # Kill the entire process group (Rscript + children) via negative PID
-        if (file.exists(a$pid_file)) {
-          pid <- suppressWarnings(tryCatch(
-            as.integer(trimws(readLines(a$pid_file, n = 1L, warn = FALSE))),
-            error = function(e) NA_integer_))
-          if (!is.na(pid)) {
-            # Kill child processes first (Rscript), then the shell wrapper
-            tryCatch(
-              system(sprintf("pkill -P %d 2>/dev/null; kill %d 2>/dev/null", pid, pid),
-                     ignore.stdout = TRUE, ignore.stderr = TRUE),
-              error = function(e) NULL)
-          }
-        }
-
-        if (retry_count[a$task_idx] < max_retries) {
-          retry_count[a$task_idx] <- retry_count[a$task_idx] + 1L
-          if (verbose) {
-            cat(sprintf("  [pool] %s %d TIMEOUT (%.0fs) — retry %d/%d\n",
-                        task$prefix, task$id, elapsed_sec,
-                        retry_count[a$task_idx], max_retries))
-            flush.console()
-          }
-          pending <- c(a$task_idx, pending)
-        } else {
-          failed <- c(failed, a$task_idx)
-          tail_lines <- .log_tail(a$log_file)
-          tail_msg <- if (!is.null(tail_lines))
-            paste(tail_lines, collapse = "\n") else "(no log)"
-          warning(sprintf(
-            "Worker %s %d timed out after %d attempt(s), %.0fs. Last log:\n%s",
-            task$prefix, task$id, max_retries + 1L, elapsed_sec, tail_msg),
-            call. = FALSE)
-        }
-
       } else {
-        # --- RUNNING: still within timeout ---
+        # --- RUNNING ---
         still_active[[length(still_active) + 1]] <- a
       }
     }
@@ -3496,9 +3743,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
                 n_conf, n_boot_tasks, cores, threads_per_worker,
                 if (gpus > 0) sprintf(", %d GPUs", gpus) else ""))
 
-  # Launch pool
   pool_result <- .launch.rscript.pool(tasks, cores, work_dir,
-                                       timeout_per_task = max_epochs * 10,
                                        gpus = gpus, verbose = verbose)
 
   # Collect conformal results
@@ -3597,9 +3842,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     )
   }
 
-  # Launch via continuous pool
   pool_result <- .launch.rscript.pool(tasks, cores, work_dir,
-                                       timeout_per_task = max_epochs * 10,
                                        gpus = gpus, verbose = verbose)
 
   # Collect results
@@ -4393,9 +4636,7 @@ load.gan.result <- function(path) {
                 n_configs, cores, threads_per_worker,
                 if (gpus > 0) sprintf(", %d GPUs", gpus) else ""))
 
-  # Launch pool
   pool_result <- .launch.rscript.pool(tasks, cores, work_dir,
-                                       timeout_per_task = max_epochs * 15,
                                        gpus = gpus, verbose = verbose,
                                        max_retries = 1L)
 
