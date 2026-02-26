@@ -66,3 +66,6 @@ tests/data/OutOfAfrica_3G09/*
 tests/hABC/
 tests/sfs/
 tests/sumstats/
+
+# Sandbox (experimental code, not part of the package)
+sandbox/
