@@ -128,6 +128,10 @@
 #'   (original scale). If a vector, all chains start from the same point (with
 #'   jitter). If a matrix (n_chains x n_params), each row is a chain's start.
 #'   If NULL, uses diverse optima from \code{emulator.optimize()}.
+#' @param device character -- device for MCMC forward passes: \code{"auto"}
+#'   (default) uses the model as-is (same device it was trained on),
+#'   \code{"cpu"} clones model weights to CPU before MCMC (faster for small
+#'   batches when model was trained on GPU), \code{"gpu"} keeps model on GPU.
 #' @param adaptive logical -- if TRUE, use adaptive Metropolis (tune proposal_sd
 #'   during burn-in to target ~23\% acceptance rate). Default TRUE.
 #' @param verbose logical -- print progress. Default TRUE.
@@ -158,6 +162,7 @@ emulator.posterior <- function(emulator, observed,
                                thin = 1L, n_chains = 10L,
                                proposal_sd = NULL,
                                sigma2 = NULL, start = NULL,
+                               device = "auto",
                                adaptive = TRUE, verbose = TRUE) {
 
   if (!requireNamespace("keras", quietly = TRUE))
@@ -193,6 +198,23 @@ emulator.posterior <- function(emulator, observed,
   n_params   <- length(param_cols)
   n_stats    <- length(stat_cols)
   em_model   <- emulator$best_model
+
+  # --- Device selection: optionally clone model to CPU ---
+  device <- match.arg(device, c("auto", "cpu", "gpu"))
+  if (device == "cpu") {
+    if (!requireNamespace("reticulate", quietly = TRUE))
+      stop("emulator.posterior() requires the 'reticulate' R package.")
+    if (verbose) cat("PipeMaster:: Cloning model weights to CPU for MCMC\n")
+    reticulate::py_run_string("
+import tensorflow as tf
+def _clone_model_to_cpu(model):
+    with tf.device('/CPU:0'):
+        cpu_model = tf.keras.models.clone_model(model)
+        cpu_model.set_weights(model.get_weights())
+    return cpu_model
+", convert = FALSE)
+    em_model <- reticulate::py$`_clone_model_to_cpu`(em_model)
+  }
 
   lo <- as.numeric(bounds$prior.1)
   hi <- as.numeric(bounds$prior.2)

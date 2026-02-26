@@ -16,6 +16,7 @@ emulator.posterior(
   proposal_sd = NULL,
   sigma2 = NULL,
   start = NULL,
+  device = "auto",
   adaptive = TRUE,
   verbose = TRUE
 )
@@ -54,6 +55,11 @@ estimated from validation data via \code{.estimate.residual.variance()}.}
 (original scale). If a vector, all chains start from the same point (with
 jitter). If a matrix (n_chains x n_params), each row is a chain's start.
 If NULL, uses diverse optima from \code{emulator.optimize()}.}
+
+\item{device}{character -- device for MCMC forward passes: \code{"auto"}
+(default) uses the model as-is (same device it was trained on),
+\code{"cpu"} clones model weights to CPU before MCMC (faster for small
+batches when model was trained on GPU), \code{"gpu"} keeps model on GPU.}
 
 \item{adaptive}{logical -- if TRUE, use adaptive Metropolis (tune proposal_sd
 during burn-in to target ~23 percent acceptance rate). Default TRUE.}
