@@ -3666,7 +3666,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
           as.integer(sub("Bracket ", "", m_bracket)) else NA_integer_
 
         bracket_str <- if (!is.na(bnum) && !is.na(n_brackets)) {
-          in_count <- n_brackets - bnum
+          in_count <- n_brackets - bnum - 1L
           sprintf("in bracket %d/%d", in_count + 1L, n_brackets)
         } else if (!is.na(bnum)) {
           sprintf("in bracket %d", bnum)
