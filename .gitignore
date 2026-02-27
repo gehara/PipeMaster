@@ -69,3 +69,13 @@ tests/sumstats/
 
 # Sandbox (experimental code, not part of the package)
 sandbox/
+
+# Emulator code (unpublished, kept locally only)
+R/emulator.R
+R/emulator_posterior.R
+man/emulator.*.Rd
+man/train.emulator.Rd
+man/save.emulator.result.Rd
+man/load.emulator.result.Rd
+tests/*emulator*
+tests/emulator_vaquita*/
