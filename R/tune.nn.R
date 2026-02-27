@@ -1573,8 +1573,8 @@ load.tune.result <- function(path) {
 #'
 #' Estimates posterior distributions for observed data using a trained neural
 #' network from \code{tune.nn()}, with multiple methods for uncertainty
-#' quantification: conformal prediction, bootstrap, MC dropout, and quantile
-#' regression. When the tune result contains multiple models (from
+#' quantification: conformal prediction, bootstrap, and MC dropout.
+#' When the tune result contains multiple models (from
 #' \code{top_k > 1}), the point estimate is computed as a proximity-weighted
 #' ensemble average, where each model is weighted by how well it predicts
 #' validation samples near the observed data point.
@@ -1589,7 +1589,7 @@ load.tune.result <- function(path) {
 #'   or \code{"sfs2d"}. If NULL, uses the type stored in tune.result.
 #' @param sfs.dims integer vector — for 2D CNN only. If NULL, uses tune.result.
 #' @param method character — one or more of \code{"conformal"}, \code{"bootstrap"},
-#'   \code{"mc_dropout"}, \code{"quantile"}, \code{"point"}.
+#'   \code{"mc_dropout"}, \code{"point"}.
 #'   Use \code{"point"} alone for a fast point estimate with no retraining or
 #'   resampling (\code{reftable} and \code{param.cols} are not required).
 #' @param n_boot integer — number of bootstrap replicates (default 20).
@@ -1601,13 +1601,7 @@ load.tune.result <- function(path) {
 #'   use tuned rate). When set (e.g. 0.1), the model is retrained with this
 #'   dropout rate before running forward passes. Useful when the tuned dropout
 #'   is too low to produce meaningful posterior spread.
-#' @param n_quantiles integer — number of evenly-spaced quantile bins for quantile
-#'   regression (default 19). Higher values (e.g. 50, 100) produce smoother
-#'   posteriors. Ignored if \code{q_probs} is provided explicitly.
-#' @param q_probs numeric vector — custom quantile probabilities. If NULL
-#'   (default), generated automatically from \code{n_quantiles}. Only used when
-#'   \code{method} includes \code{"quantile"}.
-#' @param max_epochs integer — max training epochs for conformal/bootstrap/quantile
+#' @param max_epochs integer — max training epochs for conformal/bootstrap
 #'   models (default 1000).
 #' @param cores integer — number of parallel Rscript workers (default 1).
 #' @param gpus integer — number of GPUs for parallel workers (default 0 = CPU-only).
@@ -1626,8 +1620,6 @@ load.tune.result <- function(path) {
 #'   \item{conformal}{matrix of posterior samples (n_samples x n_params), or NULL}
 #'   \item{bootstrap}{matrix of posterior samples (n_boot x n_params), or NULL}
 #'   \item{mc_dropout}{matrix of posterior samples (n_mc x n_params), or NULL}
-#'   \item{quantile}{matrix of quantile values (n_quantiles x n_params), or NULL}
-#'   \item{q_probs}{numeric vector of quantile probabilities used, or NULL}
 #'   \item{param_names}{character vector of parameter column names}
 #' }
 #' Use \code{summary()} to get a table of median, mean, and quantiles.
@@ -1635,10 +1627,9 @@ load.tune.result <- function(path) {
 #' @export
 nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL,
                        type = NULL, sfs.dims = NULL,
-                       method = c("conformal", "bootstrap", "mc_dropout", "quantile", "point"),
+                       method = c("conformal", "bootstrap", "mc_dropout", "point"),
                        n_boot = 20, n_ensemble = 1, cal.frac = 0.1,
                        n_mc = 1000L, mc_dropout_rate = NULL,
-                       n_quantiles = 19L, q_probs = NULL,
                        max_epochs = 1000, cores = 1, gpus = 0, greedy = TRUE,
                        seed = 42, verbose = TRUE) {
 
@@ -1647,14 +1638,9 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
       !requireNamespace("tensorflow", quietly = TRUE))
     stop("nn.predict() requires the 'keras' and 'tensorflow' R packages.")
 
-  method <- match.arg(method, c("conformal", "bootstrap", "mc_dropout", "quantile", "point"),
+  method <- match.arg(method, c("conformal", "bootstrap", "mc_dropout", "point"),
                       several.ok = TRUE)
   point_only <- length(method) == 1L && method == "point"
-
-  # Generate q_probs from n_quantiles if not provided
-  if (is.null(q_probs)) {
-    q_probs <- seq(0.01, 0.99, length.out = as.integer(n_quantiles))
-  }
 
   # Extract from tune.result
   best_hp    <- tune.result$best_hp
@@ -1671,9 +1657,9 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
   if (is.null(sfs.dims)) sfs.dims <- tune.result$sfs.dims
   exclude.cols <- tune.result$exclude.cols
 
-  needs_reftable <- any(c("conformal", "bootstrap", "quantile") %in% method)
+  needs_reftable <- any(c("conformal", "bootstrap") %in% method)
   if (needs_reftable && is.null(reftable))
-    stop("reftable is required for conformal, bootstrap, and quantile methods")
+    stop("reftable is required for conformal and bootstrap methods")
   if (!point_only && !is.null(reftable) && is.null(param.cols))
     stop("param.cols is required when reftable is provided")
 
@@ -1691,8 +1677,7 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
 
   # --- Header ---
   method_labels <- c(conformal = "Conformal", bootstrap = "Bootstrap",
-                     mc_dropout = "MC Dropout", quantile = "Quantile Regression",
-                     point = "Point")
+                     mc_dropout = "MC Dropout", point = "Point")
   method_str <- paste(method_labels[method], collapse = " + ")
 
   if (verbose) {
@@ -1737,8 +1722,6 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
       conformal      = NULL,
       bootstrap      = NULL,
       mc_dropout     = NULL,
-      quantile       = NULL,
-      q_probs        = NULL,
       prior          = NULL,
       param_names    = param_names
     )
@@ -1750,12 +1733,9 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
   conf_samples   <- NULL
   boot_samples   <- NULL
   mcdrop_samples <- NULL
-  quant_matrix   <- NULL
-  quant_probs    <- NULL
   do_conformal  <- "conformal" %in% method
   do_bootstrap  <- "bootstrap" %in% method
   do_mc_dropout <- "mc_dropout" %in% method
-  do_quantile   <- "quantile" %in% method
 
   # --- MC Dropout ---
   if (do_mc_dropout) {
@@ -1831,17 +1811,6 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
       cat(sprintf("PipeMaster:: MC Dropout done — %d samples\n", n_mc))
   }
 
-  # --- Quantile Regression (trains 1 model) ---
-  if (do_quantile) {
-    quant_probs <- q_probs
-    quant_matrix <- .run.quantile.regression(
-      reftable, param.cols, observed, best_hp, type, sfs.dims,
-      q_probs, max_epochs, seed, verbose, data, best_model,
-      exclude.cols = exclude.cols
-    )
-    colnames(quant_matrix) <- param_names
-  }
-
   if (cores > 1 && (do_conformal || do_bootstrap)) {
     # Unified parallel dispatch via priority pool
     pool_out <- .run.parallel.pool(
@@ -1915,8 +1884,6 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
     conformal      = conf_samples,
     bootstrap      = boot_samples,
     mc_dropout     = mcdrop_samples,
-    quantile       = quant_matrix,
-    q_probs        = quant_probs,
     prior          = prior_samples,
     param_names    = param_names
   )
@@ -1955,14 +1922,6 @@ summary.nn.posterior <- function(object, probs = c(0.025, 0.25, 0.5, 0.75, 0.975
     out$gan <- .summarize(object$gan)
   if (!is.null(object$abc_rejection))
     out$abc_rejection <- .summarize(object$abc_rejection)
-  if (!is.null(object$quantile)) {
-    # Quantile matrix is (n_quantiles x n_params) — report directly
-    tbl <- t(object$quantile)
-    colnames(tbl) <- paste0("Q", formatC(object$q_probs * 100, format = "fg"), "%")
-    rownames(tbl) <- param_names
-    out$quantile <- tbl
-    out$q_probs  <- object$q_probs
-  }
   class(out) <- "summary.nn.posterior"
   out
 }
@@ -1991,10 +1950,6 @@ print.summary.nn.posterior <- function(x, digits = 2, ...) {
     cat("\nABC rejection posterior:\n")
     print(round(x$abc_rejection, digits))
   }
-  if (!is.null(x$quantile)) {
-    cat("\nQuantile Regression:\n")
-    print(round(x$quantile, digits))
-  }
   invisible(x)
 }
 
@@ -2006,7 +1961,6 @@ print.nn.posterior <- function(x, ...) {
   if (!is.null(x$mc_dropout))     methods <- c(methods, sprintf("mc_dropout (%d samples)", nrow(x$mc_dropout)))
   if (!is.null(x$gan))            methods <- c(methods, sprintf("gan (%d samples)", nrow(x$gan)))
   if (!is.null(x$abc_rejection))  methods <- c(methods, sprintf("abc_rejection (%d samples)", nrow(x$abc_rejection)))
-  if (!is.null(x$quantile))       methods <- c(methods, sprintf("quantile (%d quantiles)", nrow(x$quantile)))
   cat(sprintf("nn.posterior object — %s\n", paste(methods, collapse = " + ")))
   cat("Point estimate:\n")
   print(round(x$point_estimate, 2))
@@ -2044,7 +1998,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   param_names <- x$param_names
   n_params <- length(param_names)
 
-  all_methods <- c("prior", "conformal", "bootstrap", "mc_dropout", "gan", "abc_rejection", "quantile")
+  all_methods <- c("prior", "conformal", "bootstrap", "mc_dropout", "gan", "abc_rejection")
 
   # Pick methods
   if (is.null(method)) {
@@ -2065,13 +2019,11 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   # Colors for methods
   method_cols <- c(prior = "grey50", conformal = "red", bootstrap = "blue",
                    mc_dropout = "darkgreen", gan = "orange",
-                   abc_rejection = "steelblue", quantile = "purple")
+                   abc_rejection = "steelblue")
   if (length(col) == 1 && length(post_methods) == 1)
     method_cols[post_methods] <- col
 
-  # Separate sample-based methods from quantile method
   sample_methods <- intersect(methods, c("prior", "conformal", "bootstrap", "mc_dropout", "gan", "abc_rejection"))
-  has_quantile <- "quantile" %in% methods
 
   par(mfrow = c(1, n_params))
   for (j in seq_len(n_params)) {
@@ -2097,22 +2049,6 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
       }
       densities[[m]]   <- d
       density_lty[[m]] <- if (m == "prior") 3 else 1
-    }
-
-    if (has_quantile && !is.null(x$quantile)) {
-      qvals  <- x$quantile[, j]
-      qprobs <- x$q_probs
-      pseudo <- approx(qprobs, qvals, xout = seq(qprobs[1], qprobs[length(qprobs)],
-                                                   length.out = 10000),
-                        rule = 2)$y
-      if (!is.null(prior_range)) {
-        d_q <- density(pseudo, n = 1024, adjust = 1.5,
-                       from = prior_range[1], to = prior_range[2])
-      } else {
-        d_q <- density(pseudo, n = 1024, adjust = 1.5)
-      }
-      densities[["quantile"]]   <- d_q
-      density_lty[["quantile"]] <- 1
     }
 
     # --- Derive common y-range across all densities ---
@@ -2145,11 +2081,6 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
         legend_cols   <- c(legend_cols, method_cols[m])
         legend_lty    <- c(legend_lty, if (m == "prior") 3 else 1)
       }
-    }
-    if (has_quantile && !is.null(densities[["quantile"]])) {
-      legend_labels <- c(legend_labels, "quantile")
-      legend_cols   <- c(legend_cols, method_cols["quantile"])
-      legend_lty    <- c(legend_lty, 1)
     }
     if (show_point_est) {
       legend_labels <- c(legend_labels, "Point est.")
@@ -2352,413 +2283,6 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     matrix(ensemble_z, nrow = 1), data$target_mu, data$target_sd
   ))
   point_est
-}
-
-# ============================================================================
-# Internal: build quantile regression model (same architecture, different head)
-# ============================================================================
-
-.build.nn.qr <- function(hp, data, type, sfs.dims, n_quantiles, n_params, q_probs) {
-  tf <- tensorflow::tf
-
-  # Total outputs: one per (param, quantile) pair
-  n_out <- as.integer(n_params * n_quantiles)
-
-  # Build the backbone — reuse same architecture but with expanded output layer
-  switch(type,
-    sumstat = .build.resnet.qr(hp, data, n_out, n_params, n_quantiles, q_probs),
-    sfs1d   = .build.cnn.qr(hp, data, n_out, n_params, n_quantiles, q_probs, "1d"),
-    sfs2d   = .build.cnn2d.qr(hp, data, n_out, n_params, n_quantiles, q_probs, sfs.dims)
-  )
-}
-
-.build.resnet.qr <- function(hp, data, n_out, n_params, n_quantiles, q_probs) {
-  tf <- tensorflow::tf
-  n_features <- ncol(data$X_train)
-  l2 <- keras::regularizer_l2(hp$l2_reg)
-
-  res_block <- function(x, units) {
-    skip <- x
-    x <- x |>
-      keras::layer_dense(units = as.integer(units), activation = "relu",
-                         kernel_regularizer = l2) |>
-      keras::layer_batch_normalization() |>
-      keras::layer_dense(units = as.integer(units), activation = "linear",
-                         kernel_regularizer = l2) |>
-      keras::layer_batch_normalization()
-    x <- keras::layer_add(list(x, skip))
-    keras::layer_activation(x, activation = "relu")
-  }
-
-  inp <- keras::layer_input(shape = n_features)
-  x <- inp |>
-    keras::layer_dense(units = as.integer(hp$units_1), activation = "relu",
-                       kernel_regularizer = l2) |>
-    keras::layer_batch_normalization()
-  for (i in seq_len(hp$n_resblocks_1)) x <- res_block(x, hp$units_1)
-
-  x <- x |>
-    keras::layer_dense(units = as.integer(hp$units_2), activation = "relu",
-                       kernel_regularizer = l2) |>
-    keras::layer_batch_normalization()
-  if (isTRUE(hp$use_dropout) && hp$dropout > 0)
-    x <- keras::layer_dropout(x, rate = hp$dropout)
-
-  if (hp$n_resblocks_2 > 0)
-    for (i in seq_len(hp$n_resblocks_2)) x <- res_block(x, hp$units_2)
-
-  x <- x |>
-    keras::layer_dense(units = as.integer(hp$units_3), activation = "relu",
-                       kernel_regularizer = l2) |>
-    keras::layer_batch_normalization()
-  if (isTRUE(hp$use_dropout) && hp$dropout > 0)
-    x <- keras::layer_dropout(x, rate = hp$dropout)
-
-  out <- x |> keras::layer_dense(units = n_out, activation = "linear")
-  model <- keras::keras_model(inp, out)
-
-  pinball <- .make.pinball.loss(n_params, n_quantiles, q_probs)
-  model |> keras::compile(
-    loss      = pinball,
-    optimizer = keras::optimizer_adam(learning_rate = hp$learning_rate)
-  )
-  model
-}
-
-.build.cnn.qr <- function(hp, data, n_out, n_params, n_quantiles, q_probs, dim_type) {
-  tf <- tensorflow::tf
-  n_bins    <- data$n_bins
-  l2 <- keras::regularizer_l2(hp$l2_reg)
-  input <- keras::layer_input(shape = c(n_bins, 1L))
-  x <- input
-
-  for (b in seq_len(hp$n_blocks)) {
-    filters <- as.integer(hp$base_filters * (2 ^ min(b - 1, 2)))
-    ks <- as.integer(max(3L, hp$kernel_start - (b - 1) * 2))
-    x <- x |>
-      keras::layer_conv_1d(filters = filters, kernel_size = ks,
-                           padding = "same", kernel_regularizer = l2) |>
-      keras::layer_batch_normalization() |>
-      keras::layer_activation("relu")
-    if (isTRUE(hp$use_residual) && b > 1 && b < hp$n_blocks) {
-      skip <- x
-      x <- x |>
-        keras::layer_conv_1d(filters = filters, kernel_size = ks,
-                             padding = "same", kernel_regularizer = l2) |>
-        keras::layer_batch_normalization() |>
-        keras::layer_activation("relu") |>
-        keras::layer_conv_1d(filters = filters, kernel_size = ks,
-                             padding = "same", kernel_regularizer = l2) |>
-        keras::layer_batch_normalization()
-      x <- keras::layer_add(list(x, skip)) |> keras::layer_activation("relu")
-    }
-  }
-  x <- x |> keras::layer_global_average_pooling_1d()
-
-  for (d in seq_len(hp$n_dense)) {
-    units <- as.integer(hp$dense_units / (2 ^ (d - 1)))
-    x <- x |>
-      keras::layer_dense(units = units, activation = "relu",
-                         kernel_regularizer = l2) |>
-      keras::layer_batch_normalization() |>
-      keras::layer_dropout(rate = hp$dropout)
-  }
-
-  output <- x |> keras::layer_dense(units = n_out, activation = "linear")
-  model <- keras::keras_model(input, output)
-
-  pinball <- .make.pinball.loss(n_params, n_quantiles, q_probs)
-  model |> keras::compile(
-    loss      = pinball,
-    optimizer = keras::optimizer_adam(learning_rate = hp$learning_rate),
-    metrics   = list("mae")
-  )
-  model
-}
-
-.build.cnn2d.qr <- function(hp, data, n_out, n_params, n_quantiles, q_probs, sfs.dims) {
-  tf <- tensorflow::tf
-  dim1 <- sfs.dims[1]; dim2 <- sfs.dims[2]
-  l2 <- keras::regularizer_l2(hp$l2_reg)
-  input <- keras::layer_input(shape = c(dim1, dim2, 1L))
-  x <- input
-
-  for (b in seq_len(hp$n_blocks)) {
-    filters <- as.integer(hp$base_filters * (2 ^ min(b - 1, 2)))
-    ks <- as.integer(max(3L, hp$kernel_start - (b - 1) * 2))
-    x <- x |>
-      keras::layer_conv_2d(filters = filters, kernel_size = c(ks, ks),
-                           padding = "same", kernel_regularizer = l2) |>
-      keras::layer_batch_normalization() |>
-      keras::layer_activation("relu")
-    if (b == 1 || b == (hp$n_blocks %/% 2 + 1))
-      x <- keras::layer_max_pooling_2d(x, pool_size = c(2L, 2L))
-    if (isTRUE(hp$use_residual) && b > 1 && b < hp$n_blocks) {
-      skip <- x
-      x <- x |>
-        keras::layer_conv_2d(filters = filters, kernel_size = c(ks, ks),
-                             padding = "same", kernel_regularizer = l2) |>
-        keras::layer_batch_normalization() |>
-        keras::layer_activation("relu") |>
-        keras::layer_conv_2d(filters = filters, kernel_size = c(ks, ks),
-                             padding = "same", kernel_regularizer = l2) |>
-        keras::layer_batch_normalization()
-      x <- keras::layer_add(list(x, skip)) |> keras::layer_activation("relu")
-    }
-  }
-  x <- x |> keras::layer_global_average_pooling_2d()
-
-  for (d in seq_len(hp$n_dense)) {
-    units <- as.integer(hp$dense_units / (2 ^ (d - 1)))
-    x <- x |>
-      keras::layer_dense(units = units, activation = "relu",
-                         kernel_regularizer = l2) |>
-      keras::layer_batch_normalization() |>
-      keras::layer_dropout(rate = hp$dropout)
-  }
-
-  output <- x |> keras::layer_dense(units = n_out, activation = "linear")
-  model <- keras::keras_model(input, output)
-
-  pinball <- .make.pinball.loss(n_params, n_quantiles, q_probs)
-  model |> keras::compile(
-    loss      = pinball,
-    optimizer = keras::optimizer_adam(learning_rate = hp$learning_rate),
-    metrics   = list("mae")
-  )
-  model
-}
-
-# ============================================================================
-# Internal: pinball (quantile) loss function
-# ============================================================================
-
-.make.pinball.loss <- function(n_params, n_quantiles, q_probs) {
-  tf <- tensorflow::tf
-  # q_probs is a numeric vector of length n_quantiles
-  # output shape: (batch, n_params * n_quantiles)
-  # y_true shape: (batch, n_params) — replicated targets
-
-  q_tensor <- tf$constant(q_probs, dtype = "float32")
-  np <- as.integer(n_params)
-  nq <- as.integer(n_quantiles)
-
-  function(y_true, y_pred) {
-    # y_true: (batch, n_params) — expand to (batch, n_params, n_quantiles)
-    y_true_exp <- tf$expand_dims(y_true, axis = -1L)
-    y_true_rep <- tf$`repeat`(y_true_exp, repeats = nq, axis = -1L)
-
-    # y_pred: (batch, n_params * n_quantiles) — reshape to (batch, n_params, n_quantiles)
-    y_pred_3d <- tf$reshape(y_pred, c(-1L, np, nq))
-
-    # Pinball loss
-    err <- y_true_rep - y_pred_3d
-    loss <- tf$maximum(q_tensor * err, (q_tensor - 1.0) * err)
-    tf$reduce_mean(loss)
-  }
-}
-
-# ============================================================================
-# Internal: quantile regression — train and predict
-# ============================================================================
-
-.run.quantile.regression <- function(reftable, param.cols, observed, best_hp,
-                                     type, sfs.dims, q_probs, max_epochs,
-                                     seed, verbose, data, best_model = NULL,
-                                     exclude.cols = NULL) {
-
-  nuisance <- c("mean.rate", "sd.rate")
-  target_cols <- setdiff(param.cols, nuisance)
-  n_params    <- length(target_cols)
-  n_quantiles <- length(q_probs)
-
-  warm_start <- !is.null(best_model)
-
-  if (verbose)
-    cat(sprintf("\nPipeMaster:: Quantile Regression (%d quantiles, warm_start=%s)...\n",
-                n_quantiles, warm_start))
-
-  # Prepare features and targets from reftable
-  all_rows   <- seq_len(nrow(reftable))
-  full_split <- .prep.reftable.split(reftable, param.cols, all_rows, type, sfs.dims,
-                                      exclude.cols = exclude.cols)
-  features_all <- full_split$features
-  targets_all  <- full_split$targets
-  n_total <- nrow(features_all)
-
-  # Split into train/val
-  set.seed(seed + 999L)
-  idx <- sample(n_total)
-  n_val   <- max(1L, floor(0.1 * n_total))
-  n_train <- n_total - n_val
-  tr_idx <- idx[1:n_train]
-  va_idx <- idx[(n_train + 1):n_total]
-
-  feat_tr <- features_all[tr_idx, ]
-  feat_va <- features_all[va_idx, ]
-  targ_tr <- targets_all[tr_idx, , drop = FALSE]
-  targ_va <- targets_all[va_idx, , drop = FALSE]
-
-  if (warm_start) {
-    # Use same normalization as best_model (from tune.nn)
-    f_mu <- data$feat_mu; f_sd <- data$feat_sd
-    t_mu <- data$target_mu; t_sd <- data$target_sd
-  } else {
-    # Compute normalization from scratch
-    f_mu <- colMeans(feat_tr)
-    f_sd <- apply(feat_tr, 2, sd); f_sd[f_sd == 0] <- 1
-    t_mu <- colMeans(log(targ_tr))
-    t_sd <- apply(log(targ_tr), 2, sd); t_sd[t_sd == 0] <- 1
-  }
-
-  # Z-score features
-  X_tr <- t((t(feat_tr) - f_mu) / f_sd)
-  X_va <- t((t(feat_va) - f_mu) / f_sd)
-
-  # Log + Z-score targets
-  Y_tr <- t((t(log(targ_tr)) - t_mu) / t_sd)
-  Y_va <- t((t(log(targ_va)) - t_mu) / t_sd)
-
-  # Reshape for CNN architectures
-  if (type == "sfs1d") {
-    n_bins <- ncol(X_tr)
-    dim(X_tr) <- c(nrow(X_tr), n_bins, 1L)
-    dim(X_va) <- c(nrow(X_va), n_bins, 1L)
-  } else if (type == "sfs2d") {
-    X_tr <- array(X_tr, dim = c(nrow(X_tr), sfs.dims[1], sfs.dims[2], 1L))
-    X_va <- array(X_va, dim = c(nrow(X_va), sfs.dims[1], sfs.dims[2], 1L))
-  }
-
-  qr_data <- list(
-    X_train = X_tr, X_val = X_va,
-    Y_train = Y_tr, Y_val = Y_va,
-    n_features = ncol(features_all),
-    n_bins = if (type != "sumstat") ncol(features_all) else NULL,
-    feat_mu = f_mu, feat_sd = f_sd,
-    target_mu = t_mu, target_sd = t_sd
-  )
-
-  # Build quantile regression model
-  tensorflow::tf$random$set_seed(as.integer(seed + 777L))
-  model <- .build.nn.qr(best_hp, qr_data, type, sfs.dims,
-                         n_quantiles, n_params, q_probs)
-
-  # --- Warm-start: copy backbone weights from best_model ---
-  if (warm_start) {
-    orig_w <- best_model$get_weights()
-    qr_w   <- model$get_weights()
-
-    # All weights match except the last 2 (output Dense kernel + bias)
-    # which differ in shape: (units_3, n_params) vs (units_3, n_params*n_quantiles)
-    n_backbone <- length(qr_w) - 2L
-
-    if (length(orig_w) - 2L == n_backbone) {
-      for (i in seq_len(n_backbone)) {
-        qr_w[[i]] <- orig_w[[i]]
-      }
-      model$set_weights(qr_w)
-      if (verbose)
-        cat("PipeMaster:: Warm-start: copied backbone weights from best model\n")
-    } else {
-      warning("Warm-start: backbone weight count mismatch (",
-              length(orig_w) - 2L, " vs ", n_backbone,
-              "). Training from scratch.")
-      warm_start <- FALSE
-    }
-  }
-
-  pinball <- .make.pinball.loss(n_params, n_quantiles, q_probs)
-  bs <- as.integer(best_hp$batch_size)
-
-  if (warm_start) {
-    # Phase 1: freeze backbone, train only output head at full LR
-    n_layers <- length(model$layers)
-    for (i in seq_len(n_layers - 1L)) {
-      layer <- model$layers[[i]]
-      layer$trainable <- FALSE
-    }
-    model |> keras::compile(
-      loss      = pinball,
-      optimizer = keras::optimizer_adam(learning_rate = best_hp$learning_rate)
-    )
-    if (verbose) cat("PipeMaster:: Phase 1: training output head (backbone frozen)...\n")
-    model |> keras::fit(
-      x = qr_data$X_train, y = qr_data$Y_train,
-      validation_data = list(qr_data$X_val, qr_data$Y_val),
-      epochs     = 100L,
-      batch_size = bs,
-      callbacks  = list(
-        keras::callback_early_stopping(monitor = "val_loss", patience = 20L,
-                                       restore_best_weights = TRUE)
-      ),
-      verbose = 0L
-    )
-
-    # Phase 2: unfreeze all, fine-tune at lower LR
-    for (i in seq_len(n_layers - 1L)) {
-      layer <- model$layers[[i]]
-      layer$trainable <- TRUE
-    }
-    model |> keras::compile(
-      loss      = pinball,
-      optimizer = keras::optimizer_adam(learning_rate = best_hp$learning_rate / 10)
-    )
-    if (verbose) cat("PipeMaster:: Phase 2: fine-tuning full model...\n")
-  } else {
-    model |> keras::compile(
-      loss      = pinball,
-      optimizer = keras::optimizer_adam(learning_rate = best_hp$learning_rate)
-    )
-  }
-
-  history <- model |> keras::fit(
-    x = qr_data$X_train, y = qr_data$Y_train,
-    validation_data = list(qr_data$X_val, qr_data$Y_val),
-    epochs     = as.integer(max_epochs),
-    batch_size = bs,
-    callbacks  = list(
-      keras::callback_early_stopping(monitor = "val_loss", patience = 30L,
-                                     restore_best_weights = TRUE),
-      keras::callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 15L,
-                                           factor = 0.5, min_lr = 1e-6, verbose = 0L)
-    ),
-    verbose = 0L
-  )
-
-  vl <- history$metrics$val_loss
-  if (is.null(vl)) vl <- history$history$val_loss
-  n_ep <- length(unlist(vl))
-  final_vl <- min(unlist(vl))
-
-  if (verbose)
-    cat(sprintf("PipeMaster:: QR model trained %d epochs (val_loss=%.6f)\n", n_ep, final_vl))
-
-  # Predict on observed
-  X_obs_qr <- .prep.observed.with(observed, f_mu, f_sd, type, sfs.dims)
-  pred_z <- predict(model, X_obs_qr, verbose = 0L)   # (1, n_params * n_quantiles)
-  pred_z <- as.numeric(pred_z)
-
-  # Reshape to (n_params, n_quantiles) — TF reshape is row-major, so use byrow=TRUE
-  pred_mat_z <- matrix(pred_z, nrow = n_params, ncol = n_quantiles, byrow = TRUE)
-
-  # Inverse transform each value: exp(z * t_sd + t_mu)
-  quant_mat <- matrix(NA_real_, nrow = n_quantiles, ncol = n_params)
-  for (j in seq_len(n_params)) {
-    quant_mat[, j] <- exp(pred_mat_z[j, ] * t_sd[j] + t_mu[j])
-  }
-
-  # Enforce monotonicity: sort quantiles per parameter
-  for (j in seq_len(n_params)) {
-    quant_mat[, j] <- sort(quant_mat[, j])
-  }
-
-  rm(model); gc()
-  tryCatch(keras::k_clear_session(), error = function(e) NULL)
-
-  if (verbose)
-    cat("PipeMaster:: Quantile Regression done\n")
-
-  quant_mat
 }
 
 # ============================================================================
