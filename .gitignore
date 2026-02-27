@@ -42,6 +42,7 @@ msdoc.pdf
 # Development notes (tracked locally only)
 TODO.md
 context.md
+CLAUDE.md
 
 # Test data and analysis scripts (kept locally only)
 tests/data/*
