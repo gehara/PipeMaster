@@ -395,7 +395,7 @@ emulator.optimize <- function(emulator, observed,
 #' }
 #'
 #' @export
-emulator.predict <- function(emulator, observed,
+emulator.ABC <- function(emulator, observed,
                              model = NULL, prior.bounds = NULL,
                              reftable = NULL,
                              n_samples = 1e6, tol = 0.01,
@@ -403,7 +403,7 @@ emulator.predict <- function(emulator, observed,
                              verbose = TRUE) {
 
   if (!requireNamespace("keras", quietly = TRUE))
-    stop("emulator.predict() requires the 'keras' R package.")
+    stop("emulator.ABC() requires the 'keras' R package.")
 
   distance <- match.arg(distance)
   n_samples <- as.integer(n_samples)
@@ -443,7 +443,7 @@ emulator.predict <- function(emulator, observed,
   hi <- as.numeric(bounds$prior.2)
 
   if (verbose) {
-    cat("PipeMaster:: emulator.predict (ABC rejection)\n")
+    cat("PipeMaster:: emulator.ABC (ABC rejection)\n")
     cat(sprintf("PipeMaster:: %s samples, tol=%.4f → keep %s, distance=%s\n",
                 format(n_samples, big.mark = ","), tol,
                 format(n_accept, big.mark = ","), distance))

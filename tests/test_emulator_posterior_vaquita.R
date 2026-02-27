@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 #
-# Test emulator.posterior() MCMC on the Vaquita dataset.
+# Test emulator.MCMC() MCMC on the Vaquita dataset.
 # Uses saved emulator from emulator_vaquita_results/ and observed stats.
 #
 # The Vaquita2Epoch model is a 1-population bottleneck with 3 parameters:
@@ -50,7 +50,7 @@ print(ptab[ptab$Parameter %in% param_cols, ])
 cat("\n=== 3. Quick MCMC run (5K samples) ===\n")
 
 t0 <- proc.time()
-mcmc <- emulator.posterior(
+mcmc <- emulator.MCMC(
   emulator,
   observed  = obs_raw,
   model     = model,
@@ -167,7 +167,7 @@ cat("Saved: emulator_mcmc_posterior_vaquita.pdf\n")
 cat("\n=== 8. Production MCMC run (50K samples) ===\n")
 
 t0 <- proc.time()
-mcmc_long <- emulator.posterior(
+mcmc_long <- emulator.MCMC(
   emulator,
   observed  = obs_raw,
   model     = model,

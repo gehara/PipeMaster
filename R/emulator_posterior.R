@@ -1,7 +1,7 @@
 # ============================================================================
 # Bayesian Posterior Estimation via Neural Emulator MCMC
 #
-# emulator.posterior()          — Python-accelerated multi-chain MH-MCMC with
+# emulator.MCMC()          — Python-accelerated multi-chain MH-MCMC with
 #                                  emulator as likelihood surrogate
 # .estimate.residual.variance() — per-stat residual variance from validation set
 # .hpd.interval()               — highest posterior density interval
@@ -156,7 +156,7 @@
 #' }
 #'
 #' @export
-emulator.posterior <- function(emulator, observed,
+emulator.MCMC <- function(emulator, observed,
                                model = NULL, prior.bounds = NULL,
                                n_samples = 10000L, burnin = 2000L,
                                thin = 1L, n_chains = 10L,
@@ -166,7 +166,7 @@ emulator.posterior <- function(emulator, observed,
                                adaptive = TRUE, verbose = TRUE) {
 
   if (!requireNamespace("keras", quietly = TRUE))
-    stop("emulator.posterior() requires the 'keras' R package.")
+    stop("emulator.MCMC() requires the 'keras' R package.")
 
   # --- Extract bounds (same pattern as emulator.optimize) ---
   if (!is.null(model)) {
@@ -203,7 +203,7 @@ emulator.posterior <- function(emulator, observed,
   device <- match.arg(device, c("auto", "cpu", "gpu"))
   if (device == "cpu") {
     if (!requireNamespace("reticulate", quietly = TRUE))
-      stop("emulator.posterior() requires the 'reticulate' R package.")
+      stop("emulator.MCMC() requires the 'reticulate' R package.")
     if (verbose) cat("PipeMaster:: Cloning model weights to CPU for MCMC\n")
     reticulate::py_run_string("
 import tensorflow as tf
@@ -304,7 +304,7 @@ def _clone_model_to_cpu(model):
   iter_per_chain  <- burnin + samples_per_chain * thin
 
   if (verbose) {
-    cat("PipeMaster:: emulator.posterior (Python-accelerated multi-chain MH-MCMC)\n")
+    cat("PipeMaster:: emulator.MCMC (Python-accelerated multi-chain MH-MCMC)\n")
     cat(sprintf("PipeMaster:: %d chains x %d samples/chain = %d total, %d burn-in, thin=%d\n",
                 n_chains, samples_per_chain, samples_per_chain * n_chains,
                 burnin, thin))
@@ -320,7 +320,7 @@ def _clone_model_to_cpu(model):
 
   # --- Define Python MCMC functions (once per call) ---
   if (!requireNamespace("reticulate", quietly = TRUE))
-    stop("emulator.posterior() requires the 'reticulate' R package.")
+    stop("emulator.MCMC() requires the 'reticulate' R package.")
 
   reticulate::py_run_string("
 import numpy as np
