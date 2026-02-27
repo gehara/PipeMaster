@@ -1,5 +1,12 @@
 #' Simulation of demographic models for single populations.
-#' @description Test for constant size, population expansion and bottleneck for single population (non hierarchical).
+#' @description
+#' \lifecycle{deprecated}
+#'
+#' This function is deprecated. Use \code{\link{grid.search}} for parameter
+#' space exploration and \code{\link{emulator.ABC}} or \code{\link{emulator.MCMC}}
+#' for posterior estimation instead.
+#'
+#' Test for constant size, population expansion and bottleneck for single population (non hierarchical).
 #' @param nsims Total number of simulations per model.
 #' @param Ne.prior Data frame with the prior values for the Ne of each population.
 #' @param time.prior Data frame with parameter values for the priors of the time of demographic change of each population.
@@ -13,8 +20,7 @@
 #' @param observed Observed summary statistics calculated for the empirical data.
 #' @param CV logical. If TRUE cross-validation is performed. Default is FALSE.
 #' @param mod 3 x 2 matrix of multiplier priors (unif: min, max) for ancestral population sizes for each model. Default: cbind(c(1,0.001,2),c(1,0.1,20)). First row: constant size; min 1, max 1. Second row: expansion; min 0.001, max 0.1. Third row: bottleneck; min 2, max 20.
-#' @details This function will take the same inputs used in the codemographic simulations and test for demographic change for each
-#' population separately. This test could be useful to select which populations will be included in the codemographic model and to optimize the prior distributions.
+#' @details This function is deprecated and will be removed in a future version.
 #' @export
 single.pop.demog<-function(nsims,
                      Ne.prior,
@@ -29,6 +35,15 @@ single.pop.demog<-function(nsims,
                      CV=F,
                      mod=cbind(c(1,0.001,2),c(1,0.1,20)),
                      path=path){
+
+  .Deprecated(msg = "single.pop.demog() is deprecated. Use grid.search(), emulator.ABC(), or emulator.MCMC() instead.")
+
+  if(do.ABC || CV) {
+    if(!requireNamespace("abc", quietly = TRUE))
+      stop("The 'abc' package is required for do.ABC/CV but is no longer a PipeMaster dependency.\n",
+           "Install it with: install.packages('abc')")
+  }
+
   tabela<-NULL
   method="rejection"
 
@@ -52,13 +67,13 @@ single.pop.demog<-function(nsims,
 
     if(do.ABC==T){
       if(method=="rejection"){
-      prob<-postpr(observed[i,],index,models,method=method, tol=tol)
+      prob<-abc::postpr(observed[i,],index,models,method=method, tol=tol)
       prob<-summary(prob)
       tabela<-rbind(tabela,prob$Prob)
       }
 
       if(method=="neuralnet"){
-      prob<-postpr(observed[i,],index,models,method=method, tol=tol)
+      prob<-abc::postpr(observed[i,],index,models,method=method, tol=tol)
       prob<-summary(prob)
       tabela<-rbind(tabela,prob$neuralnet$Prob)
       }
@@ -68,7 +83,7 @@ single.pop.demog<-function(nsims,
 
 
     if(CV==T){
-      cv<-cv4postpr(index,models,nval=nval,tols=tol,method=method)
+      cv<-abc::cv4postpr(index,models,nval=nval,tols=tol,method=method)
       pdf(paste("CV_",rownames(observed)[i],".pdf",sep=""), paper="a4r", width=10, pointsize=10)
       plot(cv)
       graphics.off()
