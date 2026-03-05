@@ -12,6 +12,8 @@ R/cpp.cpp
 # Old/unused files
 test.R
 example_of_datadocumentation.R
+msABC_code/
+*.html
 
 # Build artifacts
 src/*.o

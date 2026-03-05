@@ -1,1 +1,0 @@
-../msABC 10 5 --obs obs.out 
