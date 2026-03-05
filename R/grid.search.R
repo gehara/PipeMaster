@@ -1,3 +1,39 @@
+# ---- Internal: build parameter location map ----
+# Maps each parameter name to its position in model$flags
+.build.par.map <- function(param_names, model) {
+  par_map <- list()
+  for(pname in param_names) {
+    found <- FALSE
+    for(fname in names(model$flags)) {
+      flag <- model$flags[[fname]]
+      if(is.null(flag)) next
+      if(is.null(nrow(flag))) {
+        # Nested list (en has $size/$time, em has $size/$time)
+        for(sname in names(flag)) {
+          mat <- flag[[sname]]
+          row_idx <- which(mat[, 1] == pname)
+          if(length(row_idx) == 1) {
+            par_map[[pname]] <- list(flag = fname, sub = sname, row = row_idx)
+            found <- TRUE
+            break
+          }
+        }
+      } else {
+        row_idx <- which(flag[, 1] == pname)
+        if(length(row_idx) == 1) {
+          par_map[[pname]] <- list(flag = fname, sub = NULL, row = row_idx)
+          found <- TRUE
+        }
+      }
+      if(found) break
+    }
+    if(!found)
+      stop("Parameter '", pname, "' not found in model$flags")
+  }
+  par_map
+}
+
+
 #' Grid search for parameter space exploration
 #'
 #' @description Evaluates a grid of parameter combinations by simulating under each
@@ -94,36 +130,7 @@ grid.search <- function(model, observed, grid = NULL, n_points = 10, n_reps = 10
   param_names <- colnames(grid)
 
   ## ---- Build parameter location map ----
-  # Maps each parameter name to its position in model$flags
-  par_map <- list()
-  for(pname in param_names) {
-    found <- FALSE
-    for(fname in names(model$flags)) {
-      flag <- model$flags[[fname]]
-      if(is.null(flag)) next
-      if(is.null(nrow(flag))) {
-        # Nested list (en has $size/$time, em has $size/$time)
-        for(sname in names(flag)) {
-          mat <- flag[[sname]]
-          row_idx <- which(mat[, 1] == pname)
-          if(length(row_idx) == 1) {
-            par_map[[pname]] <- list(flag = fname, sub = sname, row = row_idx)
-            found <- TRUE
-            break
-          }
-        }
-      } else {
-        row_idx <- which(flag[, 1] == pname)
-        if(length(row_idx) == 1) {
-          par_map[[pname]] <- list(flag = fname, sub = NULL, row = row_idx)
-          found <- TRUE
-        }
-      }
-      if(found) break
-    }
-    if(!found)
-      stop("Parameter '", pname, "' not found in model$flags")
-  }
+  par_map <- .build.par.map(param_names, model)
 
   ## ---- Setup locfile ----
   locfile <- get.locfile(model)
@@ -245,12 +252,13 @@ grid.search <- function(model, observed, grid = NULL, n_points = 10, n_reps = 10
 
 
 # ---- Internal: run sumstat batch simulations ----
-.grid.run.sumstat <- function(commands, mu_mat, ncores) {
+.grid.run.sumstat <- function(commands, mu_mat, ncores, rec_mat = NULL) {
   ntasks <- length(commands)
 
   run_batch <- function(idx) {
+    rec_sub <- if(!is.null(rec_mat)) rec_mat[, idx, drop = FALSE] else NULL
     outputs <- .Call("msABC_batch_call", commands[idx],
-                     mu_mat[, idx, drop = FALSE], NULL,
+                     mu_mat[, idx, drop = FALSE], rec_sub,
                      PACKAGE = "PipeMaster")
     .parse.sumstat.outputs(outputs)
   }
@@ -292,6 +300,9 @@ grid.search <- function(model, observed, grid = NULL, n_points = 10, n_reps = 10
                      pop_sizes_vec, one.snp, method,
                      PACKAGE = "PipeMaster")
 
+    if(npop == 1 && !folded) {
+      sfs_mat <- sfs_mat[, 1:floor(nsam / 2), drop = FALSE]
+    }
     if(folded && npop == 1) {
       sfs_mat <- t(apply(sfs_mat, 1, fold_sfs))
     }
@@ -315,7 +326,7 @@ grid.search <- function(model, observed, grid = NULL, n_points = 10, n_reps = 10
 
   # Assign column names following sim.sfs conventions
   if(npop == 1) {
-    sfs_len <- nsam - 1
+    sfs_len <- floor(nsam / 2)
     if(folded) {
       folded_len <- ncol(sim_mat) - as.integer(monomorphic)
       sfs_names <- paste0("sfs_fold_", seq(0, folded_len - 1))
@@ -419,4 +430,446 @@ update.priors.from.grid <- function(model, grid.results, tol = 0.05, padding = 0
   ## ---- Apply via existing update.priors() ----
   model <- update.priors(new_tab, model)
   model
+}
+
+
+#' Simulate reference table using Latin Hypercube Sampling
+#'
+#' @description Generates a reference table with space-filling Latin Hypercube
+#'   design for parameter space coverage. The output format is identical to
+#'   \code{\link{sim.sumstat}} so it can be directly used by
+#'   \code{train.emulator()} or concatenated with existing reference tables.
+#'   Simulations are processed in blocks (like \code{sim.sumstat}) and support
+#'   multi-core execution via separate R worker processes.
+#'
+#'   The total number of simulations is \code{n_points * n_reps}. Unlike
+#'   \code{\link{sim.sumstat}} where total = nsim.blocks * block.size * ncores,
+#'   here \code{block.size} and \code{ncores} only control chunking and
+#'   parallelization — they do not affect the total count.
+#'
+#' @param model A model object built by main.menu.gui() with data structure set
+#'   via get.data.structure().
+#' @param n_points Number of LHS design points (unique parameter combinations).
+#'   Total simulations = n_points * n_reps. Default is 500.
+#' @param n_reps Number of stochastic simulation replicates per design point.
+#'   Use n_reps > 1 to average over coalescent variance at each parameter
+#'   combination. Default is 1.
+#' @param design Optional custom design matrix (data.frame with parameter columns).
+#'   If provided, bypasses LHS generation.
+#' @param type Character. Either \code{"sumstat"} or \code{"sfs"}. Default is \code{"sumstat"}.
+#' @param use.alpha Logical. If TRUE the most recent population size change will be
+#'   exponential. Default is FALSE.
+#' @param mu.rates Mutation rate specification. Either a single numeric value (fixed rate
+#'   for all loci), a list specifying a distribution (e.g.,
+#'   \code{list("rtnorm", n, mean, sd, lower)}), or NULL to sample from model priors.
+#'   Default is NULL.
+#' @param rec.rates Recombination rate specification. Same format as mu.rates. Default is NULL.
+#' @param path Path to write the output. Default is current working directory.
+#' @param output.name String. The prefix of the output file name. Default is "lhs".
+#' @param ncores Number of cores for parallel execution. When ncores > 1, separate
+#'   R worker processes are spawned, each processing a chunk of the design.
+#'   Does not affect total simulation count. Default is 1.
+#' @param block.size Number of simulations per batch C call. Controls memory
+#'   usage and progress reporting granularity. Does not affect total simulation
+#'   count. Default is 100.
+#' @param lhs.method Character. LHS method: \code{"maximin"} (better space-filling,
+#'   slower) or \code{"random"} (faster for large n). Default is \code{"maximin"}.
+#' @param one.snp Logical. For SFS type: if TRUE, one SNP per locus. Default is FALSE.
+#' @param folded Logical. For SFS type: if TRUE, fold the SFS. Default is FALSE.
+#' @param method Character. For SFS type: \code{"stochastic"} or \code{"expected"}.
+#'   Default is \code{"stochastic"}.
+#' @param monomorphic Logical. For SFS type: if TRUE, prepend monomorphic bin.
+#'   Default is FALSE.
+#' @param seed Optional integer seed for reproducibility. Default is NULL.
+#' @param verbose Logical. Print progress messages. Default is TRUE.
+#' @param append.sims Logical. If TRUE, skip header writing and append data to
+#'   existing output file. Used internally by multi-core workers. Default is FALSE.
+#' @return Writes \code{SIMS_{output.name}.txt} to path.
+#' @examples
+#' \dontrun{
+#' # Load model with data structure
+#' data("A_piscivorus", package = "PipeMaster")
+#'
+#' # LHS reference table with 500 points, 4 cores
+#' sim.sumstat.lhs(model = Is, n_points = 500,
+#'                 mu.rates = 1e-8, ncores = 4,
+#'                 path = tempdir(), output.name = "lhs_test")
+#'
+#' # Read back
+#' ref <- read.table(file.path(tempdir(), "SIMS_lhs_test.txt"), header = TRUE)
+#' head(ref)
+#'
+#' # With custom design matrix
+#' my_design <- data.frame(
+#'   Ne0.pop1 = 10^runif(100, 3, 6),
+#'   Ne0.pop2 = 10^runif(100, 3, 6)
+#' )
+#' sim.sumstat.lhs(model = Is, design = my_design,
+#'                 mu.rates = 1e-8, ncores = 4)
+#' }
+#' @author Marcelo Gehara
+#' @export
+sim.sumstat.lhs <- function(model, n_points = 500, n_reps = 1, design = NULL,
+                            type = c("sumstat", "sfs"), use.alpha = FALSE,
+                            mu.rates = NULL, rec.rates = NULL,
+                            path = getwd(), output.name = "lhs", ncores = 1,
+                            block.size = 100,
+                            lhs.method = c("maximin", "random"),
+                            one.snp = FALSE, folded = FALSE,
+                            method = c("stochastic", "expected"),
+                            monomorphic = FALSE, seed = NULL, verbose = TRUE,
+                            append.sims = FALSE) {
+
+  type <- match.arg(type)
+  method <- match.arg(method)
+  lhs.method <- match.arg(lhs.method)
+
+  ## ---- Validate model ----
+  if(is.null(model$flags) || is.null(model$I) || is.null(model$loci))
+    stop("model must be a PipeMaster model object generated by main.menu.gui()")
+
+  if(model$I[1, 1] == "genomic")
+    stop("Model needs data structure. Use get.data.structure() first.")
+
+  ## ---- Get prior bounds ----
+  tab <- get.prior.table(model)
+  param_names <- as.character(tab$Parameter)
+  n_params <- length(param_names)
+  npop <- as.numeric(model$I[1, 3])
+
+  ## ---- SFS validation ----
+  if(type == "sfs") {
+    pop_cols <- 4:(3 + npop)
+    pop_sizes_mat <- matrix(as.numeric(model$I[, pop_cols]), ncol = npop)
+    if(nrow(unique(pop_sizes_mat)) > 1)
+      stop("All loci must have uniform per-population sample sizes for SFS simulation.\n",
+           "  Use optimize.sfs.model() to downsample your model to uniform sample sizes first.")
+    pop_sizes_vec <- as.integer(pop_sizes_mat[1, ])
+    nsam <- sum(pop_sizes_vec)
+  }
+
+  ## ---- Generate or validate LHS design ----
+  if(is.null(design)) {
+    if(!requireNamespace("lhs", quietly = TRUE))
+      stop("Package 'lhs' is required for LHS sampling. Install with install.packages('lhs')")
+
+    if(!is.null(seed)) set.seed(seed)
+
+    if(verbose)
+      cat(sprintf("PipeMaster:: Generating %s LHS design with %d points x %d parameters\n",
+                  lhs.method, n_points, n_params))
+
+    if(lhs.method == "maximin") {
+      unit_design <- lhs::maximinLHS(n_points, n_params)
+    } else {
+      unit_design <- lhs::randomLHS(n_points, n_params)
+    }
+
+    # Map unit hypercube to parameter ranges (log-scale for positive params)
+    design <- as.data.frame(matrix(NA, nrow = n_points, ncol = n_params))
+    colnames(design) <- param_names
+    for(j in 1:n_params) {
+      lo <- as.numeric(tab$prior.1[j])
+      hi <- as.numeric(tab$prior.2[j])
+      if(lo > 0 && hi > 0) {
+        design[, j] <- 10^(log10(lo) + unit_design[, j] * (log10(hi) - log10(lo)))
+      } else {
+        design[, j] <- lo + unit_design[, j] * (hi - lo)
+      }
+    }
+  } else {
+    # Validate provided design
+    missing_params <- setdiff(param_names, colnames(design))
+    if(length(missing_params) > 0)
+      stop("Design matrix missing parameters: ", paste(missing_params, collapse = ", "))
+    design <- design[, param_names, drop = FALSE]
+    n_points <- nrow(design)
+  }
+
+  ## ---- Expand design with replicates ----
+  if(n_reps > 1) {
+    tasks <- design[rep(1:n_points, each = n_reps), , drop = FALSE]
+    rownames(tasks) <- NULL
+  } else {
+    tasks <- design
+  }
+  ntasks <- nrow(tasks)
+
+  ## ---- Build par_map ----
+  par_map <- .build.par.map(param_names, model)
+
+  ## ---- Setup working directory ----
+  WD <- getwd()
+  setwd(path)
+  on.exit(setwd(WD))
+
+  locfile <- get.locfile(model)
+  nloci_rows <- nrow(locfile)
+
+  ## ---- Write header (unless appending) ----
+  if(!append.sims) {
+    if(type == "sumstat") {
+      com0 <- msABC.commander(model, use.alpha = use.alpha, arg = 1)
+      write.table(locfile, ".1locfile.txt", row.names = FALSE, col.names = TRUE,
+                  quote = FALSE, sep = " ")
+      x <- strsplit(run.msABC(com0[[1]]), "\t")
+      stat_names <- x[1][[1]]
+      stat_names <- stat_names[stat_names != "" & stat_names != "X"]
+      cols <- grep("thomson|ZnS|FayWuH|fwh", stat_names)
+      if(length(cols) != 0) stat_names <- stat_names[-cols]
+    } else {
+      if(npop == 1) {
+        sfs_len <- floor(nsam / 2)
+        if(folded) {
+          folded_len <- length(fold_sfs(numeric(nsam - 1)))
+          stat_names <- paste0("sfs_fold_", seq(0, folded_len - 1))
+        } else {
+          stat_names <- paste0("sfs_", seq(0, sfs_len - 1))
+        }
+      } else {
+        idx_grid <- expand.grid(lapply(pop_sizes_vec, function(n) 0:n))
+        stat_names <- apply(idx_grid, 1, function(x)
+          paste0("sfs_", paste(x, collapse = "_")))
+      }
+      if(monomorphic) stat_names <- c("sfs_mono", stat_names)
+    }
+
+    header <- c(param_names, "mean.rate", "sd.rate", stat_names)
+    write.table(t(header), file = paste0("SIMS_", output.name, ".txt"),
+                quote = FALSE, row.names = FALSE, col.names = FALSE,
+                append = FALSE, sep = "\t")
+  }
+
+  if(ncores > 1) {
+    ## === MULTI-CORE: spawn separate R worker processes ===
+    abs.path <- normalizePath(getwd())
+
+    # Clean up stale worker dirs and done files from previous runs
+    for(w in 1:ncores) {
+      unlink(file.path(abs.path, paste0(".worker_", w)), recursive = TRUE)
+      f <- file.path(abs.path, paste0(".worker_", w, ".done"))
+      if(file.exists(f)) file.remove(f)
+    }
+
+    # Save shared parameters (workers will partition tasks by worker_id)
+    save(model, tasks, ntasks, block.size, type, use.alpha, mu.rates, rec.rates,
+         output.name, one.snp, folded, method, monomorphic,
+         file = file.path(abs.path, ".PM_lhs_params.RData"))
+
+    worker_script <- paste(
+      'args <- commandArgs(TRUE)',
+      'worker_id <- as.integer(args[1])',
+      'suppressMessages(library(PipeMaster))',
+      sprintf('base_path <- "%s"', abs.path),
+      'load(file.path(base_path, ".PM_lhs_params.RData"))',
+      sprintf('n_workers <- %d', ncores),
+      'chunk_size <- ceiling(ntasks / n_workers)',
+      'my_start <- (worker_id - 1) * chunk_size + 1',
+      'my_end <- min(worker_id * chunk_size, ntasks)',
+      'if(my_start > ntasks) {',
+      '  write("done", file.path(base_path, paste0(".worker_", worker_id, ".done")))',
+      '  quit(save="no")',
+      '}',
+      'my_design <- tasks[my_start:my_end, , drop = FALSE]',
+      'worker_dir <- file.path(base_path, paste0(".worker_", worker_id))',
+      'dir.create(worker_dir, showWarnings=FALSE)',
+      'sim.sumstat.lhs(model=model, design=my_design,',
+      '  type=type, use.alpha=use.alpha, mu.rates=mu.rates, rec.rates=rec.rates,',
+      '  path=worker_dir, output.name=output.name, ncores=1, block.size=block.size,',
+      '  one.snp=one.snp, folded=folded, method=method, monomorphic=monomorphic,',
+      '  append.sims=TRUE, verbose=FALSE)',
+      'write("done", file.path(base_path, paste0(".worker_", worker_id, ".done")))',
+      'quit(save="no")',
+      sep = "\n")
+    writeLines(worker_script, file.path(abs.path, ".PM_lhs_worker.R"))
+
+    start.time <- Sys.time()
+    for(w in 1:ncores) {
+      system(paste("Rscript", file.path(abs.path, ".PM_lhs_worker.R"), w,
+                   ">", file.path(abs.path, paste0(".worker_", w, ".log")), "2>&1"),
+             wait = FALSE)
+    }
+    if(verbose)
+      cat(sprintf("PipeMaster:: Launched %d worker processes (%d total LHS sims)\n",
+                  ncores, ntasks))
+
+    # Monitor progress
+    prev_total_sims <- -1
+    prev_done_count <- -1
+    while(TRUE) {
+      Sys.sleep(5)
+      done_count <- sum(file.exists(
+        file.path(abs.path, paste0(".worker_", 1:ncores, ".done"))))
+
+      total_sims <- 0
+      for(w in 1:ncores) {
+        wf <- file.path(abs.path, paste0(".worker_", w),
+                         paste0("SIMS_", output.name, ".txt"))
+        if(file.exists(wf)) {
+          n <- as.integer(system(paste("wc -l <", shQuote(wf)), intern = TRUE))
+          if(!is.na(n) && n > 0) total_sims <- total_sims + n
+        }
+      }
+
+      if(total_sims != prev_total_sims || done_count != prev_done_count) {
+        elapsed_h <- as.numeric(difftime(Sys.time(), start.time, units = "hours"))
+        if(elapsed_h > 0.001 && total_sims > 0) {
+          rate <- round(total_sims / elapsed_h)
+          remaining <- round(max(0, (ntasks - total_sims) / rate), 2)
+        } else {
+          rate <- "..."
+          remaining <- "..."
+        }
+        cat(sprintf("PipeMaster:: %d/%d sims (~%s sims/h) | ~%s h remaining | %d/%d workers done\n",
+                    total_sims, ntasks, rate, remaining, done_count, ncores))
+        prev_total_sims <- total_sims
+        prev_done_count <- done_count
+      }
+
+      if(done_count >= ncores) break
+    }
+
+    # Compile results from workers
+    if(verbose) cat("PipeMaster:: Compiling results from workers\n")
+    outfile <- file.path(abs.path, paste0("SIMS_", output.name, ".txt"))
+    for(w in 1:ncores) {
+      wf <- file.path(abs.path, paste0(".worker_", w),
+                       paste0("SIMS_", output.name, ".txt"))
+      if(file.exists(wf)) {
+        worker_data <- readLines(wf)
+        if(length(worker_data) > 0) {
+          cat(paste(worker_data, collapse = "\n"), "\n",
+              file = outfile, append = TRUE, sep = "")
+        }
+      }
+      unlink(file.path(abs.path, paste0(".worker_", w)), recursive = TRUE)
+      f <- file.path(abs.path, paste0(".worker_", w, ".done"))
+      if(file.exists(f)) file.remove(f)
+    }
+    file.remove(file.path(abs.path, ".PM_lhs_params.RData"))
+    file.remove(file.path(abs.path, ".PM_lhs_worker.R"))
+    for(w in 1:ncores) {
+      f <- file.path(abs.path, paste0(".worker_", w, ".log"))
+      if(file.exists(f)) file.remove(f)
+    }
+
+    end.time <- Sys.time()
+    elapsed_h <- as.numeric(difftime(end.time, start.time, units = "hours"))
+    if(verbose)
+      cat(sprintf("PipeMaster:: Done! %d LHS simulations in %.3f hours (~%.0f sims/h)\n",
+                  ntasks, elapsed_h, ntasks / elapsed_h))
+
+  } else {
+    ## === SINGLE CORE (block-based, like sim.sumstat) ===
+    n_blocks <- ceiling(ntasks / block.size)
+    total.sims <- 0
+
+    for(b in 1:n_blocks) {
+      start.time <- Sys.time()
+
+      # Get this block's tasks
+      idx_start <- (b - 1) * block.size + 1
+      idx_end <- min(b * block.size, ntasks)
+      block_tasks <- tasks[idx_start:idx_end, , drop = FALSE]
+      bsize <- nrow(block_tasks)
+
+      # Build commands, mu_mat, par_list for this block
+      commands <- character(bsize)
+      mu_mat <- matrix(0, nrow = nloci_rows, ncol = bsize)
+      rec_mat <- NULL
+      par_list <- vector("list", bsize)
+
+      for(i in 1:bsize) {
+        m <- model
+        m$conds <- lapply(m$conds, function(x) NULL)
+
+        for(pname in param_names) {
+          loc <- par_map[[pname]]
+          val <- as.character(block_tasks[[pname]][i])
+          if(is.null(loc$sub)) {
+            m$flags[[loc$flag]][loc$row, 4] <- val
+            m$flags[[loc$flag]][loc$row, 5] <- val
+            m$flags[[loc$flag]][loc$row, 6] <- "runif"
+          } else {
+            m$flags[[loc$flag]][[loc$sub]][loc$row, 4] <- val
+            m$flags[[loc$flag]][[loc$sub]][loc$row, 5] <- val
+            m$flags[[loc$flag]][[loc$sub]][loc$row, 6] <- "runif"
+          }
+        }
+
+        # Sample mu rates
+        if(is.numeric(mu.rates) && length(mu.rates) == 1) {
+          rates_vec <- rep(mu.rates, nloci_rows)
+          rate_stats <- c(mu.rates, 0)
+        } else if(is.list(mu.rates)) {
+          r <- do.call(mu.rates[[1]], args = mu.rates[2:length(mu.rates)])
+          r <- rep(r, each = npop)
+          rates_vec <- r
+          rate_stats <- c(0, 0)
+        } else {
+          rates <- sample.mu.rates(m)
+          rates_vec <- rates[[1]]
+          rate_stats <- rates[[2]]
+        }
+        mu_mat[, i] <- rates_vec
+
+        if(!is.null(rec.rates)) {
+          r.rates <- do.call(rec.rates[[1]], args = rec.rates[2:length(rec.rates)])
+          r.rates <- rep(r.rates, each = npop)
+          if(is.null(rec_mat)) rec_mat <- matrix(0, nrow = nloci_rows, ncol = bsize)
+          rec_mat[, i] <- r.rates
+        }
+
+        com <- msABC.commander(m, use.alpha = use.alpha, arg = 1)
+        commands[i] <- com[[1]]
+
+        par_vals <- sapply(param_names, function(p) block_tasks[[p]][i])
+        par_list[[i]] <- c(par_vals, mean.rate = rate_stats[1], sd.rate = rate_stats[2])
+      }
+
+      # Write locfile once per block
+      write.table(locfile, ".1locfile.txt", row.names = FALSE, col.names = TRUE,
+                  quote = FALSE, sep = " ")
+
+      # Run batch simulation
+      if(type == "sumstat") {
+        outputs <- .Call("msABC_batch_call", commands, mu_mat, rec_mat,
+                         PACKAGE = "PipeMaster")
+        sim_mat <- .parse.sumstat.outputs(outputs)
+      } else {
+        sfs_mat <- .Call("msABC_sfs_batch_call", commands, mu_mat,
+                         pop_sizes_vec, one.snp, method, PACKAGE = "PipeMaster")
+        if(npop == 1 && !folded)
+          sfs_mat <- sfs_mat[, 1:floor(nsam / 2), drop = FALSE]
+        if(folded && npop == 1)
+          sfs_mat <- t(apply(sfs_mat, 1, fold_sfs))
+        if(monomorphic) {
+          total_sites <- sum(as.numeric(model$loci[, 2]))
+          mono_col <- total_sites - rowSums(sfs_mat)
+          sfs_mat <- cbind(mono_col, sfs_mat)
+        }
+        sim_mat <- sfs_mat
+      }
+
+      # Assemble and write this block
+      par_mat <- do.call(rbind, par_list)
+      result <- data.frame(cbind(par_mat, sim_mat))
+      write.table(result, file = paste0("SIMS_", output.name, ".txt"),
+                  quote = FALSE, row.names = FALSE, col.names = FALSE,
+                  append = TRUE, sep = "\t")
+
+      # Progress report
+      total.sims <- total.sims + bsize
+      end.time <- Sys.time()
+      cycle.time <- (as.numeric(end.time) - as.numeric(start.time)) / 60 / 60
+      if(verbose)
+        cat(sprintf("PipeMaster:: %d/%d sims (~%d sims/h) | ~%.3f hours remaining\n",
+                    total.sims, ntasks, round(bsize / cycle.time),
+                    round(cycle.time * (n_blocks - b), 3)))
+    }
+
+    f <- ".1locfile.txt"
+    if(file.exists(f)) file.remove(f)
+    if(verbose) cat("PipeMaster:: Done!\n")
+  }
 }

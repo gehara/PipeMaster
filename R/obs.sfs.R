@@ -186,6 +186,10 @@ obs.sfs <- function(model, path.to.fasta = NULL, path.to.phylip = NULL,
   }
 
   if(npop == 1) {
+    sfs_nsam <- if(!is.null(path.to.vcf)) sum(2L * pop_sizes) else nsam
+    if(!folded) {
+      total_sfs <- total_sfs[1:(floor(sfs_nsam / 2) + 1)]
+    }
     if(folded) {
       total_sfs <- fold_sfs(total_sfs)
       sfs.names <- paste0("sfs_fold_", seq(0, length(total_sfs) - 1))

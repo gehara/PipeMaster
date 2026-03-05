@@ -11,12 +11,13 @@
 #'                    total callable base pairs in the second column. Required when using VCF input.
 #'                    Only chromosomes present in both chrom.sizes and the VCF are included.
 #' @param sanger logical. If TRUE the inheritance scalar and mutation rates set up in the main.menu are kept. If FALSE the mutation rate is propagated to all loci. Default is FALSE.
+#' @param verbose Logical. If TRUE prints progress messages. Default is TRUE.
 #' @author Marcelo Gehara
 #' @return Model object with updated gene parameters.
 #' @export
 get.data.structure <- function(model, path.to.fasta = NULL, path.to.phylip = NULL,
                                path.to.vcf = NULL, pop.assign, chrom.sizes = NULL,
-                               sanger = FALSE) {
+                               sanger = FALSE, verbose = TRUE) {
 
   # Validate inputs
   n_inputs <- sum(!is.null(path.to.fasta), !is.null(path.to.phylip), !is.null(path.to.vcf))
@@ -67,7 +68,7 @@ get.data.structure <- function(model, path.to.fasta = NULL, path.to.phylip = NUL
     vcf_samples <- vcf_header[10:length(vcf_header)]
 
     # Discover which chromosomes are present in the VCF
-    cat("PipeMaster:: Scanning VCF for chromosomes...\n")
+    if(verbose) cat("PipeMaster:: Scanning VCF for chromosomes...\n")
     vcf_chroms <- unique(read.table(path.to.vcf, comment.char = "#", sep = "\t",
                                      colClasses = c("character", rep("NULL", 8)),
                                      nrows = -1)[, 1])
@@ -108,15 +109,17 @@ get.data.structure <- function(model, path.to.fasta = NULL, path.to.phylip = NUL
     model$loci <- LOCI
     model$I <- I
 
-    cat(paste0("PipeMaster:: VCF data structure: ", n_loci, " chromosomes, ",
-               sum(base_pairs), " total sites, ",
-               paste(pop_str, collapse = "/"), " haploid samples per pop\n"))
+    if(verbose) cat(paste0("PipeMaster:: VCF data structure: ", n_loci, " chromosomes, ",
+                          sum(base_pairs), " total sites, ",
+                          paste(pop_str, collapse = "/"), " haploid samples per pop\n"))
 
   } else if(!is.null(path.to.phylip)) {
     # ---- PHYLIP path ----
-    cat("PipeMaster:: Reading multi-locus PHYLIP file...\n")
+    if(verbose) cat("PipeMaster:: Reading multi-locus PHYLIP file...\n")
     loci <- read.phylip.loci(path.to.phylip)
     n_loci <- length(loci)
+
+    if(verbose) pb <- txtProgressBar(min = 0, max = n_loci, style = 3)
 
     base_pairs <- NULL
     pop_str <- NULL
@@ -138,8 +141,9 @@ get.data.structure <- function(model, path.to.fasta = NULL, path.to.phylip = NUL
 
       pop_str <- rbind(pop_str, unlist(npop_counts))
       base_pairs <- c(base_pairs, bp)
-      cat(paste(i, "loci"), "\n")
+      if(verbose) setTxtProgressBar(pb, i)
     }
+    if(verbose) { close(pb); cat("\n") }
 
     LOCI <- cbind(paste("locus", 1:length(base_pairs), sep = ""),
                   base_pairs,
@@ -173,6 +177,8 @@ get.data.structure <- function(model, path.to.fasta = NULL, path.to.phylip = NUL
     fasta <- fasta[grep(".fa", fasta, fixed = TRUE)]
 
     #### get the population structure for every locus
+    if(verbose) pb <- txtProgressBar(min = 0, max = length(fasta), style = 3)
+
     base_pairs <- NULL
     pop_str <- NULL
     for(i in 1:length(fasta)) {
@@ -193,8 +199,9 @@ get.data.structure <- function(model, path.to.fasta = NULL, path.to.phylip = NUL
 
       pop_str <- rbind(pop_str, unlist(npop))
       base_pairs <- c(base_pairs, bp)
-      cat(paste(i, "loci"), "\n")
+      if(verbose) setTxtProgressBar(pb, i)
     }
+    if(verbose) { close(pb); cat("\n") }
 
     LOCI <- cbind(paste("locus", 1:length(base_pairs), sep = ""),
                   base_pairs,

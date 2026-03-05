@@ -16,6 +16,7 @@ extern int sfs_accum_len;        /* length of accumulator array */
 extern double *sfs_theta_array;  /* per-locus theta values (NULL = use command theta) */
 extern int sfs_nloci;            /* total number of loci (= nreps) */
 extern int sfs_expected_mode;    /* 0 = stochastic (default), 1 = expected SFS from tree */
+extern int sfs_combined_mode;   /* 1 = also produce text sumstats (combined mode) */
 
 /* Called from ms.c after each replicate when sfs_mode_active > 0 */
 void sfs_accumulate(char **list, int nsam, int segsites, int *config, int npop);
@@ -25,6 +26,12 @@ void sfs_accumulate(char **list, int nsam, int segsites, int *config, int npop);
 SEXP msABC_sfs_batch_call(SEXP commands_sexp, SEXP mu_rates_sexp,
                            SEXP pop_sizes_sexp, SEXP one_snp_sexp,
                            SEXP method_sexp);
+
+/* .Call() entry point for combined sumstat + SFS simulation */
+SEXP msABC_combined_batch_call(SEXP commands_sexp, SEXP mu_rates_sexp,
+                                SEXP rec_rates_sexp, SEXP pop_sizes_sexp,
+                                SEXP one_snp_sexp, SEXP method_sexp,
+                                SEXP monomorphic_sexp);
 
 /* .Call() entry point for observed SFS from alignment character matrices */
 SEXP obs_sfs_call(SEXP loci_list, SEXP sample_idx_sexp,

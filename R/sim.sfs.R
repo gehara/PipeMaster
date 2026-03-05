@@ -104,9 +104,9 @@ sim.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
 
     # SFS column names (determined from sample sizes, no test simulation needed)
     if(npop == 1) {
-      sfs_len <- nsam - 1  # freq bins 1..nsam-1
+      sfs_len <- floor(nsam / 2)
       if(folded) {
-        folded_len <- length(fold_sfs(numeric(sfs_len)))
+        folded_len <- length(fold_sfs(numeric(nsam - 1)))
         sfs.names <- paste0("sfs_fold_", seq(0, folded_len - 1))
       } else {
         sfs.names <- paste0("sfs_", seq(0, sfs_len - 1))
@@ -263,6 +263,9 @@ sim.sfs <- function(model, use.alpha=FALSE, nsim.blocks=5, block.size=1000,
       sfs_mat <- .Call("msABC_sfs_batch_call", commands, mu_mat,
                        pop_sizes_vec, one.snp, method, PACKAGE = "PipeMaster")
 
+      if(npop == 1 && !folded) {
+        sfs_mat <- sfs_mat[, 1:floor(nsam / 2), drop = FALSE]
+      }
       if(folded && npop == 1) {
         sfs_mat <- t(apply(sfs_mat, 1, fold_sfs))
       }

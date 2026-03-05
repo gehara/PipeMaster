@@ -1078,9 +1078,7 @@ int msABC_main(int argc, char** argv){
     if( (ntbs > 0) && (count >1 ) ){
       for( k=0; k<ntbs; k++){ 
 	if( scanf(" %s", tbsparamstrs[k]) == EOF ){
-#ifndef R_PACKAGE_BUILD
 	  if( !pars.commandlineseedflag ) seedit( "end" );
-#endif
 	  EXIT_MSABC(0);
 	}
       }
@@ -1510,7 +1508,7 @@ int msABC_main(int argc, char** argv){
 	  if (!sfs_expected_mode) {
 	    sfs_accumulate(list, pars.cp.nsam, segsites, pars.cp.config, pars.cp.npop);
 	  }
-	  continue;  /* skip summary stats and text output for this fragment */
+	  if (!sfs_combined_mode) continue;  /* skip summary stats and text output for this fragment */
 	}
 #endif
 
@@ -3464,7 +3462,7 @@ int msABC_main(int argc, char** argv){
     /* SFS accumulation mode: compute SFS from haplotypes and skip text output */
     if (sfs_mode_active) {
       sfs_accumulate(list, pars.cp.nsam, segsites, pars.cp.config, pars.cp.npop);
-      continue;  /* skip summary stats and text output for this replicate */
+      if (!sfs_combined_mode) continue;  /* skip summary stats and text output for this replicate */
     }
 #endif
 
@@ -4909,9 +4907,7 @@ int msABC_main(int argc, char** argv){
 
   free(timeevents); timeevents = NULL;
   
-#ifndef R_PACKAGE_BUILD
   if( !pars.commandlineseedflag ) seedit( "end" );
-#endif
   if(tempdatafile != NULL)
     fclose(tempdatafile);
 

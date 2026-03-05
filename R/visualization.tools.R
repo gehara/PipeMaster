@@ -59,6 +59,7 @@ plot.priors <- function(model, nsamples=1000, mu.rates=NULL){
 get.prior.table <- function(model){
 
   flags <- model$flags
+  flags <- flags[!sapply(flags, is.null)]
 
   for(i in 1:length(flags)){
     if(is.null(nrow(flags[[i]]))){
