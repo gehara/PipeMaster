@@ -44,29 +44,8 @@ TODO.md
 context.md
 CLAUDE.md
 
-# Test data and analysis scripts (kept locally only)
-tests/data/*
-# But keep tutorial images tracked
-!tests/data/shiny_gui.png
-!tests/data/Vaquita2Epoch/
-tests/data/Vaquita2Epoch/*
-!tests/data/Vaquita2Epoch/vaquita_10K/
-tests/data/Vaquita2Epoch/vaquita_10K/*
-!tests/data/Vaquita2Epoch/vaquita_10K/model_Vaquita2Epoch.png
-!tests/data/Africa_1T12/
-tests/data/Africa_1T12/*
-!tests/data/Africa_1T12/model_Africa_1T12.png
-!tests/data/PonAbe_TwoSpecies/
-tests/data/PonAbe_TwoSpecies/*
-!tests/data/PonAbe_TwoSpecies/model_PonAbe_TwoSpecies.png
-!tests/data/OutOfAfrica_3G09/
-tests/data/OutOfAfrica_3G09/*
-!tests/data/OutOfAfrica_3G09/model_OutOfAfrica_3G09.png
-
-# hABC test data and test scripts (kept locally only)
-tests/hABC/
-tests/sfs/
-tests/sumstats/
+# Tests directory (kept locally only)
+tests/
 
 # Sandbox (experimental code, not part of the package)
 sandbox/
@@ -74,9 +53,8 @@ sandbox/
 # Emulator code (unpublished, kept locally only)
 R/emulator.R
 R/emulator_posterior.R
+R/OOD.diagnose.R
 man/emulator.*.Rd
 man/train.emulator.Rd
 man/save.emulator.result.Rd
 man/load.emulator.result.Rd
-tests/*emulator*
-tests/emulator_vaquita*/
