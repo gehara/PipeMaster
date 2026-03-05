@@ -11,7 +11,8 @@ get.data.structure(
   path.to.vcf = NULL,
   pop.assign,
   chrom.sizes = NULL,
-  sanger = FALSE
+  sanger = FALSE,
+  verbose = TRUE
 )
 }
 \arguments{
@@ -33,6 +34,8 @@ total callable base pairs in the second column. Required when using VCF input.
 Only chromosomes present in both chrom.sizes and the VCF are included.}
 
 \item{sanger}{logical. If TRUE the inheritance scalar and mutation rates set up in the main.menu are kept. If FALSE the mutation rate is propagated to all loci. Default is FALSE.}
+
+\item{verbose}{Logical. If TRUE prints progress messages. Default is TRUE.}
 }
 \value{
 Model object with updated gene parameters.

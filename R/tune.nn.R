@@ -1898,15 +1898,17 @@ summary.nn.posterior <- function(object, probs = c(0.025, 0.25, 0.5, 0.75, 0.975
   q_labels <- paste0(formatC(probs * 100, format = "fg"), "%")
 
   .summarize <- function(mat) {
-    tbl <- matrix(NA, nrow = n_params, ncol = length(probs) + 2)
-    colnames(tbl) <- c("Mean", "Median", q_labels)
+    tbl <- matrix(NA, nrow = n_params, ncol = length(probs) + 3)
+    colnames(tbl) <- c("Mean", "Median", "Mode", q_labels)
     rownames(tbl) <- param_names
     for (j in seq_len(n_params)) {
       vals <- mat[, j]
       vals <- vals[is.finite(vals)]
       tbl[j, "Mean"]   <- mean(vals)
       tbl[j, "Median"] <- median(vals)
-      tbl[j, -(1:2)]   <- quantile(vals, probs = probs)
+      d <- density(vals)
+      tbl[j, "Mode"]   <- d$x[which.max(d$y)]
+      tbl[j, -(1:3)]   <- quantile(vals, probs = probs)
     }
     tbl
   }
@@ -1920,8 +1922,10 @@ summary.nn.posterior <- function(object, probs = c(0.025, 0.25, 0.5, 0.75, 0.975
     out$mc_dropout <- .summarize(object$mc_dropout)
   if (!is.null(object$gan))
     out$gan <- .summarize(object$gan)
-  if (!is.null(object$abc_rejection))
+  if (!is.null(object$abc_rejection)) {
     out$abc_rejection <- .summarize(object$abc_rejection)
+    out$abc_distance  <- object$abc_distance
+  }
   class(out) <- "summary.nn.posterior"
   out
 }
@@ -1947,7 +1951,8 @@ print.summary.nn.posterior <- function(x, digits = 2, ...) {
     print(round(x$gan, digits))
   }
   if (!is.null(x$abc_rejection)) {
-    cat("\nABC rejection posterior:\n")
+    dist_label <- if (!is.null(x$abc_distance)) paste0(" (distance=", x$abc_distance, ")") else ""
+    cat(sprintf("\nABC rejection posterior%s:\n", dist_label))
     print(round(x$abc_rejection, digits))
   }
   invisible(x)
@@ -1960,7 +1965,10 @@ print.nn.posterior <- function(x, ...) {
   if (!is.null(x$bootstrap))      methods <- c(methods, sprintf("bootstrap (%d samples)", nrow(x$bootstrap)))
   if (!is.null(x$mc_dropout))     methods <- c(methods, sprintf("mc_dropout (%d samples)", nrow(x$mc_dropout)))
   if (!is.null(x$gan))            methods <- c(methods, sprintf("gan (%d samples)", nrow(x$gan)))
-  if (!is.null(x$abc_rejection))  methods <- c(methods, sprintf("abc_rejection (%d samples)", nrow(x$abc_rejection)))
+  if (!is.null(x$abc_rejection)) {
+    dist_label <- if (!is.null(x$abc_distance)) paste0(", distance=", x$abc_distance) else ""
+    methods <- c(methods, sprintf("abc_rejection (%d samples%s)", nrow(x$abc_rejection), dist_label))
+  }
   cat(sprintf("nn.posterior object — %s\n", paste(methods, collapse = " + ")))
   cat("Point estimate:\n")
   print(round(x$point_estimate, 2))

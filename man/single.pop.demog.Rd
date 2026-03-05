@@ -48,9 +48,14 @@ single.pop.demog(
 \item{path}{Path to the directory to write the simulations. Default is the working directory.}
 }
 \description{
+\lifecycle{deprecated}
+
+This function is deprecated. Use \code{\link{grid.search}} for parameter
+space exploration and \code{\link{emulator.ABC}} or \code{\link{emulator.MCMC}}
+for posterior estimation instead.
+
 Test for constant size, population expansion and bottleneck for single population (non hierarchical).
 }
 \details{
-This function will take the same inputs used in the codemographic simulations and test for demographic change for each
-population separately. This test could be useful to select which populations will be included in the codemographic model and to optimize the prior distributions.
+This function is deprecated and will be removed in a future version.
 }

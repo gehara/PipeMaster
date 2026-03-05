@@ -10,7 +10,8 @@ obs.sumstat.ngs(
   path.to.phylip = NULL,
   pop.assign,
   moments = TRUE,
-  ncores = 1
+  ncores = 1,
+  verbose = TRUE
 )
 }
 \arguments{
@@ -30,6 +31,8 @@ to path.to.fasta for datasets with many loci.}
 \item{moments}{Logical. If TRUE computes the four moments (mean, variance, skewness, kurtosis) of each summary statistic across loci. Default is TRUE.}
 
 \item{ncores}{Number of cores for parallel execution. When ncores > 1, loci are processed in parallel using mclapply. Default is 1.}
+
+\item{verbose}{Logical. If TRUE prints progress messages with timing and per-locus details. Default is TRUE.}
 }
 \value{
 A table containing the observed summary stats.

@@ -5,47 +5,55 @@
 \title{Simulation of codemographic models with ngs data}
 \usage{
 sim.coexp.ngs(
-  nsims,
-  var.zeta,
-  coexp.prior,
-  th,
-  Ne.prior,
-  NeA.prior,
-  time.prior,
-  gene.prior,
-  mu.rates,
-  alpha = F,
-  append.sims = F,
+  nsims_or_hmodel,
+  nsims = NULL,
+  var.zeta = NULL,
+  coexp.prior = NULL,
+  th = NULL,
+  Ne.prior = NULL,
+  NeA.prior = NULL,
+  time.prior = NULL,
+  gene.prior = NULL,
+  mu.rates = NULL,
+  alpha = NULL,
+  append.sims = FALSE,
+  block.size = 100,
   path = getwd()
 )
 }
 \arguments{
-\item{nsims}{Total number of simulations}
+\item{nsims_or_hmodel}{Either: (1) an hModel object, in which case \code{nsims} is required;
+or (2) a numeric value specifying the total number of simulations (legacy mode).}
 
-\item{var.zeta}{Variation on zeta parameter. Can be "FREE" to vary or be set to a specific value (between 0-1).}
+\item{nsims}{Total number of simulations (required when first argument is an hModel).}
 
-\item{coexp.prior}{Uniform prior for the coexpansion time. Vector of two numbers with the lower and upper boundary of the prior.}
+\item{var.zeta}{Variation on zeta parameter. Can be "FREE" to vary or be set to a specific value (between 0-1). Overrides hModel value if provided.}
 
-\item{th}{Threshold. Minimum time difference between Ts, time of simultaneous change and population specific times.}
+\item{coexp.prior}{Uniform prior for the coexpansion time. Vector of two numbers with the lower and upper boundary of the prior. Overrides hModel value if provided.}
 
-\item{Ne.prior}{Data frame with the prior values for the Ne of each population.}
+\item{th}{Threshold. Minimum time difference between Ts, time of simultaneous change and population specific times. Overrides hModel value if provided.}
 
-\item{NeA.prior}{Data frame with the prior values for the ancestral Ne of each population.}
+\item{Ne.prior}{Data frame with the prior values for the Ne of each population. Overrides hModel value if provided.}
 
-\item{time.prior}{Data frame with parameter values for the priors of the time of demographic change of each population.}
+\item{NeA.prior}{Data frame with the prior values for the ancestral Ne of each population. Overrides hModel value if provided.}
 
-\item{gene.prior}{Data frame with parameter values for the priors of the mutation rate of each species.}
+\item{time.prior}{Data frame with parameter values for the priors of the time of demographic change of each population. Overrides hModel value if provided.}
 
-\item{mu.rates}{list. A list of parameters of mutation rate prior distribution. First parameter: the type of distribution. Second element should be NA. Third and remaining elements are parameters of the distribution which should be given in order. For instance if using the rnorm distribution the third parameter is the mean and the fourth the SD.}
+\item{gene.prior}{Data frame with parameter values for the priors of the mutation rate of each species. Overrides hModel value if provided.}
 
-\item{alpha}{logical. If TRUE all demographic changes are exponential. If FALSE sudden changes. Default is FALSE.}
+\item{mu.rates}{list. A list of parameters of mutation rate prior distribution. First parameter: the type of distribution. Second element should be NA. Third and remaining elements are parameters of the distribution which should be given in order. For instance if using the rnorm distribution the third parameter is the mean and the fourth the SD. Overrides hModel value if provided.}
+
+\item{alpha}{logical. If TRUE all demographic changes are exponential. If FALSE sudden changes. Overrides hModel value if provided.}
 
 \item{append.sims}{logical. If TRUE simulations are appended to the simulations file. Default is FALSE.}
+
+\item{block.size}{Number of simulations to process per batch. Default is 100.}
 
 \item{path}{Path to the directory to write the simulations. Default is the working directory.}
 }
 \description{
-Simulation of codemographic models
+Simulation of codemographic models. Accepts either an hModel object
+  (created by \code{hModel()} or \code{h.menu.gui()}) or individual parameters.
 }
 \details{
 To simulate the model of Chan et al. (2014) the th parameter should be set to zero and the time.prior should have the same value of the coexp.prior.

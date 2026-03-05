@@ -30,14 +30,15 @@ vcf_to_ms_file <- function(filepath, pop.assign, contig_length, n_loci,
 }
 
 #' Subsample one SNP per locus from a multi-locus VCF or PHYLIP file
-#' @description Reads a multi-locus VCF or PHYLIP file and writes a new file
-#'              (same format) containing exactly one randomly sampled segregating
-#'              site per locus.  Loci with no segregating sites are skipped.
+#' @description Reads a multi-locus VCF or PHYLIP file and writes a VCF
+#'              containing exactly one randomly sampled segregating site per
+#'              locus.  Loci with no segregating sites are skipped.  Output is
+#'              always VCF regardless of input format.
 #'              Uses reservoir sampling in C for speed.
 #' @param path.to.vcf Path to input VCF file. Each CHROM value defines a locus.
 #'        Exactly one of \code{path.to.vcf} or \code{path.to.phylip} must be provided.
 #' @param path.to.phylip Path to a multi-locus sequential PHYLIP file.
-#' @param output Path to output file (same format as input).
+#' @param output Path to output VCF file.
 #' @param seed Optional integer seed for reproducibility (passed to \code{set.seed}).
 #' @param verbose Logical. If TRUE prints summary. Default is TRUE.
 #' @return Invisibly returns the number of loci written (those with >= 1 seg site).

@@ -92,4 +92,8 @@ Use \code{summary()} to get a table of median, mean, and quantiles.
 Estimates posterior distributions for observed data using a trained neural
 network from \code{tune.nn()}, with multiple methods for uncertainty
 quantification: conformal prediction, bootstrap, and MC dropout.
+When the tune result contains multiple models (from
+\code{top_k > 1}), the point estimate is computed as a proximity-weighted
+ensemble average, where each model is weighted by how well it predicts
+validation samples near the observed data point.
 }

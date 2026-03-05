@@ -528,25 +528,26 @@ SEXP vcf_one_snp_call(SEXP vcf_path_sexp, SEXP output_path_sexp) {
 
 
 /* ================================================================== */
-/* phylip_one_snp_call — Subsample one random SNP per locus (PHYLIP)  */
-/* ================================================================== */
+/* phylip_one_snp_call — Subsample one random SNP per locus (PHYLIP→VCF) */
+/* ===================================================================== */
 
 /*
  * phylip_one_snp_call(phylip_path, output_path)
  *
  *   phylip_path : STRSXP(1) — path to multi-locus sequential PHYLIP
- *   output_path : STRSXP(1) — path to output PHYLIP (one site per locus)
+ *   output_path : STRSXP(1) — path to output VCF (one SNP per locus)
  *
  * For each locus, finds segregating sites (no gaps/N, >1 allele),
- * picks one at random via reservoir sampling, and writes a 1-column
- * PHYLIP block.  Loci with zero seg sites are skipped.
+ * picks one at random via reservoir sampling, determines REF (major
+ * allele) and ALT, and writes a VCF data line with haploid genotypes.
+ * Loci with zero seg sites are skipped.
  * Uses R's RNG (set.seed in R).
  *
  * Returns: INTSXP(1) — number of loci written.
  */
 SEXP phylip_one_snp_call(SEXP phylip_path_sexp, SEXP output_path_sexp) {
 
-    int t, c, k;
+    int t, c, k, a;
 
     if (!isString(phylip_path_sexp) || length(phylip_path_sexp) != 1)
         Rf_error("phylip_one_snp_call: 'phylip_path' must be a single string");
@@ -580,6 +581,7 @@ SEXP phylip_one_snp_call(SEXP phylip_path_sexp, SEXP output_path_sexp) {
 
     int loci_written = 0;
     int loci_total   = 0;
+    int header_written = 0;
 
     GetRNGstate();
 
@@ -671,13 +673,75 @@ SEXP phylip_one_snp_call(SEXP phylip_path_sexp, SEXP output_path_sexp) {
 
         if (selected_col < 0) continue;  /* monomorphic — skip */
 
-        /* Write output block: "ntax 1\n" + name + base */
-        fprintf(fp_out, "%d 1\n", ntax);
-        for (t = 0; t < ntax; t++) {
-            char *nm = name_buf + t * 11;
-            char base = seq_buf[(long)t * max_nchar + selected_col];
-            fprintf(fp_out, "%-10s%c\n", nm, base);
+        /* Write VCF header on first output locus (sample names from PHYLIP) */
+        if (!header_written) {
+            fprintf(fp_out, "##fileformat=VCFv4.1\n");
+            fprintf(fp_out, "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT");
+            for (t = 0; t < ntax; t++)
+                fprintf(fp_out, "\t%s", name_buf + t * 11);
+            fprintf(fp_out, "\n");
+            header_written = 1;
         }
+
+        /* Determine REF (major allele) and ALT alleles */
+        char bases[4];
+        int  counts[4] = {0, 0, 0, 0};
+        int  n_alleles = 0;
+
+        for (t = 0; t < ntax; t++) {
+            char base = seq_buf[(long)t * max_nchar + selected_col];
+            if (base >= 'a' && base <= 'z') base -= 32;  /* toupper */
+            int found = 0;
+            for (a = 0; a < n_alleles; a++) {
+                if (bases[a] == base) { counts[a]++; found = 1; break; }
+            }
+            if (!found && n_alleles < 4) {
+                bases[n_alleles] = base;
+                counts[n_alleles] = 1;
+                n_alleles++;
+            }
+        }
+
+        /* REF = most frequent allele */
+        int ref_idx = 0;
+        for (a = 1; a < n_alleles; a++) {
+            if (counts[a] > counts[ref_idx]) ref_idx = a;
+        }
+
+        /* Build allele-to-GT index: ref→0, others→1,2,... */
+        int allele_gt[4];
+        allele_gt[ref_idx] = 0;
+        int alt_i = 1;
+        for (a = 0; a < n_alleles; a++) {
+            if (a != ref_idx) allele_gt[a] = alt_i++;
+        }
+
+        /* Write VCF data line */
+        fprintf(fp_out, "locus_%d\t%d\t.\t%c\t",
+                loci_total, selected_col + 1, bases[ref_idx]);
+
+        /* ALT field (comma-separated if multiallelic) */
+        int first_alt = 1;
+        for (a = 0; a < n_alleles; a++) {
+            if (a == ref_idx) continue;
+            if (!first_alt) fputc(',', fp_out);
+            fputc(bases[a], fp_out);
+            first_alt = 0;
+        }
+
+        fprintf(fp_out, "\t.\t.\t.\tGT");
+
+        /* Per-sample genotype */
+        for (t = 0; t < ntax; t++) {
+            char base = seq_buf[(long)t * max_nchar + selected_col];
+            if (base >= 'a' && base <= 'z') base -= 32;
+            int gt = 0;
+            for (a = 0; a < n_alleles; a++) {
+                if (bases[a] == base) { gt = allele_gt[a]; break; }
+            }
+            fprintf(fp_out, "\t%d", gt);
+        }
+        fprintf(fp_out, "\n");
 
         loci_written++;
         if (loci_total % 10000 == 0) R_CheckUserInterrupt();
