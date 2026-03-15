@@ -84,7 +84,7 @@ ms.string.generator<-function(model,size.pars,mig.pars,time.pars,use.alpha,scala
             for(j in 1:nrow(em)){
               x<-which(ent[,3]==emt[j,3])
               if(length(x)==0){
-                em[j,4]<-as.numeric(em[i,4])/as.numeric(curr.Ne[match(emt[j,3],curr.Ne[,3]),4])
+                em[j,4]<-as.numeric(em[j,4])/as.numeric(curr.Ne[match(emt[j,3],curr.Ne[,3]),4])
               } else {
                 y<-which(as.numeric(ent[x,4])<=as.numeric(emt[j,4]))
                 if(length(y)==0){

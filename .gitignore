@@ -17,6 +17,7 @@ msABC_code/
 
 # Build artifacts
 src/*.o
+src/**/*.o
 src/*.so
 *.tar.gz
 
@@ -52,11 +53,33 @@ tests/
 # Sandbox (experimental code, not part of the package)
 sandbox/
 
-# Emulator code (unpublished, kept locally only)
+# Manuscript (local only)
+manuscript/
+
+# Emulator code (Paper 2 — neural emulator, unpublished)
 R/emulator.R
 R/emulator_posterior.R
-R/OOD.diagnose.R
+R/torch_emulator.R
+R/torch_posterior.R
+R/torch_OOD.R
 man/emulator.*.Rd
 man/train.emulator.Rd
 man/save.emulator.result.Rd
 man/load.emulator.result.Rd
+emulator_functions.md
+
+# hABC code (Paper 3 — hABC, unpublished)
+R/grid.search.R
+
+# Benchmark scripts (local only)
+tests/benchmark_*.R
+
+# hABC test data (large, local only)
+tests_hABC/
+
+# Generated model plot PDFs
+model_plot*.pdf
+model_plot.pdf
+
+# Sticker source/backup
+pipemaster_sticker_backup.svg
