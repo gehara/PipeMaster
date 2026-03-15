@@ -2516,16 +2516,16 @@ int msABC_main(int argc, char** argv){
 		if(sstats.pristats == 1 && pars.cp.npop > 1 && sstats.prithetaw){
 		  for(ipop=0; ipop<pars.cp.npop; ipop++){
 		    //if((pars.cp.config)[ipop] < MINSEQ) continue;
-		    fprintf(pf, "s_mean_w_%d\t", ipop+1);
-		    fprintf(pf, "s_var_w_%d\t", ipop+1);
-		    fprintf(pf, "s_skew_w_%d\t", ipop+1);
-		    fprintf(pf, "s_kurt_w_%d\t", ipop+1);
+		    fprintf(pf, "s_mean_thetaW_%d\t", ipop+1);
+		    fprintf(pf, "s_var_thetaW_%d\t", ipop+1);
+		    fprintf(pf, "s_skew_thetaW_%d\t", ipop+1);
+		    fprintf(pf, "s_kurt_thetaW_%d\t", ipop+1);
 		  }
 		}
-		fprintf(pf, "s_mean_w\t");
-		fprintf(pf, "s_var_w\t");
-		fprintf(pf, "s_skew_w\t");
-		fprintf(pf, "s_kurt_w\t");
+		fprintf(pf, "s_mean_thetaW\t");
+		fprintf(pf, "s_var_thetaW\t");
+		fprintf(pf, "s_skew_thetaW\t");
+		fprintf(pf, "s_kurt_thetaW\t");
 		break;
 
 	      case 3: // tajima's D
@@ -2599,10 +2599,10 @@ int msABC_main(int argc, char** argv){
 		  //if((pars.cp.config)[npopi] < MINSEQ) continue;
 		  for(npopj=npopi+1; npopj<pars.cp.npop; npopj++){
 		    //if((pars.cp.config)[npopj] < MINSEQ) continue;
-		    fprintf(pf, "s_mean_fixed_dif_%d_%d\t", npopi+1, npopj+1);
-		    fprintf(pf, "s_var_fixed_dif_%d_%d\t", npopi+1, npopj+1);
-		    fprintf(pf, "s_skew_fixed_dif_%d_%d\t", npopi+1, npopj+1);
-		    fprintf(pf, "s_kurt_fixed_dif_%d_%d\t", npopi+1, npopj+1);
+		    fprintf(pf, "s_mean_fixed_%d_%d\t", npopi+1, npopj+1);
+		    fprintf(pf, "s_var_fixed_%d_%d\t", npopi+1, npopj+1);
+		    fprintf(pf, "s_skew_fixed_%d_%d\t", npopi+1, npopj+1);
+		    fprintf(pf, "s_kurt_fixed_%d_%d\t", npopi+1, npopj+1);
 		  }
 		}
 		break;
@@ -2614,10 +2614,10 @@ int msABC_main(int argc, char** argv){
 		    //if((pars.cp.config)[jpop] < MINSEQ) continue;
 		    pop1=Fst_pops[ ipop ];
 		    pop2=Fst_pops[ jpop ];
-		    fprintf(pf, "s_mean_pairwise_fst_%d_%d\t", ipop+1, jpop+1);
-		    fprintf(pf, "s_var_pairwise_fst_%d_%d\t", ipop+1, jpop+1);
-		    fprintf(pf, "s_skew_pairwise_fst_%d_%d\t", ipop+1, jpop+1);
-		    fprintf(pf, "s_kurt_pairwise_fst_%d_%d\t", ipop+1, jpop+1);
+		    fprintf(pf, "s_mean_Fst_%d_%d\t", ipop+1, jpop+1);
+		    fprintf(pf, "s_var_Fst_%d_%d\t", ipop+1, jpop+1);
+		    fprintf(pf, "s_skew_Fst_%d_%d\t", ipop+1, jpop+1);
+		    fprintf(pf, "s_kurt_Fst_%d_%d\t", ipop+1, jpop+1);
 		  }
 		}
 		break;
@@ -2642,24 +2642,24 @@ int msABC_main(int argc, char** argv){
 		if(sstats.pristats == 1 && pars.cp.npop > 1 && (sstats.pridvstat)){
 		  for(ipop=0; ipop<pars.cp.npop; ipop++){
 		    //if((pars.cp.config)[ipop] < MINSEQ) continue;
-		    fprintf(pf, "s_mean_dvk_%d\t", ipop+1);
-		    fprintf(pf, "s_var_dvk_%d\t", ipop+1);
-		    fprintf(pf, "s_skew_dvk_%d\t", ipop+1);
-		    fprintf(pf, "s_kurt_dvk_%d\t", ipop+1);
-		    fprintf(pf, "s_mean_dvh_%d\t", ipop+1);
-		    fprintf(pf, "s_var_dvh_%d\t", ipop+1);
-		    fprintf(pf, "s_skew_dvh_%d\t", ipop+1);
-		    fprintf(pf, "s_kurt_dvh_%d\t", ipop+1);
+		    fprintf(pf, "s_mean_nhap_%d\t", ipop+1);
+		    fprintf(pf, "s_var_nhap_%d\t", ipop+1);
+		    fprintf(pf, "s_skew_nhap_%d\t", ipop+1);
+		    fprintf(pf, "s_kurt_nhap_%d\t", ipop+1);
+		    fprintf(pf, "s_mean_Hd_%d\t", ipop+1);
+		    fprintf(pf, "s_var_Hd_%d\t", ipop+1);
+		    fprintf(pf, "s_skew_Hd_%d\t", ipop+1);
+		    fprintf(pf, "s_kurt_Hd_%d\t", ipop+1);
 		  }
 		}
-		fprintf(pf, "s_mean_dvk\t");
-		fprintf(pf, "s_var_dvk\t");
-		fprintf(pf, "s_skew_dvk\t");
-		fprintf(pf, "s_kurt_dvk\t");
-		fprintf(pf, "s_mean_dvh\t");
-		fprintf(pf, "s_var_dvh\t");
-		fprintf(pf, "s_skew_dvh\t");
-		fprintf(pf, "s_kurt_dvh\t");
+		fprintf(pf, "s_mean_nhap\t");
+		fprintf(pf, "s_var_nhap\t");
+		fprintf(pf, "s_skew_nhap\t");
+		fprintf(pf, "s_kurt_nhap\t");
+		fprintf(pf, "s_mean_Hd\t");
+		fprintf(pf, "s_var_Hd\t");
+		fprintf(pf, "s_skew_Hd\t");
+		fprintf(pf, "s_kurt_Hd\t");
 
 		break;
 
@@ -3771,10 +3771,10 @@ int msABC_main(int argc, char** argv){
 		if(sstats.pristats == 1 && pars.cp.npop > 1 && sstats.prithetaw){
 		  for(ipop=0; ipop<pars.cp.npop; ipop++){
 		    //if((pars.cp.config)[ipop] < MINSEQ) continue;
-		    fprintf(pf, "s_theta_w_%d\t", ipop+1);
+		    fprintf(pf, "s_thetaW_%d\t", ipop+1);
 		  }
 		}
-		fprintf(pf,  "s_theta_w\t");
+		fprintf(pf,  "s_thetaW\t");
 		break;
 
 	      case 3:
@@ -3833,7 +3833,7 @@ int msABC_main(int argc, char** argv){
 		    //if((pars.cp.config)[npopi] < MINSEQ) continue;
 		    for(npopj=npopi+1; npopj<pars.cp.npop; npopj++){
 		      //if((pars.cp.config)[npopj] < MINSEQ) continue;
-		      fprintf(pf, "s_perc_fixed_dif_%d_%d\t", npopi+1, npopj+1);
+		      fprintf(pf, "s_fixed_%d_%d\t", npopi+1, npopj+1);
 		    }
 		  }
 		}
@@ -3847,7 +3847,7 @@ int msABC_main(int argc, char** argv){
 		      //if((pars.cp.config)[jpop] < MINSEQ) continue;
 		      pop1=Fst_pops[ ipop ];
 		      pop2=Fst_pops[ jpop ];
-		      fprintf(pf, "s_pairwise_fst_%d_%d\t", pop1+1, pop2+1);
+		      fprintf(pf, "s_Fst_%d_%d\t", pop1+1, pop2+1);
 		    }
 		  }
 		}
@@ -3867,13 +3867,13 @@ int msABC_main(int argc, char** argv){
 		if(sstats.pristats == 1 && pars.cp.npop > 1 && (sstats.pridvstat)){
 		  for(ipop=0; ipop<pars.cp.npop; ipop++){
 		    //if((pars.cp.config)[ipop] < MINSEQ) continue;
-		    fprintf(pf, "s_dvk_%d\t", ipop+1);
-		    fprintf(pf, "s_dvh_%d\t", ipop+1);
+		    fprintf(pf, "s_nhap_%d\t", ipop+1);
+		    fprintf(pf, "s_Hd_%d\t", ipop+1);
 
 		  }
 		}
-		fprintf(pf, "s_dvk\t");
-		fprintf(pf, "s_dvh\t");
+		fprintf(pf, "s_nhap\t");
+		fprintf(pf, "s_Hd\t");
 		break;
 
 	      case 12:
@@ -6959,7 +6959,7 @@ usage()
   fprintf(stderr,"\t\t proportion is probability that each lineage stays in pop-i. (p, 1-p are admixt. proport.\n");
   fprintf(stderr,"\t\t Size of pop npop is set to N0 and alpha = 0.0 , size and alpha of pop i are unchanged.\n");
   fprintf(stderr,"\t -ej t i j   ( Join lineages in pop i and pop j into pop j\n");
-  fprintf(stderr,"\t\t  size, alpha and M are unchanged.\n");  
+  fprintf(stderr,"\t\t  Ancestral Ne = Ne_i(t) + Ne_j(t). Alpha set to 0, M zeroed for pop i.\n");  
   fprintf(stderr,"\t  -f filename     ( Read command line arguments from file filename.)\n");  
   fprintf(stderr," See msdoc.pdf for explanation of these parameters.\n");
 
@@ -7022,7 +7022,7 @@ int usage1(){
   fprintf(stderr,"\t\t proportion is probability that each lineage stays in pop-i. (p, 1-p are admixt. proport.\n");
   fprintf(stderr,"\t\t Size of pop npop is set to N0 and alpha = 0.0 , size and alpha of pop i are unchanged.\n");
   fprintf(stderr,"\t -ej t i j   ( Join lineages in pop i and pop j into pop j\n");
-  fprintf(stderr,"\t\t  size, alpha and M are unchanged.\n");  
+  fprintf(stderr,"\t\t  Ancestral Ne = Ne_i(t) + Ne_j(t). Alpha set to 0, M zeroed for pop i.\n");  
   fprintf(stderr,"\t  -f filename     ( Read command line arguments from file filename.)\n");  
   fprintf(stderr," See msdoc.pdf for explanation of these parameters.\n");
 

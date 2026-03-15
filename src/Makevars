@@ -1,3 +1,21 @@
 PKG_CFLAGS = -DR_PACKAGE_BUILD -std=gnu99 -Wno-implicit-function-declaration
+PKG_CXXFLAGS = -std=c++11 -DVERSION='"1.7.5"'
 PKG_LIBS = -lm
-OBJECTS = ms.o data_sumstat.o rand1.o streec.o msABC_wrapper.o sfs_sim.o vcf_to_ms.o init.o
+
+# msABC C objects
+C_OBJECTS = ms.o data_sumstat.o rand1.o streec.o msABC_wrapper.o sfs_sim.o vcf_to_ms.o compute_sumstats.o init.o
+
+# scrm C++ objects
+SCRM_OBJECTS = scrm/forest.o scrm/model.o scrm/node.o scrm/node_container.o \
+               scrm/param.o scrm/time_interval.o scrm/tree_point.o \
+               scrm/random/fastfunc.o scrm/random/random_generator.o \
+               scrm/summary_statistics/seg_sites.o \
+               scrm/summary_statistics/newick_tree.o \
+               scrm/summary_statistics/oriented_forest.o \
+               scrm/summary_statistics/frequency_spectrum.o \
+               scrm/summary_statistics/tmrca.o
+
+# PipeMaster scrm+stats bridge
+BRIDGE_OBJECTS = scrm_stats.o
+
+OBJECTS = $(C_OBJECTS) $(SCRM_OBJECTS) $(BRIDGE_OBJECTS)

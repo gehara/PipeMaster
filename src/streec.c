@@ -314,14 +314,13 @@ segtre_mig(struct c_params *cp, int *pnsegs )
 		  config[j] += config[i] ;
 		  config[i] = 0 ;
 		  for( ic = 0; ic<nchrom; ic++) if( chrom[ic].pop == i ) chrom[ic].pop = j ;
-		/*  the following was added 19 May 2007 */
+		  /* Ancestral Ne is now set explicitly via -en in the R command builder */
 		  for( k=0; k < npop; k++){
 		     if( k != i) {
 		        migm[k][k] -= migm[k][i] ;
 		        migm[k][i] = 0. ;
 			 }
 		   }
-		/* end addition */
 		   nextevent = nextevent->nextde ;
 		   break;
 	        case 's' :         /*split  pop i into two;p is the proportion from pop i, and 1-p from pop n+1  */
