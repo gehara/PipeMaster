@@ -38,6 +38,115 @@ msABC.commander<-function(model,use.alpha=use.alpha,arg){
   #### bind sampled mutation rate
   #parameters<-parameters#,loci[,c(1,4)])
 
+  ####### Ancestral Ne at join events #####################################
+  # Set t.Ne.anc_X_Y = joinX_Y time; optionally overwrite Ne.anc = sum daughters
+  #
+  # Ne.anc_X_Y parameters are created by the model builder for each -ej node.
+  # The surviving pop (Y) gets an -en at join time with this ancestral Ne.
+  # When sum_anc_ne is TRUE, Ne.anc = sum of daughter Ne at join time.
+
+  # Build a lookup: pop pair "X Y" -> ej row index (handles both joinX_Y and joinX naming)
+  ej_rows <- which(time.pars[, 2] == "-ej")
+  ej_lookup <- list()  # keyed by "X_Y" -> row in time.pars
+  if (length(ej_rows) > 0) {
+    for (er in ej_rows) {
+      # ej column 3 has the pair "X Y" — extract from time.pars
+      # But time.pars is rbind(ej, en$time, em$time), so ej rows still have col 3
+      ej_pair_str <- time.pars[er, 3]
+      ej_pair <- strsplit(ej_pair_str, " ")[[1]]
+      key <- paste(ej_pair, collapse = "_")
+      ej_lookup[[key]] <- er
+    }
+  }
+
+  anc_idx <- grep("^Ne\\.anc_", size.pars[, 1])
+  if (length(anc_idx) > 0 && length(ej_lookup) > 0) {
+    # Sort by join time (earliest first) so inner joins are computed before outer ones
+    anc_join_times <- sapply(anc_idx, function(ai) {
+      pair_key <- sub("^Ne\\.anc_", "", size.pars[ai, 1])
+      join_row <- ej_lookup[[pair_key]]
+      if (length(join_row) == 1) as.numeric(time.pars[join_row, 4]) else Inf
+    })
+    anc_idx <- anc_idx[order(anc_join_times)]
+    for (ai in anc_idx) {
+      # Extract pair from name: Ne.anc_1_2 -> c("1", "2")
+      pair <- strsplit(sub("^Ne\\.anc_", "", size.pars[ai, 1]), "_")[[1]]
+      pair_key <- paste(pair, collapse = "_")
+      time_anc_name <- paste0("t.Ne.anc_", pair_key)
+
+      # Find matching join row by pair key
+      join_row <- ej_lookup[[pair_key]]
+      time_anc_row <- which(time.pars[, 1] == time_anc_name)
+
+      if (length(join_row) == 1 && length(time_anc_row) == 1) {
+        # Set ancestral Ne time = join time
+        time.pars[time_anc_row, 4:5] <- time.pars[join_row, 4:5]
+        # Also update in parameters
+        par_time_row <- which(parameters[, 1] == time_anc_name)
+        if (length(par_time_row) == 1)
+          parameters[par_time_row, 2] <- time.pars[join_row, 4]
+      }
+
+      # Sum daughter Ne if model$sum_anc_ne is TRUE
+      if (isTRUE(model$sum_anc_ne) && length(join_row) == 1) {
+        join_time <- as.numeric(time.pars[join_row, 4])
+
+        # For each daughter pop, find its most recent Ne at join time
+        daughter_ne <- numeric(2)
+        for (d in 1:2) {
+          pop_id <- pair[d]
+          # Start with current Ne (Ne0.popX)
+          ne0_row <- which(size.pars[, 1] == paste0("Ne0.pop", pop_id))
+          if (length(ne0_row) == 1) {
+            daughter_ne[d] <- as.numeric(size.pars[ne0_row, 4])
+          }
+          # Track most recent Ne change time for this pop
+          best_time <- 0
+
+          # Check for Ne changes (NeJ.popX) occurring before join time
+          ne_pattern <- paste0("^Ne[0-9]+\\.pop", pop_id, "$")
+          ne_rows <- grep(ne_pattern, size.pars[, 1])
+          ne_rows <- setdiff(ne_rows, ne0_row)  # exclude Ne0
+          for (nr in ne_rows) {
+            t_name <- paste0("t.", size.pars[nr, 1])
+            t_row <- which(time.pars[, 1] == t_name)
+            if (length(t_row) == 1) {
+              ne_time <- as.numeric(time.pars[t_row, 4])
+              if (ne_time <= join_time && ne_time > best_time) {
+                daughter_ne[d] <- as.numeric(size.pars[nr, 4])
+                best_time <- ne_time
+              }
+            }
+          }
+
+          # Check if this pop is the surviving pop from a previous join
+          # (Ne.anc that was already overwritten in a prior iteration)
+          anc_pattern <- paste0("^Ne\\.anc_.*_", pop_id, "$")
+          anc_rows <- grep(anc_pattern, size.pars[, 1])
+          for (ar in anc_rows) {
+            if (ar == ai) next  # skip self
+            ar_pair_key <- sub("^Ne\\.anc_", "", size.pars[ar, 1])
+            ar_join_row <- ej_lookup[[ar_pair_key]]
+            if (length(ar_join_row) == 1) {
+              ar_time <- as.numeric(time.pars[ar_join_row, 4])
+              if (ar_time <= join_time && ar_time >= best_time) {
+                daughter_ne[d] <- as.numeric(size.pars[ar, 4])
+                best_time <- ar_time
+              }
+            }
+          }
+        }
+
+        # Overwrite Ne.anc with sum
+        sum_ne <- sum(daughter_ne)
+        size.pars[ai, 4:5] <- sum_ne
+        # Update in parameters
+        par_ne_row <- which(parameters[, 1] == size.pars[ai, 1])
+        if (length(par_ne_row) == 1) parameters[par_ne_row, 2] <- sum_ne
+      }
+    }
+  }
+
   ####### End of parameter sampling #######################################
   #########################################################################
 

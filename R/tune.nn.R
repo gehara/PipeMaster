@@ -1,9 +1,11 @@
 #' Hyperband Tuner for Neural Network Architectures
 #'
-#' Pure R implementation of the Hyperband algorithm for tuning keras neural
+#' Pure R implementation of the Hyperband algorithm for tuning neural
 #' networks used in demographic parameter estimation.
 #' Supports ResNet (summary statistics), 1D CNN (single-pop SFS), and
-#' 2D CNN (joint SFS) architectures.
+#' 2D CNN (joint SFS) architectures. Two backends available:
+#' \code{"torch"} (pure R, no Python dependency) and \code{"keras"}
+#' (TensorFlow via reticulate, faster XLA-compiled training).
 #'
 #' @param reftable data.frame — output of \code{sim.sumstat()} or \code{sim.sfs()}
 #'   containing both parameter columns and statistic columns.
@@ -46,6 +48,10 @@
 #'   models (by validation loss) are retained. At prediction time,
 #'   \code{nn.predict()} uses a proximity-weighted ensemble of these models for
 #'   more stable point estimates. Capped at \code{n_searches}.
+#' @param backend character — \code{"auto"} (default), \code{"torch"}, or
+#'   \code{"keras"}. \code{"auto"} uses torch if available, else keras.
+#'   Torch is a pure R backend (no Python). Keras requires TensorFlow via
+#'   reticulate but may train faster due to XLA compilation.
 #' @param seed integer — random seed (default 42).
 #' @param verbose logical — print progress (default TRUE).
 #'
@@ -54,10 +60,11 @@
 #'   \item{best_hp}{named list of best hyperparameters}
 #'   \item{best_val_loss}{best validation loss achieved}
 #'   \item{all_results}{data.frame of all evaluated configs (hp_string, val_loss, bracket, round)}
-#'   \item{best_model}{trained keras model (best config, retrained to max_epochs)}
-#'   \item{models}{list of top-K keras models, sorted by val_loss (length 1 when \code{top_k = 1})}
+#'   \item{best_model}{trained model (keras or torch, depending on backend)}
+#'   \item{models}{list of top-K models, sorted by val_loss (length 1 when \code{top_k = 1})}
 #'   \item{models_val_loss}{numeric vector of validation losses for each model in \code{models}}
 #'   \item{models_metrics}{list of per-model metrics (each element: \code{list(r2, mpe)} with named vectors in original parameter scale)}
+#'   \item{backend}{character — \code{"torch"} or \code{"keras"}}
 #' }
 #'
 #' @export
@@ -71,12 +78,33 @@ tune.nn <- function(reftable, param.cols,
                     n_searches = 1L, cores = 1L, gpus = 0L,
                     gpu.threshold = 4L, greedy = TRUE,
                     top_k = 1L,
+                    backend = c("auto", "torch", "keras"),
                     seed = 42, verbose = TRUE) {
 
-  # --- Dependency check ---
+  # --- Resolve backend ---
+  backend <- match.arg(backend)
+  if (backend == "auto") {
+    backend <- if (requireNamespace("torch", quietly = TRUE) &&
+                   torch::torch_is_installed()) "torch" else "keras"
+  }
+  if (verbose) cat(sprintf("PipeMaster:: tune.nn backend: %s\n", backend))
+
+  # --- Dispatch to torch backend ---
+  if (backend == "torch") {
+    return(.tune.nn.torch(reftable = reftable, param.cols = param.cols,
+                          type = type, sfs.dims = sfs.dims,
+                          max_epochs = max_epochs, eta = eta,
+                          search_space = search_space,
+                          exclude.cols = exclude.cols,
+                          val.frac = val.frac,
+                          top_k = top_k,
+                          seed = seed, verbose = verbose))
+  }
+
+  # --- Keras dependency check ---
   if (!requireNamespace("keras", quietly = TRUE) ||
       !requireNamespace("tensorflow", quietly = TRUE))
-    stop("tune.nn() requires the 'keras' and 'tensorflow' R packages.\n",
+    stop("tune.nn(backend='keras') requires the 'keras' and 'tensorflow' R packages.\n",
          "Install with: install.packages(c('keras', 'tensorflow'))\n",
          "Then run: keras::install_keras()")
 
@@ -175,7 +203,8 @@ tune.nn <- function(reftable, param.cols,
       data            = data,
       type            = type,
       sfs.dims        = sfs.dims,
-      exclude.cols    = exclude.cols
+      exclude.cols    = exclude.cols,
+      backend         = "keras"
     ))
   }
 
@@ -260,7 +289,8 @@ tune.nn <- function(reftable, param.cols,
     data            = data,
     type            = type,
     sfs.dims        = sfs.dims,
-    exclude.cols    = exclude.cols
+    exclude.cols    = exclude.cols,
+    backend         = "keras"
   )
 }
 
@@ -1473,34 +1503,61 @@ tune.nn <- function(reftable, param.cols,
 #'
 #' @export
 save.tune.result <- function(tune.result, path) {
-  if (!requireNamespace("keras", quietly = TRUE))
-    stop("save.tune.result() requires the 'keras' package.")
-
   dir.create(path, showWarnings = FALSE, recursive = TRUE)
 
-  # Save best_model (backward compat)
-  model_dir <- file.path(path, "best_model")
-  keras::save_model_tf(tune.result$best_model, model_dir)
+  nn_backend <- .detect.backend(tune.result)
 
-  # Save all top-K models if present
-  models <- tune.result$models
-  if (!is.null(models) && length(models) > 0L) {
-    models_dir <- file.path(path, "models")
-    dir.create(models_dir, showWarnings = FALSE, recursive = TRUE)
-    for (i in seq_along(models)) {
-      keras::save_model_tf(models[[i]],
-                           file.path(models_dir, sprintf("model_%03d", i)))
+  if (nn_backend == "torch") {
+    # Torch: save models as .pt files (need metadata for reconstruction)
+    data <- tune.result$data
+    tp <- tune.result$type
+    hp <- tune.result$best_hp
+    n_feat <- if (tp %in% c("sumstat", "emulator")) ncol(data$X_train) else data$n_features
+    n_targ <- ncol(data$Y_train)
+    n_bins <- data$n_bins  # NULL for sumstat
+    sfs_dims <- tune.result$sfs.dims
+
+    model_file <- file.path(path, "best_model.pt")
+    .torch.save.model(tune.result$best_model, model_file, tp, hp,
+                      n_features = n_feat, n_bins = n_bins,
+                      sfs_dims = sfs_dims, n_targets = n_targ)
+
+    models <- tune.result$models
+    if (!is.null(models) && length(models) > 0L) {
+      models_dir <- file.path(path, "models")
+      dir.create(models_dir, showWarnings = FALSE, recursive = TRUE)
+      for (i in seq_along(models))
+        .torch.save.model(models[[i]],
+                          file.path(models_dir, sprintf("model_%03d.pt", i)),
+                          tp, hp, n_features = n_feat, n_bins = n_bins,
+                          sfs_dims = sfs_dims, n_targets = n_targ)
+    }
+  } else {
+    # Keras: save models as TF SavedModel
+    if (!requireNamespace("keras", quietly = TRUE))
+      stop("save.tune.result() requires the 'keras' package for keras models.")
+
+    model_dir <- file.path(path, "best_model")
+    keras::save_model_tf(tune.result$best_model, model_dir)
+
+    models <- tune.result$models
+    if (!is.null(models) && length(models) > 0L) {
+      models_dir <- file.path(path, "models")
+      dir.create(models_dir, showWarnings = FALSE, recursive = TRUE)
+      for (i in seq_along(models))
+        keras::save_model_tf(models[[i]],
+                             file.path(models_dir, sprintf("model_%03d", i)))
     }
   }
 
-  # Save everything else as RDS (strip keras objects)
+  # Save everything else as RDS (strip model objects)
   result_no_model <- tune.result
   result_no_model$best_model <- NULL
   result_no_model$models <- NULL
   saveRDS(result_no_model, file.path(path, "tune_result.rds"))
 
-  cat(sprintf("PipeMaster:: Saved tune.nn result to %s (%d models)\n",
-              path, length(models)))
+  cat(sprintf("PipeMaster:: Saved tune.nn result to %s (%d models, backend=%s)\n",
+              path, length(tune.result$models), nn_backend))
 }
 
 #' Load tune.nn Result from Disk
@@ -1517,51 +1574,81 @@ save.tune.result <- function(tune.result, path) {
 #'
 #' @export
 load.tune.result <- function(path) {
-  if (!requireNamespace("keras", quietly = TRUE))
-    stop("load.tune.result() requires the 'keras' package.")
-
-  rds_file  <- file.path(path, "tune_result.rds")
-  model_dir <- file.path(path, "best_model")
-
+  rds_file <- file.path(path, "tune_result.rds")
   if (!file.exists(rds_file))
     stop("tune_result.rds not found in: ", path)
-  if (!dir.exists(model_dir))
-    stop("best_model/ directory not found in: ", path)
 
   result <- readRDS(rds_file)
-  result$best_model <- keras::load_model_tf(model_dir)
+  nn_backend <- if (!is.null(result$backend)) result$backend else "keras"
 
-  # Load top-K models if saved, otherwise fall back to list(best_model)
-  models_dir <- file.path(path, "models")
-  if (dir.exists(models_dir)) {
-    model_subdirs <- sort(list.dirs(models_dir, recursive = FALSE, full.names = TRUE))
-    if (length(model_subdirs) > 0L) {
-      result$models <- lapply(model_subdirs, function(d) {
-        tryCatch(keras::load_model_tf(d), error = function(e) {
-          warning("Could not load model from ", d, ": ",
-                  conditionMessage(e), call. = FALSE)
-          NULL
+  if (nn_backend == "torch") {
+    if (!requireNamespace("torch", quietly = TRUE))
+      stop("load.tune.result() requires the 'torch' package for torch models.")
+
+    best_pt <- file.path(path, "best_model.pt")
+    if (!file.exists(best_pt))
+      stop("best_model.pt not found in: ", path)
+    result$best_model <- .torch.load.model(best_pt)
+
+    models_dir <- file.path(path, "models")
+    if (dir.exists(models_dir)) {
+      model_files <- sort(list.files(models_dir, pattern = "\\.pt$",
+                                     full.names = TRUE))
+      if (length(model_files) > 0L) {
+        result$models <- lapply(model_files, function(f) {
+          tryCatch(.torch.load.model(f), error = function(e) {
+            warning("Could not load model from ", f, ": ",
+                    conditionMessage(e), call. = FALSE)
+            NULL
+          })
         })
-      })
-      # Remove failed loads
-      keep <- !vapply(result$models, is.null, logical(1))
-      result$models <- result$models[keep]
-      if (!is.null(result$models_val_loss))
-        result$models_val_loss <- result$models_val_loss[keep]
-      cat(sprintf("PipeMaster:: Loaded tune.nn result from %s (%d models)\n",
-                  path, length(result$models)))
+        keep <- !vapply(result$models, is.null, logical(1))
+        result$models <- result$models[keep]
+        if (!is.null(result$models_val_loss))
+          result$models_val_loss <- result$models_val_loss[keep]
+      } else {
+        result$models <- list(result$best_model)
+      }
     } else {
       result$models <- list(result$best_model)
-      cat(sprintf("PipeMaster:: Loaded tune.nn result from %s\n", path))
     }
   } else {
-    # Old save format: no models/ directory
-    result$models <- list(result$best_model)
-    if (is.null(result$models_val_loss))
-      result$models_val_loss <- result$best_val_loss
-    cat(sprintf("PipeMaster:: Loaded tune.nn result from %s\n", path))
+    if (!requireNamespace("keras", quietly = TRUE))
+      stop("load.tune.result() requires the 'keras' package for keras models.")
+
+    model_dir <- file.path(path, "best_model")
+    if (!dir.exists(model_dir))
+      stop("best_model/ directory not found in: ", path)
+    result$best_model <- keras::load_model_tf(model_dir)
+
+    models_dir <- file.path(path, "models")
+    if (dir.exists(models_dir)) {
+      model_subdirs <- sort(list.dirs(models_dir, recursive = FALSE,
+                                      full.names = TRUE))
+      if (length(model_subdirs) > 0L) {
+        result$models <- lapply(model_subdirs, function(d) {
+          tryCatch(keras::load_model_tf(d), error = function(e) {
+            warning("Could not load model from ", d, ": ",
+                    conditionMessage(e), call. = FALSE)
+            NULL
+          })
+        })
+        keep <- !vapply(result$models, is.null, logical(1))
+        result$models <- result$models[keep]
+        if (!is.null(result$models_val_loss))
+          result$models_val_loss <- result$models_val_loss[keep]
+      } else {
+        result$models <- list(result$best_model)
+      }
+    } else {
+      result$models <- list(result$best_model)
+      if (is.null(result$models_val_loss))
+        result$models_val_loss <- result$best_val_loss
+    }
   }
 
+  cat(sprintf("PipeMaster:: Loaded tune.nn result from %s (%d models, backend=%s)\n",
+              path, length(result$models), nn_backend))
   result
 }
 
@@ -1633,10 +1720,18 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
                        max_epochs = 1000, cores = 1, gpus = 0, greedy = TRUE,
                        seed = 42, verbose = TRUE) {
 
+  # --- Detect backend ---
+  nn_backend <- .detect.backend(tune.result)
+
   # --- Dependency check ---
-  if (!requireNamespace("keras", quietly = TRUE) ||
-      !requireNamespace("tensorflow", quietly = TRUE))
-    stop("nn.predict() requires the 'keras' and 'tensorflow' R packages.")
+  if (nn_backend == "keras") {
+    if (!requireNamespace("keras", quietly = TRUE) ||
+        !requireNamespace("tensorflow", quietly = TRUE))
+      stop("nn.predict() with keras backend requires the 'keras' and 'tensorflow' R packages.")
+  } else {
+    if (!requireNamespace("torch", quietly = TRUE))
+      stop("nn.predict() with torch backend requires the 'torch' R package.")
+  }
 
   method <- match.arg(method, c("conformal", "bootstrap", "mc_dropout", "point"),
                       several.ok = TRUE)
@@ -1706,7 +1801,7 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
       cat(sprintf("PipeMaster:: Ensemble point estimate: %s\n", est_str))
     }
   } else {
-    Y_z <- predict(best_model, X_obs, verbose = 0L)
+    Y_z <- .predict.nn(best_model, X_obs)
     point_est <- as.numeric(.inv.transform(Y_z, data$target_mu, data$target_sd))
     names(point_est) <- param_names
     if (verbose) {
@@ -1733,13 +1828,13 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
   conf_samples   <- NULL
   boot_samples   <- NULL
   mcdrop_samples <- NULL
+  quant_matrix   <- NULL
   do_conformal  <- "conformal" %in% method
   do_bootstrap  <- "bootstrap" %in% method
   do_mc_dropout <- "mc_dropout" %in% method
 
   # --- MC Dropout ---
   if (do_mc_dropout) {
-    tf <- tensorflow::tf
     mc_hp <- best_hp
 
     # Override dropout rate if requested
@@ -1764,42 +1859,55 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
                   n_mc, mc_hp$dropout,
                   if (needs_retrain) ", retraining" else ""))
 
-    # Build MC model: same architecture but with always-on dropout (lambda layers)
-    # so predict() keeps BN in inference mode while dropout stays active
-    mc_model <- .build.nn(mc_hp, data, type, sfs.dims, mc_dropout = TRUE)
-
-    if (needs_retrain) {
-      # Retrain with the new dropout rate using tune.nn's data splits
-      tensorflow::tf$random$set_seed(as.integer(seed + 555L))
-      bs <- as.integer(mc_hp$batch_size)
-
-      if (verbose) cat("PipeMaster:: Retraining model with new dropout rate...\n")
-
-      mc_model |> keras::fit(
-        x = data$X_train, y = data$Y_train,
-        validation_data = list(data$X_val, data$Y_val),
-        epochs     = as.integer(max_epochs),
-        batch_size = bs,
-        callbacks  = list(
-          keras::callback_early_stopping(monitor = "val_loss", patience = 30L,
-                                         restore_best_weights = TRUE),
-          keras::callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 15L,
-                                               factor = 0.5, min_lr = 1e-6, verbose = 0L)
-        ),
-        verbose = 0L
-      )
-
-      if (verbose) cat("PipeMaster:: Retrain done. Running forward passes...\n")
-    } else {
-      # Same dropout rate — just copy weights from best model
-      mc_model$set_weights(best_model$get_weights())
-    }
-
     n_params_mc <- length(param_names)
     mc_raw <- matrix(NA_real_, nrow = as.integer(n_mc), ncol = n_params_mc)
-    for (i in seq_len(n_mc)) {
-      pred_z <- predict(mc_model, X_obs, verbose = 0L)
-      mc_raw[i, ] <- as.numeric(.inv.transform(pred_z, data$target_mu, data$target_sd))
+
+    if (nn_backend == "torch") {
+      # Torch MC Dropout: use .torch.predict.mc() which keeps dropout active
+      if (needs_retrain) {
+        mc_model <- .build.nn.torch(mc_hp, data, type, mc_dropout = TRUE)
+        torch::torch_manual_seed(as.integer(seed + 555L))
+        .torch.train.model(mc_model, data$X_train, data$Y_train,
+                           data$X_val, data$Y_val, hp = mc_hp, type = type,
+                           epochs = as.integer(max_epochs), patience = 30L)
+      } else {
+        mc_model <- best_model
+      }
+      mc_preds <- .torch.predict.mc(mc_model, X_obs, n_passes = n_mc)
+      for (i in seq_len(n_mc))
+        mc_raw[i, ] <- as.numeric(.inv.transform(
+          matrix(mc_preds[1, , i], nrow = 1), data$target_mu, data$target_sd))
+    } else {
+      # Keras MC Dropout: Lambda-based always-on dropout
+      tf <- tensorflow::tf
+      mc_model <- .build.nn(mc_hp, data, type, sfs.dims, mc_dropout = TRUE)
+
+      if (needs_retrain) {
+        tensorflow::tf$random$set_seed(as.integer(seed + 555L))
+        bs <- as.integer(mc_hp$batch_size)
+        if (verbose) cat("PipeMaster:: Retraining model with new dropout rate...\n")
+        mc_model |> keras::fit(
+          x = data$X_train, y = data$Y_train,
+          validation_data = list(data$X_val, data$Y_val),
+          epochs     = as.integer(max_epochs),
+          batch_size = bs,
+          callbacks  = list(
+            keras::callback_early_stopping(monitor = "val_loss", patience = 30L,
+                                           restore_best_weights = TRUE),
+            keras::callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 15L,
+                                                 factor = 0.5, min_lr = 1e-6, verbose = 0L)
+          ),
+          verbose = 0L
+        )
+        if (verbose) cat("PipeMaster:: Retrain done. Running forward passes...\n")
+      } else {
+        mc_model$set_weights(best_model$get_weights())
+      }
+
+      for (i in seq_len(n_mc)) {
+        pred_z <- predict(mc_model, X_obs, verbose = 0L)
+        mc_raw[i, ] <- as.numeric(.inv.transform(pred_z, data$target_mu, data$target_sd))
+      }
     }
 
     rm(mc_model); gc()
@@ -1817,7 +1925,8 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
       reftable, param.cols, observed, best_hp, type, sfs.dims,
       do_conformal, do_bootstrap, n_ensemble, n_boot,
       cal.frac, max_epochs, cores, gpus, greedy, seed, verbose,
-      point_est = point_est, exclude.cols = exclude.cols
+      point_est = point_est, exclude.cols = exclude.cols,
+      nn_backend = nn_backend
     )
     if (do_conformal && !is.null(pool_out$conformal)) {
       conf_samples <- pool_out$conformal
@@ -1830,7 +1939,9 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
   } else {
     # Sequential fallback (cores <= 1)
     if (do_conformal) {
-      conf_samples <- .run.conformal.sequential(
+      conf_fn <- if (nn_backend == "torch") .run.conformal.sequential.torch
+                 else .run.conformal.sequential
+      conf_samples <- conf_fn(
         reftable, param.cols, observed, best_hp, type, sfs.dims,
         n_ensemble, cal.frac, max_epochs, seed, verbose,
         point_est = point_est, exclude.cols = exclude.cols
@@ -1838,7 +1949,9 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
       colnames(conf_samples) <- param_names
     }
     if (do_bootstrap) {
-      boot_samples <- .run.bootstrap.sequential(
+      boot_fn <- if (nn_backend == "torch") .run.bootstrap.sequential.torch
+                 else .run.bootstrap.sequential
+      boot_samples <- boot_fn(
         reftable, param.cols, observed, best_hp, type, sfs.dims,
         n_boot, max_epochs, seed, verbose,
         exclude.cols = exclude.cols
@@ -2002,7 +2115,8 @@ density.nn.posterior <- function(x, method = NULL, ...) {
 
 #' @export
 plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
-                             show_point_est = TRUE, show_prior = FALSE, ...) {
+                             show_point_est = TRUE, show_prior = FALSE,
+                             true_values = NULL, ...) {
   param_names <- x$param_names
   n_params <- length(param_names)
 
@@ -2079,6 +2193,9 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     if (show_point_est)
       abline(v = x$point_estimate[j], lty = 2, lwd = lwd)
 
+    if (!is.null(true_values))
+      abline(v = true_values[j], col = "darkred", lwd = lwd, lty = 4)
+
     # Legend
     legend_labels <- c()
     legend_cols   <- c()
@@ -2094,6 +2211,11 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
       legend_labels <- c(legend_labels, "Point est.")
       legend_cols   <- c(legend_cols, "black")
       legend_lty    <- c(legend_lty, 2)
+    }
+    if (!is.null(true_values)) {
+      legend_labels <- c(legend_labels, "True")
+      legend_cols   <- c(legend_cols, "darkred")
+      legend_lty    <- c(legend_lty, 4)
     }
 
     legend("topright", legend = legend_labels, col = legend_cols,
@@ -2218,6 +2340,37 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 }
 
 # ============================================================================
+# Internal: flatten features for Dense-only architecture
+# ============================================================================
+
+.flatten.features <- function(data, type) {
+  # sumstat: already 2D matrix, pass through
+  # sfs1d:  (n, bins, 1) -> (n, bins)
+  # sfs2d:  (n, d1, d2, 1) -> (n, d1*d2)
+
+  flatten_one <- function(X) {
+    if (type == "sumstat") {
+      return(X)
+    } else if (type == "sfs1d") {
+      dims <- dim(X)
+      return(matrix(X, nrow = dims[1], ncol = dims[2]))
+    } else {
+      dims <- dim(X)
+      return(matrix(X, nrow = dims[1], ncol = prod(dims[2:3])))
+    }
+  }
+
+  X_train_flat <- flatten_one(data$X_train)
+  X_val_flat   <- flatten_one(data$X_val)
+
+  list(
+    X_train    = X_train_flat,
+    X_val      = X_val_flat,
+    n_feat_flat = ncol(X_train_flat)
+  )
+}
+
+# ============================================================================
 # Internal: proximity-weighted ensemble prediction from top-K models
 # ============================================================================
 
@@ -2253,7 +2406,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   prox_losses <- numeric(n_models)
 
   for (m in seq_len(n_models)) {
-    pred_z <- predict(models[[m]], data$X_val, verbose = 0L)  # (n_val, n_params)
+    pred_z <- .predict.nn(models[[m]], data$X_val)  # (n_val, n_params)
     per_sample_mse <- rowSums((pred_z - Y_val)^2)  # (n_val,)
     prox_losses[m] <- sum(w * per_sample_mse)
   }
@@ -2278,7 +2431,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
   # 6. Weighted average of model predictions in Z-space
   pred_z_list <- lapply(seq_len(n_models), function(m) {
-    as.numeric(predict(models[[m]], X_obs, verbose = 0L))
+    as.numeric(.predict.nn(models[[m]], X_obs))
   })
 
   ensemble_z <- rep(0, length(pred_z_list[[1L]]))
@@ -2795,6 +2948,125 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 }
 
 # ============================================================================
+# Internal: conformal prediction — torch backend (sequential)
+# ============================================================================
+
+.run.conformal.sequential.torch <- function(reftable, param.cols, observed, best_hp,
+                                            type, sfs.dims, n_ensemble, cal.frac,
+                                            max_epochs, seed, verbose,
+                                            point_est = NULL, exclude.cols = NULL) {
+
+  nuisance <- c("mean.rate", "sd.rate")
+  target_cols <- setdiff(param.cols, nuisance)
+  n_params <- length(target_cols)
+
+  n_total <- nrow(reftable)
+  n_cal   <- floor(cal.frac * n_total)
+  n_train <- n_total - n_cal
+
+  device <- if (torch::cuda_is_available()) "cuda" else "cpu"
+
+  if (verbose)
+    cat(sprintf("\nPipeMaster:: Conformal prediction [torch/%s] (%d ensemble \u00d7 %d cal samples)...\n",
+                device, n_ensemble, n_cal))
+
+  all_conf_samples <- list()
+
+  for (ens_i in seq_len(n_ensemble)) {
+    set.seed(seed + ens_i * 100)
+    idx <- sample(n_total)
+    tr_idx  <- idx[1:n_train]
+    cal_idx <- idx[(n_train + 1):n_total]
+
+    tr_split  <- .prep.reftable.split(reftable, param.cols, tr_idx, type, sfs.dims,
+                                       exclude.cols = exclude.cols)
+    cal_split <- .prep.reftable.split(reftable, param.cols, cal_idx, type, sfs.dims,
+                                       exclude.cols = exclude.cols)
+
+    feat_tr    <- tr_split$features
+    targ_tr    <- tr_split$targets
+    feat_cal   <- cal_split$features
+    params_cal <- cal_split$targets
+
+    # Z-score features
+    f_mu <- colMeans(feat_tr)
+    f_sd <- apply(feat_tr, 2, sd); f_sd[f_sd == 0] <- 1
+    X_tr  <- t((t(feat_tr)  - f_mu) / f_sd)
+    X_cal <- t((t(feat_cal) - f_mu) / f_sd)
+
+    # Log + Z-score targets
+    Y_tr_log <- log(targ_tr)
+    t_mu <- colMeans(Y_tr_log)
+    t_sd <- apply(Y_tr_log, 2, sd); t_sd[t_sd == 0] <- 1
+    Y_tr <- t((t(Y_tr_log) - t_mu) / t_sd)
+
+    # Split train into train/val for early stopping
+    n_tr_rows <- nrow(X_tr)
+    n_va <- max(1L, floor(0.1 * n_tr_rows))
+    va_rows <- seq_len(n_va)
+    tr_rows <- seq(n_va + 1L, n_tr_rows)
+
+    X_va_s <- X_tr[va_rows, , drop = FALSE]
+    X_tr_s <- X_tr[tr_rows, , drop = FALSE]
+    Y_va_s <- Y_tr[va_rows, , drop = FALSE]
+    Y_tr_s <- Y_tr[tr_rows, , drop = FALSE]
+
+    ens_data <- list(
+      X_train = X_tr_s, X_val = X_va_s,
+      Y_train = Y_tr_s, Y_val = Y_va_s,
+      n_features = ncol(feat_tr),
+      n_bins = if (type != "sumstat") ncol(feat_cal) else NULL,
+      feat_mu = f_mu, feat_sd = f_sd,
+      target_mu = t_mu, target_sd = t_sd
+    )
+
+    # Build and train torch model
+    set.seed(seed + ens_i * 1000)
+    model <- .build.nn.torch(best_hp, ens_data, type, sfs.dims, device = device)
+    train_result <- .torch.train.model(
+      model, ens_data$X_train, ens_data$Y_train,
+      ens_data$X_val, ens_data$Y_val,
+      hp = best_hp, type = type,
+      epochs = as.integer(max_epochs),
+      patience = 30L, lr_patience = 15L,
+      device = device
+    )
+    n_ep <- train_result$epochs_trained
+
+    # Predict on calibration set
+    cal_pred_z <- .torch.predict(model, X_cal, device = device)
+    cal_pred   <- .inv.transform(cal_pred_z, t_mu, t_sd)
+
+    # Residuals
+    cal_resid <- params_cal - cal_pred
+
+    # Center on point estimate or predict observed
+    if (!is.null(point_est)) {
+      center <- point_est
+    } else {
+      X_obs <- .prep.observed.with(observed, f_mu, f_sd, type, sfs.dims)
+      obs_pred_z <- .torch.predict(model, X_obs, device = device)
+      center <- as.numeric(.inv.transform(obs_pred_z, t_mu, t_sd))
+    }
+
+    # Conformal samples
+    ens_samples <- matrix(NA, nrow = nrow(cal_resid), ncol = n_params)
+    for (j in seq_len(n_params))
+      ens_samples[, j] <- center[j] + cal_resid[, j]
+
+    all_conf_samples[[ens_i]] <- ens_samples
+
+    if (verbose)
+      cat(sprintf("  Ensemble %d/%d \u2014 trained %d ep, %d conformal samples\n",
+                  ens_i, n_ensemble, n_ep, nrow(ens_samples)))
+
+    rm(model); gc()
+  }
+
+  do.call(rbind, all_conf_samples)
+}
+
+# ============================================================================
 # Internal: bootstrap posterior estimation
 # ============================================================================
 
@@ -2927,6 +3199,95 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     rm(model)
     gc()
     tryCatch(keras::k_clear_session(), error = function(e) NULL)
+  }
+
+  boot_matrix
+}
+
+# ============================================================================
+# Internal: bootstrap posterior estimation — torch backend (sequential)
+# ============================================================================
+
+.run.bootstrap.sequential.torch <- function(reftable, param.cols, observed, best_hp,
+                                            type, sfs.dims, n_boot, max_epochs,
+                                            seed, verbose, exclude.cols = NULL) {
+
+  nuisance <- c("mean.rate", "sd.rate")
+  target_cols <- setdiff(param.cols, nuisance)
+  n_params <- length(target_cols)
+
+  device <- if (torch::cuda_is_available()) "cuda" else "cpu"
+
+  if (verbose)
+    cat(sprintf("\nPipeMaster:: Bootstrap [torch/%s] (%d replicates, sequential)...\n",
+                device, n_boot))
+
+  boot_matrix <- matrix(NA, nrow = n_boot, ncol = n_params)
+
+  all_rows <- seq_len(nrow(reftable))
+  full_split <- .prep.reftable.split(reftable, param.cols, all_rows, type, sfs.dims,
+                                      exclude.cols = exclude.cols)
+  features_all <- full_split$features
+  targets_all  <- full_split$targets
+  n_rows <- nrow(features_all)
+
+  for (b in seq_len(n_boot)) {
+    set.seed(seed + b)
+
+    boot_idx  <- sample(n_rows, replace = TRUE)
+    feat_boot <- features_all[boot_idx, ]
+    targ_boot <- targets_all[boot_idx, , drop = FALSE]
+
+    # Z-score features
+    f_mu <- colMeans(feat_boot)
+    f_sd <- apply(feat_boot, 2, sd); f_sd[f_sd == 0] <- 1
+    X_boot <- t((t(feat_boot) - f_mu) / f_sd)
+
+    # Log + Z-score targets
+    Y_boot_log <- log(targ_boot)
+    t_mu <- colMeans(Y_boot_log)
+    t_sd <- apply(Y_boot_log, 2, sd); t_sd[t_sd == 0] <- 1
+    Y_boot <- t((t(Y_boot_log) - t_mu) / t_sd)
+
+    # Split off validation
+    n_b <- nrow(X_boot)
+    n_va <- max(1L, floor(0.1 * n_b))
+    va_rows <- seq_len(n_va)
+    tr_rows <- seq(n_va + 1L, n_b)
+
+    X_va_b <- X_boot[va_rows, , drop = FALSE]
+    X_tr_b <- X_boot[tr_rows, , drop = FALSE]
+    Y_va_b <- Y_boot[va_rows, , drop = FALSE]
+    Y_tr_b <- Y_boot[tr_rows, , drop = FALSE]
+
+    boot_data <- list(
+      X_train = X_tr_b, X_val = X_va_b,
+      Y_train = Y_tr_b, Y_val = Y_va_b,
+      n_features = ncol(feat_boot),
+      n_bins = if (type != "sumstat") ncol(feat_boot) else NULL,
+      feat_mu = f_mu, feat_sd = f_sd,
+      target_mu = t_mu, target_sd = t_sd
+    )
+
+    set.seed(seed + b)
+    model <- .build.nn.torch(best_hp, boot_data, type, sfs.dims, device = device)
+    .torch.train.model(
+      model, boot_data$X_train, boot_data$Y_train,
+      boot_data$X_val, boot_data$Y_val,
+      hp = best_hp, type = type,
+      epochs = as.integer(max_epochs),
+      patience = 30L, lr_patience = 15L,
+      device = device
+    )
+
+    X_obs <- .prep.observed.with(observed, f_mu, f_sd, type, sfs.dims)
+    obs_pred_z <- .torch.predict(model, X_obs, device = device)
+    boot_matrix[b, ] <- as.numeric(.inv.transform(obs_pred_z, t_mu, t_sd))
+
+    if (verbose && (b %% 10 == 0 || b == n_boot))
+      cat(sprintf("  Progress: %d/%d\n", b, n_boot))
+
+    rm(model); gc()
   }
 
   boot_matrix
@@ -3334,7 +3695,8 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
                                 type, sfs.dims, do_conformal, do_bootstrap,
                                 n_ensemble, n_boot, cal.frac, max_epochs,
                                 cores, gpus, greedy, seed, verbose,
-                                point_est = NULL, exclude.cols = NULL) {
+                                point_est = NULL, exclude.cols = NULL,
+                                nn_backend = "keras") {
 
   nuisance    <- c("mean.rate", "sd.rate")
   target_cols <- setdiff(param.cols, nuisance)
@@ -3362,14 +3724,22 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
        cal_frac, point_est, threads_per_worker,
        file = shared_file)
 
-  # Write model builder script
-  .write.builder.script(file.path(work_dir, "_build_model.R"), type)
+  # Write model builder and worker scripts (backend-specific)
+  if (nn_backend == "torch") {
+    .torch.write.builder.script(file.path(work_dir, "_build_model_torch.R"), type)
+  } else {
+    .write.builder.script(file.path(work_dir, "_build_model.R"), type)
+  }
 
   # Build task list: conformal first (priority), then bootstrap
   tasks <- list()
 
   if (do_conformal) {
-    .write.conformal.worker.script(file.path(work_dir, "_conf_worker.R"))
+    if (nn_backend == "torch") {
+      .torch.write.conformal.worker.script(file.path(work_dir, "_conf_worker.R"))
+    } else {
+      .write.conformal.worker.script(file.path(work_dir, "_conf_worker.R"))
+    }
     for (i in seq_len(n_ensemble)) {
       tasks[[length(tasks) + 1]] <- list(
         script = "_conf_worker.R", id = i,
@@ -3380,7 +3750,11 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   }
 
   if (do_bootstrap) {
-    .write.bootstrap.worker.script(file.path(work_dir, "_boot_worker.R"))
+    if (nn_backend == "torch") {
+      .torch.write.bootstrap.worker.script(file.path(work_dir, "_boot_worker.R"))
+    } else {
+      .write.bootstrap.worker.script(file.path(work_dir, "_boot_worker.R"))
+    }
     for (b in seq_len(n_boot)) {
       tasks[[length(tasks) + 1]] <- list(
         script = "_boot_worker.R", id = b,
@@ -3518,4 +3892,139 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   unlink(work_dir, recursive = TRUE)
 
   boot_matrix
+}
+
+# ============================================================================
+# Torch backend for tune.nn
+#
+# Dispatched from tune.nn() when backend = "torch". Uses .torch.hyperband()
+# and .torch.train.model() from torch_training.R, and .build.nn.torch()
+# from torch_modules.R.
+# ============================================================================
+
+#' @keywords internal
+.tune.nn.torch <- function(reftable, param.cols, type, sfs.dims,
+                           max_epochs, eta, search_space, exclude.cols,
+                           val.frac, top_k, seed, verbose) {
+
+  if (!requireNamespace("torch", quietly = TRUE))
+    stop("tune.nn(backend='torch') requires the 'torch' R package.\n",
+         "Install with: install.packages('torch')\n",
+         "Then run: torch::install_torch()")
+
+  type <- match.arg(type, c("sumstat", "sfs1d", "sfs2d", "emulator"))
+
+  # Note: torch backend currently supports sumstat/emulator (ResNet) only
+  if (type %in% c("sfs1d", "sfs2d"))
+    stop("Torch backend does not yet support CNN architectures (sfs1d/sfs2d). ",
+         "Use backend='keras' for SFS-based models.")
+
+  top_k <- as.integer(top_k)
+  if (top_k < 1L) stop("top_k must be >= 1")
+
+  # --- Prepare data (reuse existing prep) ---
+  data <- .prep.data(reftable, param.cols, type, sfs.dims, exclude.cols,
+                     val.frac, seed)
+
+  n_feat <- ncol(data$X_train)
+  n_targ <- ncol(data$Y_train)
+
+  if (verbose) cat(sprintf("PipeMaster:: %d features, %d targets | %d train, %d val\n",
+                           n_feat, n_targ, nrow(data$X_train), nrow(data$X_val)))
+
+  # --- Search space ---
+  ss <- if (!is.null(search_space)) search_space else .emulator.search.space()
+
+  # --- Detect device ---
+  device <- "cpu"
+  if (torch::cuda_is_available()) {
+    device <- "cuda"
+    if (verbose) cat("PipeMaster:: Using CUDA GPU for torch training\n")
+  }
+
+  # --- Run Hyperband ---
+  torch::torch_manual_seed(as.integer(seed))
+  hb <- .torch.hyperband(ss, data, type, sfs.dims = sfs.dims,
+                         max_epochs = as.integer(max_epochs),
+                         eta = as.integer(eta),
+                         seed = as.integer(seed),
+                         verbose = verbose,
+                         device = device)
+
+  # --- Retrain best model ---
+  if (verbose)
+    cat(sprintf("\nPipeMaster:: Best config: %s\n", .hp.to.string(hb$best_hp, type)))
+
+  torch::torch_manual_seed(as.integer(seed))
+  best_model <- .build.nn.torch(hb$best_hp, data, type)
+  best_model$to(device = torch::torch_device(device))
+
+  if (!is.null(hb$best_state))
+    best_model$load_state_dict(hb$best_state)
+
+  start_ep <- if (!is.null(hb$best_state)) hb$best_epochs else 0L
+  retrain <- .torch.train.model(
+    best_model, data$X_train, data$Y_train, data$X_val, data$Y_val,
+    hp = hb$best_hp, type = type,
+    epochs = as.integer(max_epochs), initial_epoch = start_ep,
+    patience = 30L, lr_patience = 15L,
+    device = device
+  )
+
+  if (verbose)
+    cat(sprintf("PipeMaster:: Retrained: val_loss=%.6f, epochs=%d\n",
+                retrain$val_loss, retrain$epochs_trained))
+
+  # --- Compute metrics ---
+  metrics <- .torch.compute.model.metrics(best_model, data, type, device = device)
+  models_metrics <- list(metrics)
+
+  if (verbose) {
+    cat(sprintf("  R²:  %s\n", paste(sprintf("%s=%.4f", names(metrics$r2), metrics$r2), collapse = "  ")))
+    cat(sprintf("  MPE: %s\n", paste(sprintf("%s=%.1f%%", names(metrics$mpe), metrics$mpe), collapse = "  ")))
+  }
+
+  list(
+    best_hp         = hb$best_hp,
+    best_val_loss   = retrain$val_loss,
+    all_results     = hb$all_results,
+    best_model      = best_model,
+    models          = list(best_model),
+    models_val_loss = retrain$val_loss,
+    models_metrics  = models_metrics,
+    data            = data,
+    type            = type,
+    sfs.dims        = sfs.dims,
+    exclude.cols    = exclude.cols,
+    backend         = "torch"
+  )
+}
+
+# ============================================================================
+# Unified model predict dispatcher
+#
+# Detects keras vs torch models and dispatches to the right predict function.
+# Used by nn.predict(), OOD.diagnose(), .ensemble.predict(), etc.
+# ============================================================================
+
+#' @keywords internal
+.predict.nn <- function(model, X) {
+  if (inherits(model, "nn_module")) {
+    .torch.predict(model, X)
+  } else {
+    predict(model, X, verbose = 0L)
+  }
+}
+
+# ============================================================================
+# Detect backend from tune result or model object
+# ============================================================================
+
+#' @keywords internal
+.detect.backend <- function(tune.result) {
+  # Explicit backend field (new results)
+  if (!is.null(tune.result$backend)) return(tune.result$backend)
+  # Detect from model type
+  if (inherits(tune.result$best_model, "nn_module")) return("torch")
+  "keras"
 }

@@ -20,8 +20,8 @@
 #' @details At least one of \code{hmodel} or \code{phylip_paths} must be given.
 #'   At least 2 species are required for hyper-stats computation.
 #'
-#'   The 6 per-locus statistics (computed by msABC) are: segs, pi, w, tajd, dvk,
-#'   dvh. For each species the mean across loci (\code{s_mean_*}) is extracted,
+#'   The 6 per-locus statistics (computed by msABC) are: segs, pi, thetaW, tajd,
+#'   nhap, Hd. For each species the mean across loci (\code{s_mean_*}) is extracted,
 #'   then the 4 moments across species produce the 24 output values.
 #'
 #' @author Marcelo Gehara
@@ -128,9 +128,8 @@ obs.coexp.ngs <- function(hmodel = NULL, phylip_paths = NULL) {
     frag_nam <- frag_nam[keep]
     values <- values[keep]
 
-    # Remove thomson, ZnS, FayWuH (same filtering as sim.coexp.ngs)
+    # Remove thomson, FayWuH (same filtering as sim.coexp.ngs; ZnS retained)
     cols_rm <- c(grep("thomson", frag_nam),
-                 grep("ZnS", frag_nam),
                  grep("FayWuH", frag_nam))
     if (length(cols_rm) > 0) {
       frag_nam <- frag_nam[-cols_rm]

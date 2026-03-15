@@ -20,6 +20,7 @@ tune.nn(
   gpu.threshold = 4L,
   greedy = TRUE,
   top_k = 1L,
+  backend = c("auto", "torch", "keras"),
   seed = 42,
   verbose = TRUE
 )
@@ -80,6 +81,11 @@ models (by validation loss) are retained. At prediction time,
 \code{nn.predict()} uses a proximity-weighted ensemble of these models for
 more stable point estimates. Capped at \code{n_searches}.}
 
+\item{backend}{character — \code{"auto"} (default), \code{"torch"}, or
+\code{"keras"}. \code{"auto"} uses torch if available, else keras.
+Torch is a pure R backend (no Python). Keras requires TensorFlow via
+reticulate but may train faster due to XLA compilation.}
+
 \item{seed}{integer — random seed (default 42).}
 
 \item{verbose}{logical — print progress (default TRUE).}
@@ -90,15 +96,18 @@ A list with:
   \item{best_hp}{named list of best hyperparameters}
   \item{best_val_loss}{best validation loss achieved}
   \item{all_results}{data.frame of all evaluated configs (hp_string, val_loss, bracket, round)}
-  \item{best_model}{trained keras model (best config, retrained to max_epochs)}
-  \item{models}{list of top-K keras models, sorted by val_loss (length 1 when \code{top_k = 1})}
+  \item{best_model}{trained model (keras or torch, depending on backend)}
+  \item{models}{list of top-K models, sorted by val_loss (length 1 when \code{top_k = 1})}
   \item{models_val_loss}{numeric vector of validation losses for each model in \code{models}}
   \item{models_metrics}{list of per-model metrics (each element: \code{list(r2, mpe)} with named vectors in original parameter scale)}
+  \item{backend}{character — \code{"torch"} or \code{"keras"}}
 }
 }
 \description{
-Pure R implementation of the Hyperband algorithm for tuning keras neural
+Pure R implementation of the Hyperband algorithm for tuning neural
 networks used in demographic parameter estimation.
 Supports ResNet (summary statistics), 1D CNN (single-pop SFS), and
-2D CNN (joint SFS) architectures.
+2D CNN (joint SFS) architectures. Two backends available:
+\code{"torch"} (pure R, no Python dependency) and \code{"keras"}
+(TensorFlow via reticulate, faster XLA-compiled training).
 }

@@ -1,2 +1,30 @@
 ^.*\.Rproj$
 ^\.Rproj\.user$
+
+# Tests (not standard R test framework)
+^tests/
+^tests_hABC/
+
+# Dev notes
+^CLAUDE\.md$
+^TODO\.md$
+^context\.md$
+^emulator_functions\.md$
+
+# Manuscript
+^manuscript/
+^sandbox/
+
+# Paper 2 — emulator (not shipped)
+^R/emulator\.R$
+^R/emulator_posterior\.R$
+^R/torch_emulator\.R$
+^R/torch_posterior\.R$
+^R/torch_OOD\.R$
+^man/emulator\..*\.Rd$
+^man/train\.emulator\.Rd$
+^man/save\.emulator\.result\.Rd$
+^man/load\.emulator\.result\.Rd$
+
+# Paper 3 — hABC (not shipped)
+^R/grid\.search\.R$

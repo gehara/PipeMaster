@@ -251,7 +251,6 @@ coexp.msABC.batch<-function(MS.par, gene.prior, alpha, pop.par, mu.rates) {
       tab <- read.table(text=lines, header=TRUE, sep="\t")
       tab <- tab[, grep("^s_mean_", colnames(tab))]
       cols_rm <- c(grep("thomson", colnames(tab)),
-                   grep("ZnS", colnames(tab)),
                    grep("FayWuH", colnames(tab)))
       if(length(cols_rm) > 0) tab <- tab[, -cols_rm]
       as.numeric(tab)
@@ -313,7 +312,6 @@ coexp.msABC.legacy<-function(MS.par, gene.prior, alpha, pop.par, mu.rates) {
 
       sims <- sims[,grep("^s_mean_",colnames(sims))]
       sims <- sims[,-grep("thomson",colnames(sims))]
-      sims <- sims[,-grep("ZnS",colnames(sims))]
       sims <- sims[,-grep("FayWuH",colnames(sims))]
 
       sim[[xx]] <- sims

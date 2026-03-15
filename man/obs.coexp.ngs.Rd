@@ -31,8 +31,8 @@ Computes the 24 hyper-summary statistics from empirical PHYLIP
 At least one of \code{hmodel} or \code{phylip_paths} must be given.
   At least 2 species are required for hyper-stats computation.
 
-  The 6 per-locus statistics (computed by msABC) are: segs, pi, w, tajd, dvk,
-  dvh. For each species the mean across loci (\code{s_mean_*}) is extracted,
+  The 6 per-locus statistics (computed by msABC) are: segs, pi, thetaW, tajd,
+  nhap, Hd. For each species the mean across loci (\code{s_mean_*}) is extracted,
   then the 4 moments across species produce the 24 output values.
 }
 \author{

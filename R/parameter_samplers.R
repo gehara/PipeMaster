@@ -78,7 +78,9 @@ get.locfile<-function(model){
   idx <- 1L
   for(i in 1:nloci){
     for(j in 1:npop){
-      locfile[idx, ] <- c(model$I[i,1], model$I[i,j+3], j, model$loci[i,2], model$loci[i,4], 0)
+      locfile[idx, ] <- c(model$I[i,1], model$I[i,j+3], j,
+                          formatC(as.integer(model$loci[i,2]), format = "d"),
+                          model$loci[i,4], 0)
       idx <- idx + 1L
     }
   }
