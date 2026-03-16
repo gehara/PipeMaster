@@ -309,6 +309,12 @@ main.menu.gui <- function(input = NULL) {
     ej <- convert_dist(rv$ej)
     n  <- convert_dist(rv$n)
     m  <- convert_dist(rv$m)
+    # Debug
+    if (!is.null(ej)) cat("PipeMaster:: ej:", ej[,1], "->", ej[,3], "\n")
+    cat("PipeMaster:: rv$en is", if(is.null(rv$en)) "NULL" else paste(nrow(rv$en$size), "rows"), "\n")
+    cat("PipeMaster:: rv$en_joins is", if(is.null(rv$en_joins)) "NULL" else paste(nrow(rv$en_joins$size), "rows"), "\n")
+    if (!is.null(rv$en)) cat("PipeMaster:: en$size:", rv$en$size[,1], "\n")
+    if (!is.null(rv$en_joins)) cat("PipeMaster:: en_joins$size:", rv$en_joins$size[,1], "\n")
     en <- NULL
     em <- NULL
 
@@ -353,6 +359,10 @@ main.menu.gui <- function(input = NULL) {
     if (!is.null(rv$size_matrix)) conds$size.matrix <- rv$size_matrix
     if (!is.null(rv$mig_matrix))  conds$mig.matrix  <- rv$mig_matrix
     if (!is.null(rv$time_matrix)) conds$time.matrix  <- rv$time_matrix
+    # New condition list format (takes priority over matrices in sample.w.cond)
+    if (!is.null(rv$size_conds)) conds$size <- rv$size_conds
+    if (!is.null(rv$time_conds)) conds$time <- rv$time_conds
+    if (!is.null(rv$mig_conds))  conds$mig  <- rv$mig_conds
     model$conds <- conds
     model$tree  <- rv$tree_string
     model$sum_anc_ne <- rv$sum_anc_ne
@@ -455,7 +465,8 @@ main.menu.gui <- function(input = NULL) {
   # Custom demographic model plot (tree-like with rectangles for populations)
   plot_model_tree <- function(rv, use_avg = TRUE, font_scale = 1.0, n_samples = 200,
                               palette = "Tableau", bg_theme = "Dark", spacing = 1.5,
-                              font_family = "Palatino", plot_title = NULL) {
+                              font_family = "Palatino", plot_title = NULL,
+                              use_alpha = NULL) {
     npops <- rv$npops
     if (is.null(npops) || npops < 1) {
       plot.new(); text(0.5, 0.5, "No populations defined", col = "white", cex = 1.5)
@@ -480,11 +491,16 @@ main.menu.gui <- function(input = NULL) {
     }
 
     # Sample parameters via msABC.commander (handles conditions, Ne.anc, sum)
+    # Also capture the ms command string for display
+    last_ms_cmd <- NULL
     sample_once <- function() {
       cmd <- tryCatch(
-        PipeMaster:::msABC.commander(model, use.alpha = FALSE, arg = "/tmp/plot/"),
+        PipeMaster:::msABC.commander(model,
+          use.alpha = if (!is.null(use_alpha) && use_alpha[1] == TRUE) use_alpha else FALSE,
+          arg = "/tmp/plot/"),
         error = function(e) NULL)
       if (is.null(cmd)) return(NULL)
+      last_ms_cmd <<- cmd[[1]]
       p <- cmd[[2]]
       vals <- as.numeric(p[2, ])
       names(vals) <- p[1, ]
@@ -492,12 +508,16 @@ main.menu.gui <- function(input = NULL) {
     }
 
     if (use_avg) {
+      # Generate one representative ms command using average of sampled parameters
+      # We sample many times, average the parameters, then generate one final
+      # ms command from a single sample for the plot structure
       all_samp <- replicate(n_samples, sample_once())
       if (is.null(all_samp) || !is.matrix(all_samp)) {
         plot.new(); text(0.5, 0.5, "Could not sample parameters", col = "white", cex = 1.5)
         return(invisible(NULL))
       }
-      cond_vals <- rowMeans(all_samp, na.rm = TRUE)
+      # Use the last ms command (from last sample) — it has consistent structure
+      # where all conditions are satisfied
     } else {
       cond_vals <- sample_once()
       if (is.null(cond_vals)) {
@@ -505,52 +525,87 @@ main.menu.gui <- function(input = NULL) {
         return(invisible(NULL))
       }
     }
-    lookup <- function(name) unname(cond_vals[name])
-
-    # Current Ne per population
-    ne_current <- rep(100000, npops)
-    if (!is.null(rv$n) && is.matrix(rv$n)) {
-      for (i in 1:nrow(rv$n)) {
-        pop_id <- as.integer(rv$n[i, 3])
-        if (!is.na(pop_id) && pop_id >= 1 && pop_id <= npops)
-          ne_current[pop_id] <- lookup(rv$n[i, 1])
-      }
+    if (is.null(last_ms_cmd)) {
+      plot.new(); text(0.5, 0.5, "Could not generate ms command", col = "white", cex = 1.5)
+      return(invisible(NULL))
     }
 
-    # Collect time-ordered events (joins + Ne changes)
-    # Ne.anc events are NOT added here — they're handled directly at merge time
+    # ====================================================================
+    # Parse the ms command string to build events — this is what the
+    # simulator actually sees, guaranteeing the plot matches exactly
+    # ====================================================================
+    Ne0 <- 100000
+    ms_scalar <- 4 * Ne0
+
+    # Parse ms command into tokens
+    ms_tokens <- strsplit(trimws(last_ms_cmd), "\\s+")[[1]]
+    # Stop parsing at --frag-begin (locfile section)
+    frag_idx <- which(ms_tokens == "--frag-begin")
+    if (length(frag_idx) > 0) ms_tokens <- ms_tokens[1:(frag_idx[1] - 1)]
+
+    # Extract events from tokens
+    ne_current <- rep(Ne0, npops)  # default
     events <- list()
-    if (!is.null(rv$ej) && is.matrix(rv$ej) && nrow(rv$ej) > 0) {
-      for (i in 1:nrow(rv$ej)) {
-        pair <- strsplit(rv$ej[i, 3], " ")[[1]]
-        pair_key <- paste(pair, collapse = "_")
-        ne_anc_name <- paste0("Ne.anc_", pair_key)
-        ne_anc_val <- lookup(ne_anc_name)
+    mig_events <- list()
+    growth_rates <- list()
+    i <- 1
+    while (i <= length(ms_tokens)) {
+      tok <- ms_tokens[i]
+      if (tok == "-n" && i + 2 <= length(ms_tokens)) {
+        pop <- as.integer(ms_tokens[i + 1])
+        ne_rel <- as.numeric(ms_tokens[i + 2])
+        ne_current[pop] <- ne_rel * Ne0
+        i <- i + 3
+      } else if (tok == "-en" && i + 3 <= length(ms_tokens)) {
+        time_coal <- as.numeric(ms_tokens[i + 1])
+        pop <- as.integer(ms_tokens[i + 2])
+        ne_rel <- as.numeric(ms_tokens[i + 3])
+        # -en at time 0 is just setting initial Ne (single pop case)
+        if (time_coal == 0) {
+          ne_current[pop] <- ne_rel * Ne0
+        } else {
+          events[[length(events) + 1]] <- list(
+            type = "ne_change", time = time_coal * ms_scalar,
+            pop = pop, ne = ne_rel * Ne0)
+        }
+        i <- i + 4
+      } else if (tok == "-ej" && i + 3 <= length(ms_tokens)) {
+        time_coal <- as.numeric(ms_tokens[i + 1])
+        src <- as.integer(ms_tokens[i + 2])
+        tgt <- as.integer(ms_tokens[i + 3])
         events[[length(events) + 1]] <- list(
-          type = "join", time = lookup(rv$ej[i, 1]),
-          src = as.integer(pair[1]), tgt = as.integer(pair[2]),
-          ne_anc = if (!is.na(ne_anc_val)) ne_anc_val else NA)
+          type = "join", time = time_coal * ms_scalar,
+          src = src, tgt = tgt)
+        i <- i + 4
+      } else if (tok == "-m" && i + 3 <= length(ms_tokens)) {
+        pop1 <- as.integer(ms_tokens[i + 1])
+        pop2 <- as.integer(ms_tokens[i + 2])
+        rate <- as.numeric(ms_tokens[i + 3])
+        mig_events[[length(mig_events) + 1]] <- list(
+          from = pop1, to = pop2, rate = rate, time = 0)
+        i <- i + 4
+      } else if (tok == "-g" && i + 2 <= length(ms_tokens)) {
+        pop <- as.integer(ms_tokens[i + 1])
+        rate <- as.numeric(ms_tokens[i + 2])
+        growth_rates[[as.character(pop)]] <- rate
+        i <- i + 3
+      } else {
+        i <- i + 1
       }
     }
-    if (!is.null(rv$en) && !is.null(rv$en$size) && is.matrix(rv$en$size)) {
-      for (i in 1:nrow(rv$en$size)) {
-        # Skip Ne.anc entries (handled at merge time)
-        if (grepl("^Ne\\.anc_", rv$en$size[i, 1])) next
-        events[[length(events) + 1]] <- list(
-          type = "ne_change", time = lookup(rv$en$time[i, 1]),
-          pop = as.integer(rv$en$size[i, 3]),
-          ne = lookup(rv$en$size[i, 1]))
-      }
-    }
-    # Sort: ne_changes before joins at equal times
+
+    # Sort events: ne_changes before joins at equal times
     if (length(events) > 0)
       events <- events[order(
         sapply(events, `[[`, "time"),
         sapply(events, function(e) if (e$type == "join") 1 else 0)
       )]
 
-    # Track state and build drawing primitives
-    # Position populations by tree leaf order (keeps merging pops adjacent)
+    # ====================================================================
+    # Build drawing primitives from parsed events
+    # ====================================================================
+
+    # Position populations by tree leaf order
     leaf_order <- 1:npops
     if (!is.null(rv$tree_string) && rv$tree_string != "1" &&
         rv$tree_string != "non tree-like model") {
@@ -560,12 +615,9 @@ main.menu.gui <- function(input = NULL) {
         if (!any(is.na(lo)) && length(lo) == npops) leaf_order <- lo
       }
     }
-    # Spacing must prevent overlap between daughter bars and merged ancestral bars
-    # at the midpoint: spacing/2 > 2*hw_max + gap, so spacing > 4*hw_max + 2*gap
-    # hw_max = 0.38 is defined below but is a fixed constant
     leaf_spacing <- spacing
     x_pos  <- setNames(1 + (seq_along(leaf_order) - 1) * leaf_spacing, as.character(leaf_order))
-    x_pos_orig <- x_pos  # Save original positions for bottom labels
+    x_pos_orig <- x_pos
     alive  <- setNames(rep(TRUE, npops), as.character(1:npops))
     cur_ne <- setNames(ne_current, as.character(1:npops))
     last_t <- setNames(rep(0, npops), as.character(1:npops))
@@ -585,14 +637,13 @@ main.menu.gui <- function(input = NULL) {
         s <- as.character(ev$src)
         g <- as.character(ev$tgt)
         if (alive[s] && alive[g]) {
-          # Close daughter segments at join time
           segs[[length(segs) + 1]] <- list(
             pop = s, x = x_pos[s], t0 = last_t[s], t1 = ev$time, ne = cur_ne[s])
           segs[[length(segs) + 1]] <- list(
             pop = g, x = x_pos[g], t0 = last_t[g], t1 = ev$time, ne = cur_ne[g])
           new_x <- mean(c(x_pos[s], x_pos[g]))
-          # Ancestor Ne: use Ne.anc from msABC.commander if available, else sum daughters
-          ne_anc <- if (!is.na(ev$ne_anc)) ev$ne_anc else cur_ne[s] + cur_ne[g]
+          # After -ej, the surviving pop's Ne is whatever it was (set by preceding -en)
+          ne_anc <- cur_ne[g]
           merges[[length(merges) + 1]] <- list(
             time = ev$time,
             x_src = x_pos[s], ne_src = cur_ne[s],
@@ -600,7 +651,6 @@ main.menu.gui <- function(input = NULL) {
             x_new = new_x, ne_new = ne_anc)
           alive[s] <- FALSE
           x_pos[g] <- new_x
-          cur_ne[g] <- ne_anc
           last_t[g] <- ev$time
         }
       }
@@ -610,8 +660,6 @@ main.menu.gui <- function(input = NULL) {
     all_t1  <- if (length(segs) > 0) sapply(segs, `[[`, "t1") else 0
     max_t   <- max(c(all_t1, 1))
     root_ext <- max_t * 0.25
-    # Island populations (never involved in any merge) stop at max_t;
-    # only tree lineages (participated in merges) get root extension
     merged_pops <- character()
     for (ev in events) {
       if (ev$type == "join") merged_pops <- c(merged_pops, as.character(ev$src), as.character(ev$tgt))
@@ -619,8 +667,6 @@ main.menu.gui <- function(input = NULL) {
     has_joins <- length(merged_pops) > 0
     for (p in names(alive)) {
       if (alive[p]) {
-        # Island pops stop at 80% of max_t, but only when there are tree lineages;
-        # if no joins at all (single pop, pure island), everyone gets root extension
         is_tree_lineage <- p %in% merged_pops
         if (!has_joins || is_tree_lineage) {
           t_end <- max_t + root_ext
@@ -712,22 +758,65 @@ main.menu.gui <- function(input = NULL) {
               col = adjustcolor(th$merge, 0.5), border = NA)
     }
 
-    # Draw rectangles (widest first so daughter bars are drawn on top of ancestors)
+    # Identify which populations get exponential growth from parsed -g flags
+    # growth_rates is a named list: pop_id -> growth rate (coalescent scale)
+    alpha_segs <- list()
+    if (length(growth_rates) > 0) {
+      for (idx in seq_along(segs)) {
+        seg <- segs[[idx]]
+        if (seg$pop %in% names(growth_rates) && seg$t0 == 0) {
+          # Find the next segment for this pop (the Ne change target)
+          for (idx2 in seq_along(segs)) {
+            seg2 <- segs[[idx2]]
+            if (seg2$pop == seg$pop && seg2$t0 == seg$t1 && idx2 != idx) {
+              alpha_segs[[as.character(idx)]] <- list(
+                ne_anc = seg2$ne, t_change = seg$t1)
+              break
+            }
+          }
+        }
+      }
+    }
+
+    # Draw segments (widest first so daughter bars are drawn on top of ancestors)
     seg_order <- order(sapply(segs, function(s) ne2hw(s$ne)), decreasing = TRUE)
     for (idx in seg_order) {
       seg <- segs[[idx]]
       hw <- ne2hw(seg$ne)
       col <- pcol(seg$pop)
-      rect(seg$x - hw, seg$t0, seg$x + hw, seg$t1,
-           col = adjustcolor(col, alpha.f = 0.75),
-           border = adjustcolor(col, alpha.f = 0.9), lwd = 1.5)
+
+      if (as.character(idx) %in% names(alpha_segs)) {
+        # Exponential growth: draw polygon with curved edges
+        info <- alpha_segs[[as.character(idx)]]
+        ne0 <- seg$ne       # present Ne (large)
+        ne1 <- info$ne_anc  # ancestral Ne at change time (small)
+        t_ch <- info$t_change
+        n_pts <- 50
+        t_seq <- seq(seg$t0, seg$t1, length.out = n_pts)
+        # Growth rate: Ne(t) = Ne0 * exp(-g*t), where g = (1/t_ch) * log(Ne0/Ne1)
+        g_rate <- if (t_ch > 0 && ne1 > 0 && ne0 > 0) (1/t_ch) * log(ne0/ne1) else 0
+        ne_seq <- ne0 * exp(-g_rate * t_seq)
+        hw_seq <- sapply(ne_seq, ne2hw)
+        # Build polygon: right edge going up, left edge going down
+        poly_x <- c(seg$x + hw_seq, rev(seg$x - hw_seq))
+        poly_y <- c(t_seq, rev(t_seq))
+        polygon(poly_x, poly_y,
+                col = adjustcolor(col, alpha.f = 0.75),
+                border = adjustcolor(col, alpha.f = 0.9), lwd = 1.5)
+      } else {
+        # Regular rectangle
+        rect(seg$x - hw, seg$t0, seg$x + hw, seg$t1,
+             col = adjustcolor(col, alpha.f = 0.75),
+             border = adjustcolor(col, alpha.f = 0.9), lwd = 1.5)
+      }
     }
 
     # Population labels (positioned by tree leaf order)
     labels <- if (!is.null(rv$pop_labels)) rv$pop_labels else as.character(1:npops)
     for (i in 1:npops) {
-      text(x_pos_orig[as.character(i)], -y_max * 0.04, paste0("Pop ", labels[i]),
-           col = pcol(as.character(i)), cex = 1.4 * font_scale, font = 2)
+      pop_id <- labels[i]
+      text(x_pos_orig[pop_id], -y_max * 0.04, paste0("Pop ", pop_id),
+           col = pcol(pop_id), cex = 1.4 * font_scale, font = 2)
     }
 
     # Ne annotations inside rectangles
@@ -748,29 +837,48 @@ main.menu.gui <- function(input = NULL) {
            col = th$annot, cex = 0.9 * font_scale, adj = c(0, 0.5))
     }
 
-    # Migration arrows between populations
-    if (!is.null(rv$m) && is.matrix(rv$m) && nrow(rv$m) > 0) {
-      # Find the bottom-most segments for each leaf pop (the ones starting at t=0)
-      leaf_segs <- list()
-      for (seg in segs) {
-        if (seg$t0 == 0) leaf_segs[[seg$pop]] <- seg
+    # Migration arrows — draw from parsed ms command migration events
+    if (length(mig_events) > 0) {
+      # Build a map of when each population is alive (as a leaf, before any merge)
+      # Each pop is alive from t=0 to its first merge event (as src or tgt)
+      pop_alive_until <- setNames(rep(Inf, npops), as.character(1:npops))
+      for (ev in events) {
+        if (ev$type == "join") {
+          s <- as.character(ev$src)
+          if (pop_alive_until[s] > ev$time) pop_alive_until[s] <- ev$time
+        }
       }
 
-      for (i in 1:nrow(rv$m)) {
-        pair <- as.integer(strsplit(rv$m[i, 3], " ")[[1]])
-        from_p <- as.character(pair[1])
-        to_p   <- as.character(pair[2])
-        if (is.null(leaf_segs[[from_p]]) || is.null(leaf_segs[[to_p]])) next
+      # For each migration pair, find the time range both pops are alive
+      # and the x positions of their segments during that time
+      mig_col <- "#FFD700"
+      for (i in seq_along(mig_events)) {
+        me <- mig_events[[i]]
+        from_p <- as.character(me$from)
+        to_p   <- as.character(me$to)
+        pair <- c(me$from, me$to)
 
-        seg_from <- leaf_segs[[from_p]]
-        seg_to   <- leaf_segs[[to_p]]
-        hw_from  <- ne2hw(seg_from$ne)
-        hw_to    <- ne2hw(seg_to$ne)
+        # Migration is active from t=0 to when either pop ceases to exist
+        t_start <- 0
+        t_end <- min(pop_alive_until[from_p], pop_alive_until[to_p])
+        if (t_end <= t_start || is.infinite(t_end)) t_end <- max_t * 0.8
 
-        # Place arrow at 1/3 height of the shorter segment
-        arr_y <- min(seg_from$t1, seg_to$t1) * 0.33
+        # Find segments that overlap this time range for each pop
+        find_seg_at <- function(pop, t) {
+          for (seg in segs) {
+            if (seg$pop == pop && seg$t0 <= t && seg$t1 >= t) return(seg)
+          }
+          NULL
+        }
 
-        # Arrow goes from the edge of one rectangle to the edge of the other
+        t_mid <- (t_start + t_end) / 2
+        seg_from <- find_seg_at(from_p, t_mid)
+        seg_to   <- find_seg_at(to_p, t_mid)
+        if (is.null(seg_from) || is.null(seg_to)) next
+
+        hw_from <- ne2hw(seg_from$ne)
+        hw_to   <- ne2hw(seg_to$ne)
+
         if (seg_from$x < seg_to$x) {
           x0 <- seg_from$x + hw_from
           x1 <- seg_to$x   - hw_to
@@ -779,17 +887,21 @@ main.menu.gui <- function(input = NULL) {
           x1 <- seg_to$x   + hw_to
         }
 
+        # Draw thin translucent band showing migration time range
+        rect(min(x0, x1), t_start, max(x0, x1), t_end,
+             col = adjustcolor(mig_col, 0.05), border = NA)
+
         # Offset vertically so bidirectional arrows don't overlap
         y_off <- if (pair[1] < pair[2]) y_max * 0.012 else -y_max * 0.012
 
-        arrows(x0, arr_y + y_off, x1, arr_y + y_off,
-               col = "#FFD700", lwd = 1.8, length = 0.08, code = 2)
+        # Arrow at midpoint of active time range
+        arrows(x0, t_mid + y_off, x1, t_mid + y_off,
+               col = mig_col, lwd = 1.8, length = 0.08, code = 2)
 
-        # Migration rate label at midpoint
-        mig_val <- lookup(rv$m[i, 1])
-        text((x0 + x1) / 2, arr_y + y_off + y_max * 0.018,
-             sprintf("%.2g", mig_val),
-             col = "#FFD700", cex = 0.8 * font_scale)
+        # Migration rate label (rate from ms command, already scaled)
+        text((x0 + x1) / 2, t_mid + y_off + y_max * 0.018,
+             sprintf("%.2g", me$rate),
+             col = mig_col, cex = 0.7 * font_scale)
       }
     }
   }
@@ -1403,7 +1515,13 @@ main.menu.gui <- function(input = NULL) {
                 ),
                 shiny::column(2,
                   shiny::checkboxInput("check_avg_priors",
-                    "Use average of priors (uncheck to sample)", value = TRUE)
+                    "Use average of priors (uncheck to sample)", value = TRUE),
+                  shiny::checkboxInput("check_use_alpha",
+                    "Exponential growth", value = FALSE),
+                  shiny::conditionalPanel(
+                    condition = "input.check_use_alpha == true",
+                    shiny::uiOutput("alpha_pop_select")
+                  )
                 ),
                 shiny::column(1,
                   shiny::sliderInput("plot_font_size", "Font size:", min = 0.5, max = 3.0,
@@ -1440,6 +1558,16 @@ main.menu.gui <- function(input = NULL) {
               ),
               shiny::hr(),
               shiny::plotOutput("plot_model_diagram", height = "500px")
+            )
+          ),
+          shiny::fluidRow(
+            shinydashboard::box(
+              title = "ms Command String (last sample)", width = 12,
+              status = "primary", solidHeader = TRUE, collapsible = TRUE, collapsed = TRUE,
+              shiny::verbatimTextOutput("txt_ms_command"),
+              shiny::helpText("This is the actual command string passed to the coalescent",
+                "simulator. Verify that population sizes, migration rates, Ne changes",
+                "(-en), joins (-ej), and their ordering match your intended model.")
             )
           ),
           shiny::fluidRow(
@@ -1504,6 +1632,17 @@ main.menu.gui <- function(input = NULL) {
       )
     })
 
+    # Alpha population selector (which pops get exponential growth)
+    output$alpha_pop_select <- shiny::renderUI({
+      if (is.null(rv$en) || is.null(rv$en$size)) return(NULL)
+      en_reg <- rv$en$size[!grepl("^Ne\\.anc_", rv$en$size[,1]), , drop = FALSE]
+      if (nrow(en_reg) == 0) return(NULL)
+      pops <- unique(en_reg[, 3])
+      choices <- setNames(seq_along(pops), paste0("Pop ", pops))
+      shiny::checkboxGroupInput("alpha_pops", "Pops with growth:",
+        choices = choices, selected = seq_along(pops), inline = TRUE)
+    })
+
     # --- Reactive values (replaces .e environment) ---
     rv <- shiny::reactiveValues(
       tree_string   = "1",
@@ -1524,7 +1663,11 @@ main.menu.gui <- function(input = NULL) {
       en_joins      = NULL,
       size_matrix   = NULL,
       mig_matrix    = NULL,
-      time_matrix   = NULL
+      time_matrix   = NULL,
+      size_conds    = NULL,
+      time_conds    = NULL,
+      mig_conds     = NULL,
+      template_loaded = FALSE
     )
 
     # --- Load template if provided ---
@@ -1533,6 +1676,7 @@ main.menu.gui <- function(input = NULL) {
         tmpl <- template_model
         rv$n  <- revert_dist(tmpl$flags$n)
         rv$ej <- revert_dist(tmpl$flags$ej)
+        cat("PipeMaster:: template loaded ej:", rv$ej[,1], "->", rv$ej[,3], "\n")
         rv$m  <- revert_dist(tmpl$flags$m)
         if (!is.null(tmpl$flags$en)) {
           rv$en <- list(size = revert_dist(tmpl$flags$en$size),
@@ -1544,9 +1688,25 @@ main.menu.gui <- function(input = NULL) {
         }
         rv$loci <- revert_dist(tmpl$loci)
         rv$I    <- tmpl$I
-        rv$tree_string <- tmpl$tree
         rv$npops <- nrow(rv$n)
         rv$sum_anc_ne <- if (!is.null(tmpl$sum_anc_ne)) tmpl$sum_anc_ne else TRUE
+
+        # Parse tree for pop_labels, joints, tree_obj
+        if (!is.null(tmpl$tree) && tmpl$tree != "1") {
+          tree_clean <- gsub(";", "", tmpl$tree)
+          parsed_tmpl <- parse_tree(tree_clean)
+          rv$tree_string <- tmpl$tree
+          rv$pop_labels  <- parsed_tmpl$pop_labels
+          rv$joints      <- parsed_tmpl$joints
+          rv$tree_obj    <- tryCatch({
+            ape::read.tree(text = tmpl$tree)
+          }, error = function(e) NULL)
+        } else {
+          rv$tree_string <- if (!is.null(tmpl$tree)) tmpl$tree else "1"
+          rv$pop_labels  <- as.character(1:rv$npops)
+          rv$joints      <- NULL
+          rv$tree_obj    <- NULL
+        }
 
         # Separate Ne.anc join entries from per-pop en entries
         if (!is.null(tmpl$flags$en)) {
@@ -1560,18 +1720,31 @@ main.menu.gui <- function(input = NULL) {
           if (any(!is_join)) {
             rv$en <- list(size = all_size[!is_join, , drop = FALSE],
                           time = all_time[!is_join, , drop = FALSE])
+            # Compute ne_changes per pop from loaded en entries
+            rv$ne_changes <- sapply(1:rv$npops, function(p) {
+              sum(all_size[!is_join, 3] == as.character(p))
+            })
           }
         }
 
         if (!is.null(tmpl$conds$size.matrix)) rv$size_matrix <- tmpl$conds$size.matrix
         if (!is.null(tmpl$conds$mig.matrix))  rv$mig_matrix  <- tmpl$conds$mig.matrix
         if (!is.null(tmpl$conds$time.matrix)) rv$time_matrix <- tmpl$conds$time.matrix
+        # New condition list format
+        if (!is.null(tmpl$conds$size)) rv$size_conds <- tmpl$conds$size
+        if (!is.null(tmpl$conds$time)) rv$time_conds <- tmpl$conds$time
+        if (!is.null(tmpl$conds$mig))  rv$mig_conds  <- tmpl$conds$mig
 
+        # Update UI checkboxes (use shiny::isolate to prevent observer side effects)
         shiny::updateTextInput(session, "txt_tree",
           value = if (!is.null(tmpl$tree)) tmpl$tree else "1")
         if (!is.null(rv$m))  shiny::updateCheckboxInput(session, "check_migration", value = TRUE)
         if (!is.null(rv$en)) shiny::updateCheckboxInput(session, "check_ancestral_ne", value = TRUE)
+        if (!is.null(rv$em)) shiny::updateCheckboxInput(session, "check_anc_mig", value = TRUE)
         shiny::updateCheckboxInput(session, "check_sum_anc_ne", value = rv$sum_anc_ne)
+
+        # Mark template as loaded — prevents tree validation from overwriting
+        rv$template_loaded <- TRUE
         if (!is.null(rv$n) && rv$n[1, 6] == "normal")
           shiny::updateSelectInput(session, "select_ne_dist", selected = "normal")
         if (!is.null(rv$ej) && rv$ej[1, 6] == "normal")
@@ -1593,6 +1766,15 @@ main.menu.gui <- function(input = NULL) {
 
     # Validate & apply tree
     shiny::observeEvent(input$btn_validate_tree, {
+      # If a template was just loaded, skip the rebuild — template already set everything
+      if (isTRUE(rv$template_loaded)) {
+        rv$template_loaded <- FALSE
+        cat("PipeMaster:: validate skipped (template loaded)\n")
+        shiny::showNotification("Model loaded from template.", type = "message")
+        return()
+      }
+      cat("PipeMaster:: validate tree RUNNING, will rebuild ej\n")
+
       tree_str <- trimws(input$txt_tree)
       if (tree_str == "") {
         shiny::showNotification("Please enter a tree string.", type = "error")
@@ -1611,6 +1793,7 @@ main.menu.gui <- function(input = NULL) {
       rv$joints      <- parsed$joints
       rv$ej          <- parsed$ej
       rv$pop_labels  <- parsed$pop_labels
+      cat("PipeMaster:: validate set ej:", rv$ej[,1], "->", rv$ej[,3], "\n")
 
       # Rebuild Ne for new npops
       cur_dist <- input$select_ne_dist
@@ -1643,19 +1826,25 @@ main.menu.gui <- function(input = NULL) {
       # Enforce time ordering only between dependent joins (ancestor-descendant)
       # Join Y depends on join X if Y's pair contains the surviving pop from X
       if (!is.null(parsed$ej) && nrow(parsed$ej) > 1) {
-        conds <- build_condition_matrices(rv$n, parsed$ej, rv$en, rv$m, rv$em, rv$en_joins)
-        tm <- conds$time.matrix
         ej <- parsed$ej
+        time_conds <- list()
         for (i in 1:(nrow(ej) - 1)) {
-          surv_i <- strsplit(ej[i, 3], " ")[[1]][2]  # surviving pop of join i
+          surv_i <- strsplit(ej[i, 3], " ")[[1]][2]
           for (j in (i + 1):nrow(ej)) {
             pops_j <- strsplit(ej[j, 3], " ")[[1]]
             if (surv_i %in% pops_j) {
-              tm[ej[i, 1], ej[j, 1]] <- "<"  # join i must happen before join j
+              time_conds[[length(time_conds) + 1]] <- list(
+                param1 = ej[i, 1], op = "<", param2 = ej[j, 1])
             }
           }
         }
-        tm <- inv_mirror_lower(tm)
+        rv$time_conds <- time_conds
+        # Also update legacy matrix
+        conds <- build_condition_matrices(rv$n, parsed$ej, rv$en, rv$m, rv$em, rv$en_joins)
+        tm <- conds$time.matrix
+        for (cond in time_conds) {
+          tm[cond$param1, cond$param2] <- "<"
+        }
         rv$time_matrix <- tm
       }
 
@@ -1697,7 +1886,9 @@ main.menu.gui <- function(input = NULL) {
         plot_model_tree(rv, use_avg = TRUE, font_scale = 1.0, palette = pal, bg_theme = bg_th,
                             spacing = if (!is.null(input$plot_spacing)) input$plot_spacing else 1.5,
                             font_family = if (!is.null(input$select_plot_font)) input$select_plot_font else "Palatino",
-                            plot_title = if (!is.null(input$plot_title)) input$plot_title else "Demographic Model")
+                            plot_title = if (!is.null(input$plot_title)) input$plot_title else "Demographic Model",
+                            use_alpha = if (isTRUE(input$check_use_alpha) && !is.null(input$alpha_pops))
+                              c(TRUE, as.integer(input$alpha_pops)) else NULL)
       }, error = function(e) {
         par(bg = bg_cols[bg_th])
         plot.new()
@@ -1725,7 +1916,9 @@ main.menu.gui <- function(input = NULL) {
           plot_model_tree(rv, use_avg = TRUE, font_scale = 1.0, palette = pal, bg_theme = bg_th,
                             spacing = if (!is.null(input$plot_spacing)) input$plot_spacing else 1.5,
                             font_family = if (!is.null(input$select_plot_font)) input$select_plot_font else "Palatino",
-                            plot_title = if (!is.null(input$plot_title)) input$plot_title else "Demographic Model"),
+                            plot_title = if (!is.null(input$plot_title)) input$plot_title else "Demographic Model",
+                            use_alpha = if (isTRUE(input$check_use_alpha) && !is.null(input$alpha_pops))
+                              c(TRUE, as.integer(input$alpha_pops)) else NULL),
           error = function(e) {
             plot.new()
             text(0.5, 0.5, paste("Error:", e$message), col = "red")
@@ -1926,8 +2119,9 @@ main.menu.gui <- function(input = NULL) {
       if (info$col == 2) rv$en$size[info$row, 5] <- as.character(info$value)
     })
 
-    # Handle ancestral Ne toggle off
+    # Handle ancestral Ne toggle off (skip if template just loaded)
     shiny::observeEvent(input$check_ancestral_ne, {
+      if (isTRUE(rv$template_loaded)) return()
       if (!isTRUE(input$check_ancestral_ne)) {
         rv$en <- NULL
         rv$ne_changes <- NULL
@@ -1961,8 +2155,8 @@ main.menu.gui <- function(input = NULL) {
     # =======================================================================
 
     shiny::observeEvent(input$check_migration, {
+      if (isTRUE(rv$template_loaded)) return()
       if (isTRUE(input$check_migration) && rv$npops > 1) {
-        # Only create migration if none exists yet (don't overwrite partial migrations)
         if (is.null(rv$m)) {
           rv$m <- make_mig_par(rv$npops, input$select_mig_dist)
         }
@@ -2070,6 +2264,7 @@ main.menu.gui <- function(input = NULL) {
 
     # Ancestral migration changes
     shiny::observeEvent(input$check_anc_mig, {
+      if (isTRUE(rv$template_loaded)) return()
       if (isTRUE(input$check_anc_mig) && !is.null(rv$m)) {
         if (is.null(rv$em)) {
           dist <- if (!is.null(input$select_mig_dist)) input$select_mig_dist else "uniform"
@@ -2499,11 +2694,37 @@ main.menu.gui <- function(input = NULL) {
         sp <- if (!is.null(input$plot_spacing)) input$plot_spacing else 1.5
         ff <- if (!is.null(input$select_plot_font)) input$select_plot_font else "Palatino"
         pt <- if (!is.null(input$plot_title)) input$plot_title else "Demographic Model"
+        ua <- if (isTRUE(input$check_use_alpha) && !is.null(input$alpha_pops))
+                c(TRUE, as.integer(input$alpha_pops)) else NULL
         bg_cols <- c("Dark" = "#222222", "Light" = "#FFFFFF", "Slate" = "#2F4F4F")
         bg_col <- bg_cols[bg_th]
         output$plot_model_diagram <- shiny::renderPlot({
-          plot_model_tree(rv, use_avg = avg, font_scale = fs, palette = pal, bg_theme = bg_th, spacing = sp, font_family = ff, plot_title = pt)
+          plot_model_tree(rv, use_avg = avg, font_scale = fs, palette = pal, bg_theme = bg_th, spacing = sp, font_family = ff, plot_title = pt, use_alpha = ua)
         }, bg = bg_col)
+
+        # Generate and display a single ms command for inspection
+        model <- tryCatch(assemble_model(rv), error = function(e) NULL)
+        if (!is.null(model)) {
+          if (is.null(model$loci) || !is.matrix(model$loci) || nrow(model$loci) == 0)
+            model$loci <- matrix(c("loc1", "100", "1", "1e-8", "1e-8", "runif"), nrow = 1)
+          if (is.null(model$I) || !is.matrix(model$I)) {
+            samp_per_pop <- rep("10", rv$npops)
+            model$I <- matrix(c("I", paste(rv$npops), as.character(rv$npops), samp_per_pop), nrow = 1)
+          }
+          cmd <- tryCatch(
+            PipeMaster:::msABC.commander(model,
+              use.alpha = if (isTRUE(input$check_use_alpha) && !is.null(input$alpha_pops))
+                c(TRUE, as.integer(input$alpha_pops)) else FALSE,
+              arg = "/tmp/plot/"),
+            error = function(e) NULL)
+          if (!is.null(cmd)) {
+            # Format: ms command + sampled parameters
+            p <- cmd[[2]]
+            param_str <- paste(sprintf("  %-18s = %s", p[1,], p[2,]), collapse = "\n")
+            ms_str <- paste0("ms command:\n", cmd[[1]], "\n\nSampled parameters:\n", param_str)
+            output$txt_ms_command <- shiny::renderText(ms_str)
+          }
+        }
       }, error = function(e) {
         output$plot_model_diagram <- shiny::renderPlot({
           par(bg = "#222222")
@@ -2526,10 +2747,12 @@ main.menu.gui <- function(input = NULL) {
         sp <- if (!is.null(input$plot_spacing)) input$plot_spacing else 1.5
         ff <- if (!is.null(input$select_plot_font)) input$select_plot_font else "Palatino"
         pt <- if (!is.null(input$plot_title)) input$plot_title else "Demographic Model"
+        ua <- if (isTRUE(input$check_use_alpha) && !is.null(input$alpha_pops))
+                c(TRUE, as.integer(input$alpha_pops)) else NULL
         bg_cols <- c("Dark" = "#222222", "Light" = "#FFFFFF", "Slate" = "#2F4F4F")
         pdf(file, width = 10, height = 7, bg = bg_cols[bg_th])
         tryCatch(
-          plot_model_tree(rv, use_avg = avg, font_scale = fs, palette = pal, bg_theme = bg_th, spacing = sp, font_family = ff, plot_title = pt),
+          plot_model_tree(rv, use_avg = avg, font_scale = fs, palette = pal, bg_theme = bg_th, spacing = sp, font_family = ff, plot_title = pt, use_alpha = ua),
           error = function(e) {
             plot.new(); text(0.5, 0.5, paste("Error:", e$message), col = "red")
           }

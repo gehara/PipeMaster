@@ -16,56 +16,93 @@ sample.pars<-function(x){
 }
 
 # internal function of the ms.commander
-sample.w.cond<-function(par.matrix,cond.matrix){
+# Sample parameters with conditions
+#
+# cond.list: a list of conditions, each is list(param1, op, param2) where:
+#   op = "<" : param1 < param2 (enforced via rejection sampling)
+#   op = "=" : copy param1's value to param2 (param1 is source)
+#
+# Processing order: (1) sample all, (2) enforce "<" via rejection, (3) apply "="
+#
+# Also accepts legacy matrix format (cond.matrix) for backwards compatibility.
+#
+sample.w.cond <- function(par.matrix, cond.matrix = NULL, cond.list = NULL) {
 
-  x<-sample.pars(par.matrix)
-  if(is.null(cond.matrix)) return(x)
+  x <- sample.pars(par.matrix)
 
-  nam<-rownames(cond.matrix)
+  # Convert legacy matrix to list if needed
+  if (is.null(cond.list) && !is.null(cond.matrix)) {
+    cond.list <- .matrix.to.cond.list(cond.matrix)
+  }
+  if (is.null(cond.list) || length(cond.list) == 0) return(x)
 
-  y<-which(cond.matrix=="<", arr.ind=T)
-
-  if(nrow(y)!=0){
-    maior<-list(NULL)
-    for(i in 1:nrow(y)){
-      mm<-NULL
-      for(j in 1:2){
-        m<-which(par.matrix==nam[y[i,j]])
-        mm<-c(mm,m)
-      }
-      maior[[i]]<-mm
-    }
-
-    while(eval.condition(x,y=maior)>0){
-      for(j in 1:length(maior)){
-        x[c(maior[[j]][1],maior[[j]][2]),]<-sample.pars(par.matrix[c(maior[[j]][1],maior[[j]][2]),])
-      }
-    }
-
+  # Map parameter names to row indices in par.matrix
+  find_row <- function(name) {
+    idx <- which(par.matrix[, 1] == name)
+    if (length(idx) == 1) idx else NA
   }
 
-  z<-which(cond.matrix=="=", arr.ind=T)
-  z<-z[order(z[,1]),]
-  if(nrow(z)!=0){
-    for(i in 1:nrow(z)){
-      equal<-NULL
-      for(j in 1:2){
-        eq<-which(par.matrix==nam[z[i,j]])
-        equal<-c(equal,eq)
-      }
-      x[equal[1],4:5]<-x[equal[2],4:5]
+  # --- Step 1: Collect "<" and "=" conditions ---
+  lt_pairs <- list()
+  eq_pairs <- list()
+  for (cond in cond.list) {
+    r1 <- find_row(cond$param1)
+    r2 <- find_row(cond$param2)
+    if (is.na(r1) || is.na(r2)) next
+    if (cond$op == "<") {
+      lt_pairs[[length(lt_pairs) + 1]] <- c(r1, r2)
+    } else if (cond$op == "=") {
+      eq_pairs[[length(eq_pairs) + 1]] <- c(r1, r2)
     }
   }
+
+  # --- Step 2: Enforce "<" via rejection sampling ---
+  if (length(lt_pairs) > 0) {
+    max_tries <- 10000
+    tries <- 0
+    while (tries < max_tries) {
+      all_ok <- TRUE
+      for (p in lt_pairs) {
+        if (as.numeric(x[p[1], 4]) >= as.numeric(x[p[2], 4])) {
+          all_ok <- FALSE
+          break
+        }
+      }
+      if (all_ok) break
+      x <- sample.pars(par.matrix)
+      tries <- tries + 1
+    }
+    if (tries == max_tries)
+      warning("sample.w.cond: max iterations reached for '<' conditions")
+  }
+
+  # --- Step 3: Apply "=" (copy param1 value to param2) ---
+  for (p in eq_pairs) {
+    x[p[2], 4:5] <- x[p[1], 4:5]
+  }
+
   return(x)
 }
 
-# internal function of the Model Builder
-eval.condition<-function(x,y){
-  value<-NULL
-  for(i in 1:length(y)){
-    value[i]<-as.numeric(x[y[[i]][1],4])>as.numeric(x[y[[i]][2],4])
+# Convert legacy condition matrix to condition list
+.matrix.to.cond.list <- function(cond.matrix) {
+  if (is.null(cond.matrix)) return(NULL)
+  nam <- rownames(cond.matrix)
+  conds <- list()
+  for (i in 1:nrow(cond.matrix)) {
+    for (j in 1:ncol(cond.matrix)) {
+      if (i == j) next
+      val <- cond.matrix[i, j]
+      if (is.na(val) || val == "0") next
+      if (val == "<") {
+        conds[[length(conds) + 1]] <- list(param1 = nam[i], op = "<", param2 = nam[j])
+      } else if (val == "=" && i < j) {
+        # Only upper triangle for "=" to avoid bidirectional
+        conds[[length(conds) + 1]] <- list(param1 = nam[i], op = "=", param2 = nam[j])
+      }
+    }
   }
-  return(sum(value))
+  conds
 }
 
 # internal function to generate the locus file

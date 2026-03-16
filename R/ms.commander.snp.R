@@ -17,12 +17,14 @@ ms.commander.snp<-function(model,use.alpha=use.alpha,msABC){
   time.pars<-rbind(model$flags$ej,model$flags$en$time,model$flags$em$time)
 
   # sample Ne, div.time and mutation rate
-  size.pars<-sample.w.cond(par.matrix=size.pars,cond.matrix=model$conds$size.matrix)
+  size.pars<-sample.w.cond(par.matrix=size.pars,
+    cond.list=model$conds$size, cond.matrix=model$conds$size.matrix)
   # bind Ne sampled parameters
   parameters<-rbind(parameters,size.pars[,c(1,4)])
 
   if(is.null(time.pars)==F){
-    time.pars<-sample.w.cond(par.matrix=time.pars,cond.matrix=model$conds$time.matrix)
+    time.pars<-sample.w.cond(par.matrix=time.pars,
+      cond.list=model$conds$time, cond.matrix=model$conds$time.matrix)
     # bind sampled time parameters
     parameters<-rbind(parameters,time.pars[,c(1,4)])
   }
@@ -31,7 +33,8 @@ ms.commander.snp<-function(model,use.alpha=use.alpha,msABC){
 
   # sample migrations if present and bind sampled parameters
   if(is.null(mig.pars)==F){
-    mig.pars<-sample.w.cond(par.matrix=mig.pars,cond.matrix=model$conds$mig.matrix)
+    mig.pars<-sample.w.cond(par.matrix=mig.pars,
+      cond.list=model$conds$mig, cond.matrix=model$conds$mig.matrix)
     #bind sampled migration parameters
     parameters<-rbind(parameters,mig.pars[,c(1,4)])
   }

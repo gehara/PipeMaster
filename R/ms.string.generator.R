@@ -32,14 +32,25 @@ ms.string.generator<-function(model,size.pars,mig.pars,time.pars,use.alpha,scala
       }
 
 
-  # generate alpha string
+  # generate alpha string (exponential growth)
+  # Only use regular Ne changes (skip Ne.anc entries)
   if(use.alpha[1]==T){
+    en_reg <- en[!grepl("^Ne\\.anc_", en[,1]), , drop = FALSE]
+    ent_reg <- if(!is.null(ent)) ent[!grepl("^t\\.Ne\\.anc_", ent[,1]), , drop = FALSE] else ent
     alpha<-NULL
-    for(i in as.numeric(unique(en[,3]))){
-      eg<-subset(size.pars, size.pars[,3]==i)[1:2,]
-      eg<-rbind(eg,subset(ent, ent[,3]==i))
-      alpha<-c(alpha,paste("-g",i,-(1/as.numeric(eg[3,4]))*log(as.numeric(eg[2,4])/as.numeric(eg[1,4]))))
+    if(nrow(en_reg) > 0){
+      for(i in as.numeric(unique(en_reg[,3]))){
+        ne0_row <- which(curr.Ne[,3] == as.character(i))
+        ne1_row <- which(en_reg[,3] == as.character(i))[1]
+        t_row   <- which(ent_reg[,3] == as.character(i))[1]
+        if(length(ne0_row) > 0 && length(ne1_row) > 0 && length(t_row) > 0){
+          g_rate <- -(1/as.numeric(ent_reg[t_row,4])) *
+                     log(as.numeric(en_reg[ne1_row,4]) / as.numeric(curr.Ne[ne0_row,4]))
+          alpha <- c(alpha, paste("-g", i, g_rate))
+        }
       }
+    }
+    if(length(alpha) > 0)
       string[[2]]<-paste(alpha[use.alpha[2:length(use.alpha)]], collapse=" ")
     }
 
@@ -90,7 +101,7 @@ ms.string.generator<-function(model,size.pars,mig.pars,time.pars,use.alpha,scala
                 if(length(y)==0){
                 em[j,4]<-as.numeric(em[j,4])/as.numeric(curr.Ne[match(emt[j,3],curr.Ne[,3]),4])
                 } else {
-                  y<-which(as.numeric(ent[x,4])==max(as.numeric(ent[x[y],4])))
+                  y<-which(as.numeric(ent[x,4])==max(as.numeric(ent[x[y],4])))[1]
                   em[j,4]<-as.numeric(em[j,4])/as.numeric(en[x[y],4])
                 }
             }
