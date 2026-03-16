@@ -280,7 +280,7 @@ grid.search <- function(model, observed, grid = NULL, n_points = 10, n_reps = 10
     tab <- read.table(text = lines, header = TRUE, sep = "\t")
     if("X" %in% colnames(tab))
       tab <- tab[, colnames(tab) != "X", drop = FALSE]
-    cols <- grep("thomson|ZnS|FayWuH|fwh", colnames(tab))
+    cols <- grep("thomson|FayWuH|fwh", colnames(tab))
     if(length(cols) != 0) tab <- tab[, -cols, drop = FALSE]
     tab
   })
@@ -615,7 +615,7 @@ sim.sumstat.lhs <- function(model, n_points = 500, n_reps = 1, design = NULL,
       x <- strsplit(run.msABC(com0[[1]]), "\t")
       stat_names <- x[1][[1]]
       stat_names <- stat_names[stat_names != "" & stat_names != "X"]
-      cols <- grep("thomson|ZnS|FayWuH|fwh", stat_names)
+      cols <- grep("thomson|FayWuH|fwh", stat_names)
       if(length(cols) != 0) stat_names <- stat_names[-cols]
     } else {
       if(npop == 1) {

@@ -5,9 +5,13 @@ sample.pars<-function(x){
     if(c(as.numeric(x[i,4])+as.numeric(x[i,5]))==0){
       next
     } else {
-    samp<-do.call(x[i,6],args=list(1,as.numeric(x[i,4]),as.numeric(x[i,5])),quote=F)
-    while(samp<=0){
+    if(x[i,6]=="rtnorm"){
+      samp<-msm::rtnorm(1, as.numeric(x[i,4]), as.numeric(x[i,5]), lower=0)
+    } else {
       samp<-do.call(x[i,6],args=list(1,as.numeric(x[i,4]),as.numeric(x[i,5])),quote=F)
+      while(samp<=0){
+        samp<-do.call(x[i,6],args=list(1,as.numeric(x[i,4]),as.numeric(x[i,5])),quote=F)
+      }
     }
     }
   x[i,4:5]<-samp
@@ -24,16 +28,10 @@ sample.pars<-function(x){
 #
 # Processing order: (1) sample all, (2) enforce "<" via rejection, (3) apply "="
 #
-# Also accepts legacy matrix format (cond.matrix) for backwards compatibility.
-#
-sample.w.cond <- function(par.matrix, cond.matrix = NULL, cond.list = NULL) {
+sample.w.cond <- function(par.matrix, cond.list = NULL) {
 
   x <- sample.pars(par.matrix)
 
-  # Convert legacy matrix to list if needed
-  if (is.null(cond.list) && !is.null(cond.matrix)) {
-    cond.list <- .matrix.to.cond.list(cond.matrix)
-  }
   if (is.null(cond.list) || length(cond.list) == 0) return(x)
 
   # Map parameter names to row indices in par.matrix
@@ -85,6 +83,7 @@ sample.w.cond <- function(par.matrix, cond.matrix = NULL, cond.list = NULL) {
 }
 
 # Convert legacy condition matrix to condition list
+# Used by convert.model.conds() to migrate old model objects
 .matrix.to.cond.list <- function(cond.matrix) {
   if (is.null(cond.matrix)) return(NULL)
   nam <- rownames(cond.matrix)
@@ -103,6 +102,25 @@ sample.w.cond <- function(par.matrix, cond.matrix = NULL, cond.list = NULL) {
     }
   }
   conds
+}
+
+# Convert old model objects (matrix-based conditions) to new list format
+# @param model A Model object with legacy matrix conditions
+# @return The same model with list-based conditions (matrices removed)
+convert.model.conds <- function(model) {
+  if (!is.null(model$conds$size.matrix) && is.null(model$conds$size)) {
+    model$conds$size <- .matrix.to.cond.list(model$conds$size.matrix)
+  }
+  if (!is.null(model$conds$time.matrix) && is.null(model$conds$time)) {
+    model$conds$time <- .matrix.to.cond.list(model$conds$time.matrix)
+  }
+  if (!is.null(model$conds$mig.matrix) && is.null(model$conds$mig)) {
+    model$conds$mig <- .matrix.to.cond.list(model$conds$mig.matrix)
+  }
+  model$conds$size.matrix <- NULL
+  model$conds$mig.matrix  <- NULL
+  model$conds$time.matrix <- NULL
+  model
 }
 
 # internal function to generate the locus file

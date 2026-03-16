@@ -17,13 +17,13 @@ msABC.commander<-function(model,use.alpha=use.alpha,arg){
 
   # sample Ne, div.time and mutation rate
   size.pars<-PipeMaster:::sample.w.cond(par.matrix=size.pars,
-    cond.list=model$conds$size, cond.matrix=model$conds$size.matrix)
+    cond.list=model$conds$size)
   # bind Ne sampled parameters
   parameters<-rbind(parameters,size.pars[,c(1,4)])
 
   if(is.null(time.pars)==F){
     time.pars<-PipeMaster:::sample.w.cond(par.matrix=time.pars,
-      cond.list=model$conds$time, cond.matrix=model$conds$time.matrix)
+      cond.list=model$conds$time)
     # bind sampled time parameters
     parameters<-rbind(parameters,time.pars[,c(1,4)])
   }
@@ -33,7 +33,7 @@ msABC.commander<-function(model,use.alpha=use.alpha,arg){
   # sample migrations if present and bind sampled parameters
   if(is.null(mig.pars)==F){
     mig.pars<-sample.w.cond(par.matrix=mig.pars,
-      cond.list=model$conds$mig, cond.matrix=model$conds$mig.matrix)
+      cond.list=model$conds$mig)
     #bind sampled migration parameters
     parameters<-rbind(parameters,mig.pars[,c(1,4)])
   }
@@ -49,6 +49,7 @@ msABC.commander<-function(model,use.alpha=use.alpha,arg){
   # When sum_anc_ne is TRUE, Ne.anc = sum of daughter Ne at join time.
 
   # Build a lookup: pop pair "X Y" -> ej row index (handles both joinX_Y and joinX naming)
+  if (is.null(time.pars)) { ej_rows <- integer(0) } else
   ej_rows <- which(time.pars[, 2] == "-ej")
   ej_lookup <- list()  # keyed by "X_Y" -> row in time.pars
   if (length(ej_rows) > 0) {
