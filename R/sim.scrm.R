@@ -50,7 +50,8 @@ sim.scrm.sumstats <- function(model, nsim.blocks, block.size,
                            use.alpha = FALSE, skip.zns = TRUE,
                            ncores = 1, path = ".", output.name = "scrm",
                            variable_samples = FALSE,
-                           append.sims = FALSE, verbose = TRUE) {
+                           append.sims = FALSE, verbose = TRUE,
+                           .parent.pid.file = NULL) {
 
   if (!is.numeric(mu.rates) || length(mu.rates) != 1)
     stop("mu.rates must be a single numeric value")
@@ -140,6 +141,12 @@ sim.scrm.sumstats <- function(model, nsim.blocks, block.size,
       if (file.exists(f)) file.remove(f)
     }
 
+    # Register parent PID + on.exit cleanup (kills workers on exit/error/interrupt)
+    pid_file <- file.path(abs_path, ".PM_parent.pid")
+    worker_pids_env <- new.env(parent = emptyenv())
+    worker_pids_env$pids <- integer(0)
+    .pm.register.parent(pid_file, worker_pids_env)
+
     # Save parameters for workers
     save(model, nsim.blocks, block.size, use.alpha, skip.zns,
          mu.rates, rec.rates, output.name, variable_samples,
@@ -151,6 +158,7 @@ sim.scrm.sumstats <- function(model, nsim.blocks, block.size,
       'worker_id <- as.integer(args[1])',
       'suppressMessages(library(PipeMaster))',
       sprintf('base_path <- "%s"', abs_path),
+      'pid_file <- file.path(base_path, ".PM_parent.pid")',
       'load(file.path(base_path, ".PM_scrm_worker_params.RData"))',
       'worker_dir <- file.path(base_path, paste0(".scrm_worker_", worker_id))',
       'dir.create(worker_dir, showWarnings = FALSE)',
@@ -159,7 +167,8 @@ sim.scrm.sumstats <- function(model, nsim.blocks, block.size,
       '               rec.rates = rec.rates, use.alpha = use.alpha,',
       '               skip.zns = skip.zns, output.name = output.name,',
       '               path = worker_dir, variable_samples = variable_samples,',
-      '               ncores = 1, append.sims = TRUE)',
+      '               ncores = 1, append.sims = TRUE,',
+      '               .parent.pid.file = pid_file)',
       'write("done", file.path(base_path, paste0(".scrm_worker_", worker_id, ".done")))',
       'quit(save = "no")',
       sep = "\n")
@@ -167,9 +176,11 @@ sim.scrm.sumstats <- function(model, nsim.blocks, block.size,
 
     start_time <- Sys.time()
     for (w in 1:ncores) {
-      system(paste("Rscript", file.path(abs_path, ".PM_scrm_worker.R"), w,
-                   ">", file.path(abs_path, paste0(".scrm_worker_", w, ".log")), "2>&1"),
-             wait = FALSE)
+      pid <- system(paste("Rscript", file.path(abs_path, ".PM_scrm_worker.R"), w,
+                   ">", file.path(abs_path, paste0(".scrm_worker_", w, ".log")), "2>&1 & echo $!"),
+             intern = TRUE)
+      wpid <- suppressWarnings(as.integer(pid[length(pid)]))
+      if (!is.na(wpid)) worker_pids_env$pids <- c(worker_pids_env$pids, wpid)
     }
     cat(sprintf("PipeMaster:: Launched %d worker processes\n", ncores))
 
@@ -246,6 +257,11 @@ sim.scrm.sumstats <- function(model, nsim.blocks, block.size,
     total_done <- 0
 
     for (j in 1:nsim.blocks) {
+      # Check if parent process is still alive (workers only)
+      if (!is.null(.parent.pid.file) && !.pm.parent.alive(.parent.pid.file)) {
+        cat("PipeMaster:: Parent process died, worker exiting.\n")
+        return(invisible(NULL))
+      }
       block_results <- vector("list", block.size)
       for (i in 1:block.size) {
         block_results[[i]] <- .scrm.run.one(model, base_cmds, config, npop,

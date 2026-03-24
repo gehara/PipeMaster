@@ -213,19 +213,45 @@ OOD.diagnose <- function(trained.nn = NULL, observed, reftable,
 
   # =========================================================================
   # CHECK 3: Per-stat percentile
+  #
+  # Classifies each stat as:
+  #   "ok"            — observed within [alpha, 1-alpha] range
+  #   "outlier"       — observed is extreme relative to meaningful sim variation
+  #   "uninformative" — zero or near-zero variance in sims (and obs matches);
+  #                     these carry no discriminating power and should not
+  #                     count as outliers
   # =========================================================================
+  sim_var <- apply(S_sim, 2, var)
+
   percentiles <- sapply(seq_len(n_stats), function(k) {
     mean(S_sim[, k] <= observed[k])
   })
   names(percentiles) <- sim_cols
 
-  outlier <- percentiles < alpha | percentiles > (1 - alpha)
-  n_outliers <- sum(outlier)
+  # Classify: uninformative when sim variance is negligible and obs is within
+  # sim range (i.e. both are effectively constant at the same value)
+  sim_range <- apply(S_sim, 2, function(x) diff(range(x)))
+  obs_in_range <- vapply(seq_len(n_stats), function(k) {
+    observed[k] >= min(S_sim[, k]) & observed[k] <= max(S_sim[, k])
+  }, logical(1))
+  uninformative <- (sim_var < .Machine$double.eps) |
+                   (sim_range < .Machine$double.eps & obs_in_range)
+
+  extreme <- percentiles < alpha | percentiles > (1 - alpha)
+  outlier <- extreme & !uninformative
+
+  reason <- rep("ok", n_stats)
+  reason[uninformative] <- "uninformative"
+  reason[outlier]       <- "outlier"
+
+  n_outliers      <- sum(outlier)
+  n_uninformative <- sum(uninformative)
 
   results$percentiles <- data.frame(
     stat = sim_cols,
     percentile = round(percentiles, 4),
     outlier = outlier,
+    reason = reason,
     stringsAsFactors = FALSE
   )
 
@@ -319,10 +345,10 @@ OOD.diagnose <- function(trained.nn = NULL, observed, reftable,
   cat(sprintf("  PCA (%d PCs, %.0f%% var): d2=%.2f, p=%.4f [%s]\n",
               n_pcs, var_explained[n_pcs] * 100, d2_pca, p_pca,
               ifelse(results$pca$pass, "PASS", "FAIL")))
-  cat(sprintf("  Per-stat outliers: %d/%d stats outside %.0f%% range\n",
-              n_outliers, n_stats, (1 - 2 * alpha) * 100))
+  cat(sprintf("  Per-stat: %d outliers, %d uninformative, %d ok (of %d)\n",
+              n_outliers, n_uninformative, n_stats - n_outliers - n_uninformative, n_stats))
   if (n_outliers > 0) {
-    bad <- results$percentiles[results$percentiles$outlier, ]
+    bad <- results$percentiles[results$percentiles$reason == "outlier", ]
     for (r in seq_len(nrow(bad)))
       cat(sprintf("    %s: percentile=%.3f\n", bad$stat[r], bad$percentile[r]))
   }
@@ -349,10 +375,15 @@ OOD.diagnose <- function(trained.nn = NULL, observed, reftable,
            col = c("grey50", "red"), pch = c(16, 17), cex = 0.8)
 
     # Panel 2: Per-stat percentile barplot
-    cols <- ifelse(outlier, "firebrick", "steelblue")
-    barplot(percentiles, col = cols, border = NA, las = 2, cex.names = 0.5,
+    bar_cols <- ifelse(reason == "uninformative", "grey70",
+                       ifelse(reason == "outlier", "firebrick", "steelblue"))
+    barplot(percentiles, col = bar_cols, border = NA, las = 2, cex.names = 0.5,
             main = "Per-stat percentiles", ylab = "percentile", ylim = c(0, 1))
     abline(h = c(alpha, 1 - alpha), lty = 2, col = "red")
+    legend("bottomright",
+           legend = c("ok", "outlier", "uninformative"),
+           fill = c("steelblue", "firebrick", "grey70"),
+           cex = 0.7, bty = "n")
 
     # Panel 3: Mahalanobis distance vs chi-sq reference
     d2_sims <- mahalanobis(S_sim, mu_sim, Sigma_sim)

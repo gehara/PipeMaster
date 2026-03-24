@@ -3,7 +3,7 @@ PKG_CXXFLAGS = -std=c++11 -DVERSION='"1.7.5"'
 PKG_LIBS = -lm
 
 # msABC C objects
-C_OBJECTS = ms.o data_sumstat.o rand1.o streec.o msABC_wrapper.o sfs_sim.o vcf_to_ms.o compute_sumstats.o init.o
+C_OBJECTS = ms.o data_sumstat.o rand1.o streec.o msABC_wrapper.o sfs_sim.o vcf_to_ms.o compute_sumstats.o read_tsv.o init.o
 
 # scrm C++ objects
 SCRM_OBJECTS = scrm/forest.o scrm/model.o scrm/node.o scrm/node_container.o \

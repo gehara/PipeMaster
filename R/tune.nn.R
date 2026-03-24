@@ -48,10 +48,10 @@
 #'   models (by validation loss) are retained. At prediction time,
 #'   \code{nn.predict()} uses a proximity-weighted ensemble of these models for
 #'   more stable point estimates. Capped at \code{n_searches}.
-#' @param backend character — \code{"auto"} (default), \code{"torch"}, or
-#'   \code{"keras"}. \code{"auto"} uses torch if available, else keras.
-#'   Torch is a pure R backend (no Python). Keras requires TensorFlow via
-#'   reticulate but may train faster due to XLA compilation.
+#' @param backend character — \code{"torch"} (default), \code{"keras"}, or
+#'   \code{"auto"}. Torch is a pure R backend (no Python dependency).
+#'   Keras requires TensorFlow via reticulate. \code{"auto"} uses torch
+#'   if available, else keras.
 #' @param seed integer — random seed (default 42).
 #' @param verbose logical — print progress (default TRUE).
 #'
@@ -78,7 +78,7 @@ tune.nn <- function(reftable, param.cols,
                     n_searches = 1L, cores = 1L, gpus = 0L,
                     gpu.threshold = 4L, greedy = TRUE,
                     top_k = 1L,
-                    backend = c("auto", "torch", "keras"),
+                    backend = c("torch", "keras", "auto"),
                     seed = 42, verbose = TRUE) {
 
   # --- Resolve backend ---
@@ -97,6 +97,9 @@ tune.nn <- function(reftable, param.cols,
                           search_space = search_space,
                           exclude.cols = exclude.cols,
                           val.frac = val.frac,
+                          n_searches = n_searches, cores = cores,
+                          gpus = gpus, gpu.threshold = gpu.threshold,
+                          greedy = greedy,
                           top_k = top_k,
                           seed = seed, verbose = verbose))
   }
@@ -391,31 +394,23 @@ tune.nn <- function(reftable, param.cols,
 # Internal: build and compile a keras model from an HP config
 # ============================================================================
 
-.build.nn <- function(hp, data, type, sfs.dims, mc_dropout = FALSE) {
+.build.nn <- function(hp, data, type, sfs.dims) {
   switch(type,
-    sumstat  = .build.resnet(hp, data, mc_dropout = mc_dropout),
-    sfs1d    = .build.cnn1d(hp, data, mc_dropout = mc_dropout),
-    sfs2d    = .build.cnn2d(hp, data, sfs.dims, mc_dropout = mc_dropout),
-    emulator = .build.resnet(hp, data, mc_dropout = mc_dropout)
+    sumstat  = .build.resnet(hp, data),
+    sfs1d    = .build.cnn1d(hp, data),
+    sfs2d    = .build.cnn2d(hp, data, sfs.dims),
+    emulator = .build.resnet(hp, data)
   )
 }
 
 # --- ResNet for summary statistics ---
-.build.resnet <- function(hp, data, mc_dropout = FALSE) {
+.build.resnet <- function(hp, data) {
   n_features <- ncol(data$X_train)
   n_targets  <- ncol(data$Y_train)
 
   l2 <- keras::regularizer_l2(hp$l2_reg)
 
-  # Dropout layer: standard or always-on (for MC dropout inference)
-  .drop <- if (mc_dropout) {
-    function(x, rate) {
-      r <- rate
-      keras::layer_lambda(x, f = function(x) tensorflow::tf$nn$dropout(x, rate = r))
-    }
-  } else {
-    function(x, rate) keras::layer_dropout(x, rate = rate)
-  }
+  .drop <- function(x, rate) keras::layer_dropout(x, rate = rate)
 
   # Residual block helper
   res_block <- function(x, units) {
@@ -474,20 +469,13 @@ tune.nn <- function(reftable, param.cols,
 }
 
 # --- 1D CNN for single-population SFS ---
-.build.cnn1d <- function(hp, data, mc_dropout = FALSE) {
+.build.cnn1d <- function(hp, data) {
   n_bins    <- data$n_bins
   n_targets <- ncol(data$Y_train)
 
   l2 <- keras::regularizer_l2(hp$l2_reg)
 
-  .drop <- if (mc_dropout && hp$dropout > 0) {
-    function(x, rate) {
-      r <- rate
-      keras::layer_lambda(x, f = function(x) tensorflow::tf$nn$dropout(x, rate = r))
-    }
-  } else {
-    function(x, rate) keras::layer_dropout(x, rate = rate)
-  }
+  .drop <- function(x, rate) keras::layer_dropout(x, rate = rate)
 
   input <- keras::layer_input(shape = c(n_bins, 1L))
   x <- input
@@ -540,20 +528,13 @@ tune.nn <- function(reftable, param.cols,
 }
 
 # --- 2D CNN for joint SFS ---
-.build.cnn2d <- function(hp, data, sfs.dims, mc_dropout = FALSE) {
+.build.cnn2d <- function(hp, data, sfs.dims) {
   dim1 <- sfs.dims[1]; dim2 <- sfs.dims[2]
   n_targets <- ncol(data$Y_train)
 
   l2 <- keras::regularizer_l2(hp$l2_reg)
 
-  .drop <- if (mc_dropout && hp$dropout > 0) {
-    function(x, rate) {
-      r <- rate
-      keras::layer_lambda(x, f = function(x) tensorflow::tf$nn$dropout(x, rate = r))
-    }
-  } else {
-    function(x, rate) keras::layer_dropout(x, rate = rate)
-  }
+  .drop <- function(x, rate) keras::layer_dropout(x, rate = rate)
 
   input <- keras::layer_input(shape = c(dim1, dim2, 1L))
   x <- input
@@ -1428,11 +1409,19 @@ tune.nn <- function(reftable, param.cols,
     'cat(sprintf("Search %d starting (seed=%d, eta=%d, max_epochs=%d)\\n",',
     '            task_id, worker_seed, worker_eta, worker_max_epochs))',
     '',
+    '# Check parent alive before starting expensive work',
+    'if (file.exists(".PM_parent.pid") && !PipeMaster:::.pm.parent.alive(".PM_parent.pid")) {',
+    '  cat("Parent died, worker exiting.\\n"); q("no") }',
+    '',
     'hb <- PipeMaster:::.hyperband(',
     '  search_space = search_space_saved,',
     '  data = hb_data, type = type, sfs.dims = sfs.dims,',
     '  max_epochs = worker_max_epochs, eta = worker_eta,',
     '  seed = worker_seed, verbose = TRUE)',
+    '',
+    '# Check parent alive before retraining',
+    'if (file.exists(".PM_parent.pid") && !PipeMaster:::.pm.parent.alive(".PM_parent.pid")) {',
+    '  cat("Parent died, worker exiting.\\n"); q("no") }',
     '',
     '# Retrain best config to worker_max_epochs',
     'tf$random$set_seed(as.integer(worker_seed))',
@@ -1653,50 +1642,62 @@ load.tune.result <- function(path) {
 }
 
 # ============================================================================
-# nn.predict — Posterior estimation via conformal prediction and bootstrap
+# nn.predict — Posterior estimation via neural network
 # ============================================================================
 
 #' Posterior Estimation via Neural Network Uncertainty Quantification
 #'
 #' Estimates posterior distributions for observed data using a trained neural
 #' network from \code{tune.nn()}, with multiple methods for uncertainty
-#' quantification: conformal prediction, bootstrap, and MC dropout.
-#' When the tune result contains multiple models (from
-#' \code{top_k > 1}), the point estimate is computed as a proximity-weighted
-#' ensemble average, where each model is weighted by how well it predicts
-#' validation samples near the observed data point.
+#' quantification.
+#'
+#' When the tune result contains multiple models (from \code{top_k > 1}), the
+#' point estimate is computed as a proximity-weighted ensemble average, where
+#' each model is weighted by how well it predicts validation samples near the
+#' observed data point.
 #'
 #' @param tune.result list — output from \code{tune.nn()}.
 #' @param observed named numeric vector or 1-row data.frame of observed summary
 #'   statistics (or SFS bins).
-#' @param reftable data.frame — original reference table (needed for bootstrap
-#'   retraining and conformal calibration).
-#' @param param.cols character vector — parameter column names.
+#' @param reftable data.frame — original reference table (required for
+#'   \code{"bootstrap"} and \code{"ABC_NN_regression"} methods).
+#' @param param.cols character vector — parameter column names (required when
+#'   reftable is provided).
 #' @param type character — architecture type: \code{"sumstat"}, \code{"sfs1d"},
 #'   or \code{"sfs2d"}. If NULL, uses the type stored in tune.result.
 #' @param sfs.dims integer vector — for 2D CNN only. If NULL, uses tune.result.
-#' @param method character — one or more of \code{"conformal"}, \code{"bootstrap"},
-#'   \code{"mc_dropout"}, \code{"point"}.
-#'   Use \code{"point"} alone for a fast point estimate with no retraining or
-#'   resampling (\code{reftable} and \code{param.cols} are not required).
-#' @param n_boot integer — number of bootstrap replicates (default 20).
-#' @param n_ensemble integer — number of ensemble models for conformal (default 1).
-#' @param cal.frac numeric — fraction of reftable used as calibration set (default 0.1).
-#' @param n_mc integer — number of MC dropout forward passes (default 1000).
-#'   Only used when \code{method} includes \code{"mc_dropout"}.
-#' @param mc_dropout_rate numeric — dropout rate for MC dropout (default NULL =
-#'   use tuned rate). When set (e.g. 0.1), the model is retrained with this
-#'   dropout rate before running forward passes. Useful when the tuned dropout
-#'   is too low to produce meaningful posterior spread.
-#' @param max_epochs integer — max training epochs for conformal/bootstrap
-#'   models (default 1000).
-#' @param cores integer — number of parallel Rscript workers (default 1).
-#' @param gpus integer — number of GPUs for parallel workers (default 0 = CPU-only).
-#'   When \code{gpus > 0}, workers are assigned GPUs round-robin via
-#'   \code{CUDA_VISIBLE_DEVICES}. Each worker sets
-#'   \code{TF_FORCE_GPU_ALLOW_GROWTH=true} so multiple workers sharing a GPU
-#'   don't OOM. \code{cores} and \code{gpus} are independent — \code{cores}
-#'   controls max concurrent workers, \code{gpus} controls GPU assignment.
+#' @param method character — one or more of:
+#'   \describe{
+#'     \item{\code{"point"}}{Fast point estimate. No retraining or resampling.
+#'       \code{reftable} and \code{param.cols} not required.}
+#'     \item{\code{"bootstrap"}}{Locally-weighted residual bootstrap. Captures
+#'       prediction uncertainty due to simulator stochasticity and emulator
+#'       imprecision. Computes residuals (true - predicted) on validation data,
+#'       weights them by proximity of their summary statistics to observed data
+#'       via an Epanechnikov kernel, and samples \code{n_boot} residuals to add
+#'       to the point estimate. Fast (single forward pass, no retraining).
+#'       Note: this is NOT a Bayesian posterior — it is a frequentist prediction
+#'       interval centered on the point estimate.}
+#'     \item{\code{"ABC_NN_regression"}}{ABC with neural network regression
+#'       adjustment (Beaumont et al. 2002). Produces a proper Bayesian posterior
+#'       that incorporates both prior uncertainty and simulator stochasticity.
+#'       Accepts reftable points within \code{tolerance} of the observed data
+#'       (by Euclidean distance in standardized stat space), then adjusts
+#'       accepted parameter values using the NN as a local regression correction:
+#'       \eqn{\theta_{adj} = \theta_i - (g(S_i) - g(S_{obs}))}, where \eqn{g}
+#'       is the trained neural network. Fast (single forward pass, no retraining).}
+#'   }
+#' @param n_boot integer — number of residual bootstrap samples (default 1000).
+#' @param tolerance numeric — ABC acceptance tolerance as a quantile of pairwise
+#'   distances (default 0.01, i.e. closest 1\% of reftable). Only used for
+#'   \code{"ABC_NN_regression"}.
+#' @param pls logical — project summary statistics into PLS space before
+#'   computing distances for \code{"bootstrap"} and \code{"ABC_NN_regression"}
+#'   (default FALSE). Recommended when the number of statistics exceeds ~30.
+#'   The NN prediction still uses the full feature space; only the distance
+#'   computation (acceptance/kernel weighting) uses the PLS projection.
+#' @param n.pls integer — number of PLS components (default 20). Should be
+#'   at least equal to the number of free parameters.
 #' @param seed integer — random seed (default 42).
 #' @param verbose logical — print progress (default TRUE).
 #'
@@ -1704,20 +1705,27 @@ load.tune.result <- function(path) {
 #' \describe{
 #'   \item{point_estimate}{named numeric vector — inverse-transformed point
 #'     prediction from best model}
-#'   \item{conformal}{matrix of posterior samples (n_samples x n_params), or NULL}
-#'   \item{bootstrap}{matrix of posterior samples (n_boot x n_params), or NULL}
-#'   \item{mc_dropout}{matrix of posterior samples (n_mc x n_params), or NULL}
+#'   \item{bootstrap}{matrix of bootstrap samples (n_boot x n_params), or NULL.
+#'     Locally-weighted residual bootstrap — prediction intervals, not a
+#'     Bayesian posterior.}
+#'   \item{abc}{matrix of regression-adjusted ABC posterior samples
+#'     (n_accepted x n_params), or NULL. Proper Bayesian posterior.}
+#'   \item{prior}{matrix of prior samples from reftable, or NULL}
 #'   \item{param_names}{character vector of parameter column names}
 #' }
-#' Use \code{summary()} to get a table of median, mean, and quantiles.
+#' Use \code{summary()} for posterior quantiles, \code{plot()} for density
+#' curves, \code{density()} for density objects.
+#'
+#' @references
+#' Beaumont, M. A., Zhang, W., & Balding, D. J. (2002). Approximate Bayesian
+#' computation in population genetics. Genetics, 162(4), 2025-2035.
 #'
 #' @export
 nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL,
                        type = NULL, sfs.dims = NULL,
-                       method = c("conformal", "bootstrap", "mc_dropout", "point"),
-                       n_boot = 20, n_ensemble = 1, cal.frac = 0.1,
-                       n_mc = 1000L, mc_dropout_rate = NULL,
-                       max_epochs = 1000, cores = 1, gpus = 0, greedy = TRUE,
+                       method = c("point", "bootstrap", "ABC_NN_regression"),
+                       n_boot = 1000L, tolerance = 0.01,
+                       pls = FALSE, n.pls = 20L,
                        seed = 42, verbose = TRUE) {
 
   # --- Detect backend ---
@@ -1733,7 +1741,7 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
       stop("nn.predict() with torch backend requires the 'torch' R package.")
   }
 
-  method <- match.arg(method, c("conformal", "bootstrap", "mc_dropout", "point"),
+  method <- match.arg(method, c("point", "bootstrap", "ABC_NN_regression"),
                       several.ok = TRUE)
   point_only <- length(method) == 1L && method == "point"
 
@@ -1752,9 +1760,9 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
   if (is.null(sfs.dims)) sfs.dims <- tune.result$sfs.dims
   exclude.cols <- tune.result$exclude.cols
 
-  needs_reftable <- any(c("conformal", "bootstrap") %in% method)
+  needs_reftable <- any(c("bootstrap", "ABC_NN_regression") %in% method)
   if (needs_reftable && is.null(reftable))
-    stop("reftable is required for conformal and bootstrap methods")
+    stop("reftable is required for bootstrap and ABC_NN_regression methods")
   if (!point_only && !is.null(reftable) && is.null(param.cols))
     stop("param.cols is required when reftable is provided")
 
@@ -1771,19 +1779,18 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
   }
 
   # --- Header ---
-  method_labels <- c(conformal = "Conformal", bootstrap = "Bootstrap",
-                     mc_dropout = "MC Dropout", point = "Point")
+  method_labels <- c(point = "Point", bootstrap = "Residual Bootstrap",
+                     ABC_NN_regression = "ABC-NN Regression")
   method_str <- paste(method_labels[method], collapse = " + ")
 
-  if (verbose) {
+  if (verbose)
     cat(sprintf("PipeMaster:: nn.predict \u2014 %s\n", method_str))
-  }
 
   # --- Prepare observed data ---
   X_obs <- .prep.observed(observed, data, type, sfs.dims)
 
   if (verbose) {
-    n_obs_feat <- if (type == "sumstat") length(observed) else length(observed)
+    n_obs_feat <- length(observed)
     cat(sprintf("PipeMaster:: Observed: %d %s\n", n_obs_feat,
                 if (type == "sumstat") "summary statistics" else "SFS bins"))
   }
@@ -1814,9 +1821,8 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
   if (point_only) {
     result <- list(
       point_estimate = point_est,
-      conformal      = NULL,
       bootstrap      = NULL,
-      mc_dropout     = NULL,
+      abc            = NULL,
       prior          = NULL,
       param_names    = param_names
     )
@@ -1825,139 +1831,29 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
   }
 
   # --- Uncertainty quantification ---
-  conf_samples   <- NULL
-  boot_samples   <- NULL
-  mcdrop_samples <- NULL
-  quant_matrix   <- NULL
-  do_conformal  <- "conformal" %in% method
-  do_bootstrap  <- "bootstrap" %in% method
-  do_mc_dropout <- "mc_dropout" %in% method
+  boot_samples <- NULL
+  abc_samples  <- NULL
+  do_bootstrap <- "bootstrap" %in% method
+  do_abc       <- "ABC_NN_regression" %in% method
 
-  # --- MC Dropout ---
-  if (do_mc_dropout) {
-    mc_hp <- best_hp
-
-    # Override dropout rate if requested
-    needs_retrain <- FALSE
-    if (!is.null(mc_dropout_rate)) {
-      mc_hp <- best_hp
-      mc_hp$dropout     <- mc_dropout_rate
-      mc_hp$use_dropout <- TRUE
-      needs_retrain <- (mc_dropout_rate != best_hp$dropout)
-    }
-
-    # Check for dropout
-    has_dropout <- (isTRUE(mc_hp$use_dropout) && mc_hp$dropout > 0) ||
-                   (!is.null(mc_hp$dropout) && mc_hp$dropout > 0)
-    if (!has_dropout)
-      warning("MC Dropout requested but dropout rate is 0. ",
-              "Predictions will have no stochastic variation. ",
-              "Set mc_dropout_rate (e.g. 0.1) to override.", call. = FALSE)
-
-    if (verbose)
-      cat(sprintf("\nPipeMaster:: MC Dropout (%d forward passes, dropout=%.3f%s)...\n",
-                  n_mc, mc_hp$dropout,
-                  if (needs_retrain) ", retraining" else ""))
-
-    n_params_mc <- length(param_names)
-    mc_raw <- matrix(NA_real_, nrow = as.integer(n_mc), ncol = n_params_mc)
-
-    if (nn_backend == "torch") {
-      # Torch MC Dropout: use .torch.predict.mc() which keeps dropout active
-      if (needs_retrain) {
-        mc_model <- .build.nn.torch(mc_hp, data, type, mc_dropout = TRUE)
-        torch::torch_manual_seed(as.integer(seed + 555L))
-        .torch.train.model(mc_model, data$X_train, data$Y_train,
-                           data$X_val, data$Y_val, hp = mc_hp, type = type,
-                           epochs = as.integer(max_epochs), patience = 30L)
-      } else {
-        mc_model <- best_model
-      }
-      mc_preds <- .torch.predict.mc(mc_model, X_obs, n_passes = n_mc)
-      for (i in seq_len(n_mc))
-        mc_raw[i, ] <- as.numeric(.inv.transform(
-          matrix(mc_preds[1, , i], nrow = 1), data$target_mu, data$target_sd))
-    } else {
-      # Keras MC Dropout: Lambda-based always-on dropout
-      tf <- tensorflow::tf
-      mc_model <- .build.nn(mc_hp, data, type, sfs.dims, mc_dropout = TRUE)
-
-      if (needs_retrain) {
-        tensorflow::tf$random$set_seed(as.integer(seed + 555L))
-        bs <- as.integer(mc_hp$batch_size)
-        if (verbose) cat("PipeMaster:: Retraining model with new dropout rate...\n")
-        mc_model |> keras::fit(
-          x = data$X_train, y = data$Y_train,
-          validation_data = list(data$X_val, data$Y_val),
-          epochs     = as.integer(max_epochs),
-          batch_size = bs,
-          callbacks  = list(
-            keras::callback_early_stopping(monitor = "val_loss", patience = 30L,
-                                           restore_best_weights = TRUE),
-            keras::callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 15L,
-                                                 factor = 0.5, min_lr = 1e-6, verbose = 0L)
-          ),
-          verbose = 0L
-        )
-        if (verbose) cat("PipeMaster:: Retrain done. Running forward passes...\n")
-      } else {
-        mc_model$set_weights(best_model$get_weights())
-      }
-
-      for (i in seq_len(n_mc)) {
-        pred_z <- predict(mc_model, X_obs, verbose = 0L)
-        mc_raw[i, ] <- as.numeric(.inv.transform(pred_z, data$target_mu, data$target_sd))
-      }
-    }
-
-    rm(mc_model); gc()
-
-    mcdrop_samples <- mc_raw
-    colnames(mcdrop_samples) <- param_names
-
-    if (verbose)
-      cat(sprintf("PipeMaster:: MC Dropout done — %d samples\n", n_mc))
+  if (do_bootstrap) {
+    boot_samples <- .run.residual.bootstrap(
+      best_model, data, reftable, param.cols, observed,
+      type, sfs.dims, n_boot, point_est, seed, verbose,
+      exclude.cols = exclude.cols, nn_backend = nn_backend,
+      pls = pls, n.pls = n.pls
+    )
+    colnames(boot_samples) <- param_names
   }
 
-  if (cores > 1 && (do_conformal || do_bootstrap)) {
-    # Unified parallel dispatch via priority pool
-    pool_out <- .run.parallel.pool(
-      reftable, param.cols, observed, best_hp, type, sfs.dims,
-      do_conformal, do_bootstrap, n_ensemble, n_boot,
-      cal.frac, max_epochs, cores, gpus, greedy, seed, verbose,
-      point_est = point_est, exclude.cols = exclude.cols,
-      nn_backend = nn_backend
+  if (do_abc) {
+    abc_samples <- .run.abc.nn.regression(
+      best_model, data, reftable, param.cols, observed,
+      type, sfs.dims, tolerance, point_est, verbose,
+      exclude.cols = exclude.cols, nn_backend = nn_backend,
+      pls = pls, n.pls = n.pls
     )
-    if (do_conformal && !is.null(pool_out$conformal)) {
-      conf_samples <- pool_out$conformal
-      colnames(conf_samples) <- param_names
-    }
-    if (do_bootstrap && !is.null(pool_out$bootstrap)) {
-      boot_samples <- pool_out$bootstrap
-      colnames(boot_samples) <- param_names
-    }
-  } else {
-    # Sequential fallback (cores <= 1)
-    if (do_conformal) {
-      conf_fn <- if (nn_backend == "torch") .run.conformal.sequential.torch
-                 else .run.conformal.sequential
-      conf_samples <- conf_fn(
-        reftable, param.cols, observed, best_hp, type, sfs.dims,
-        n_ensemble, cal.frac, max_epochs, seed, verbose,
-        point_est = point_est, exclude.cols = exclude.cols
-      )
-      colnames(conf_samples) <- param_names
-    }
-    if (do_bootstrap) {
-      boot_fn <- if (nn_backend == "torch") .run.bootstrap.sequential.torch
-                 else .run.bootstrap.sequential
-      boot_samples <- boot_fn(
-        reftable, param.cols, observed, best_hp, type, sfs.dims,
-        n_boot, max_epochs, seed, verbose,
-        exclude.cols = exclude.cols
-      )
-      colnames(boot_samples) <- param_names
-    }
+    colnames(abc_samples) <- param_names
   }
 
   # Clip to prior range — use reftable parameter columns as bounds
@@ -1967,18 +1863,13 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
       if (p %in% colnames(reftable)) {
         lo <- min(reftable[[p]])
         hi <- max(reftable[[p]])
-        if (!is.null(conf_samples))   conf_samples[, j]   <- pmax(lo, pmin(hi, conf_samples[, j]))
-        if (!is.null(boot_samples))   boot_samples[, j]   <- pmax(lo, pmin(hi, boot_samples[, j]))
-        if (!is.null(mcdrop_samples)) mcdrop_samples[, j] <- pmax(lo, pmin(hi, mcdrop_samples[, j]))
-        if (!is.null(quant_matrix))   quant_matrix[, j]   <- pmax(lo, pmin(hi, quant_matrix[, j]))
+        if (!is.null(boot_samples)) boot_samples[, j] <- pmax(lo, pmin(hi, boot_samples[, j]))
+        if (!is.null(abc_samples))  abc_samples[, j]  <- pmax(lo, pmin(hi, abc_samples[, j]))
       }
     }
   } else {
-    # Fallback: at minimum clip negatives
-    if (!is.null(conf_samples))   conf_samples[conf_samples < 0]     <- 0
-    if (!is.null(boot_samples))   boot_samples[boot_samples < 0]     <- 0
-    if (!is.null(mcdrop_samples)) mcdrop_samples[mcdrop_samples < 0] <- 0
-    if (!is.null(quant_matrix))   quant_matrix[quant_matrix < 0]     <- 0
+    if (!is.null(boot_samples)) boot_samples[boot_samples < 0] <- 0
+    if (!is.null(abc_samples))  abc_samples[abc_samples < 0]   <- 0
   }
 
   if (verbose) cat("PipeMaster:: Done.\n")
@@ -1994,9 +1885,8 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
 
   result <- list(
     point_estimate = point_est,
-    conformal      = conf_samples,
     bootstrap      = boot_samples,
-    mc_dropout     = mcdrop_samples,
+    abc            = abc_samples,
     prior          = prior_samples,
     param_names    = param_names
   )
@@ -2027,18 +1917,10 @@ summary.nn.posterior <- function(object, probs = c(0.025, 0.25, 0.5, 0.75, 0.975
   }
 
   out <- list(point_estimate = object$point_estimate)
-  if (!is.null(object$conformal))
-    out$conformal <- .summarize(object$conformal)
   if (!is.null(object$bootstrap))
     out$bootstrap <- .summarize(object$bootstrap)
-  if (!is.null(object$mc_dropout))
-    out$mc_dropout <- .summarize(object$mc_dropout)
-  if (!is.null(object$gan))
-    out$gan <- .summarize(object$gan)
-  if (!is.null(object$abc_rejection)) {
-    out$abc_rejection <- .summarize(object$abc_rejection)
-    out$abc_distance  <- object$abc_distance
-  }
+  if (!is.null(object$abc))
+    out$abc <- .summarize(object$abc)
   class(out) <- "summary.nn.posterior"
   out
 }
@@ -2047,26 +1929,13 @@ summary.nn.posterior <- function(object, probs = c(0.025, 0.25, 0.5, 0.75, 0.975
 print.summary.nn.posterior <- function(x, digits = 2, ...) {
   cat("Point estimate:\n")
   print(round(x$point_estimate, digits))
-  if (!is.null(x$conformal)) {
-    cat("\nConformal posterior:\n")
-    print(round(x$conformal, digits))
-  }
   if (!is.null(x$bootstrap)) {
-    cat("\nBootstrap posterior:\n")
+    cat("\nResidual bootstrap (prediction intervals):\n")
     print(round(x$bootstrap, digits))
   }
-  if (!is.null(x$mc_dropout)) {
-    cat("\nMC Dropout posterior:\n")
-    print(round(x$mc_dropout, digits))
-  }
-  if (!is.null(x$gan)) {
-    cat("\nGAN posterior:\n")
-    print(round(x$gan, digits))
-  }
-  if (!is.null(x$abc_rejection)) {
-    dist_label <- if (!is.null(x$abc_distance)) paste0(" (distance=", x$abc_distance, ")") else ""
-    cat(sprintf("\nABC rejection posterior%s:\n", dist_label))
-    print(round(x$abc_rejection, digits))
+  if (!is.null(x$abc)) {
+    cat("\nABC-NN regression posterior:\n")
+    print(round(x$abc, digits))
   }
   invisible(x)
 }
@@ -2074,14 +1943,11 @@ print.summary.nn.posterior <- function(x, digits = 2, ...) {
 #' @export
 print.nn.posterior <- function(x, ...) {
   methods <- c()
-  if (!is.null(x$conformal))      methods <- c(methods, sprintf("conformal (%d samples)", nrow(x$conformal)))
-  if (!is.null(x$bootstrap))      methods <- c(methods, sprintf("bootstrap (%d samples)", nrow(x$bootstrap)))
-  if (!is.null(x$mc_dropout))     methods <- c(methods, sprintf("mc_dropout (%d samples)", nrow(x$mc_dropout)))
-  if (!is.null(x$gan))            methods <- c(methods, sprintf("gan (%d samples)", nrow(x$gan)))
-  if (!is.null(x$abc_rejection)) {
-    dist_label <- if (!is.null(x$abc_distance)) paste0(", distance=", x$abc_distance) else ""
-    methods <- c(methods, sprintf("abc_rejection (%d samples%s)", nrow(x$abc_rejection), dist_label))
-  }
+  if (!is.null(x$bootstrap))
+    methods <- c(methods, sprintf("bootstrap (%d samples)", nrow(x$bootstrap)))
+  if (!is.null(x$abc))
+    methods <- c(methods, sprintf("ABC-NN regression (%d samples)", nrow(x$abc)))
+  if (length(methods) == 0) methods <- "point only"
   cat(sprintf("nn.posterior object — %s\n", paste(methods, collapse = " + ")))
   cat("Point estimate:\n")
   print(round(x$point_estimate, 2))
@@ -2092,7 +1958,7 @@ print.nn.posterior <- function(x, ...) {
 #' @export
 density.nn.posterior <- function(x, method = NULL, ...) {
   param_names <- x$param_names
-  sample_methods <- c("conformal", "bootstrap", "mc_dropout", "gan", "abc_rejection")
+  sample_methods <- c("bootstrap", "abc")
 
   if (is.null(method)) {
     for (m in sample_methods) {
@@ -2120,7 +1986,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   param_names <- x$param_names
   n_params <- length(param_names)
 
-  all_methods <- c("prior", "conformal", "bootstrap", "mc_dropout", "gan", "abc_rejection")
+  all_methods <- c("prior", "bootstrap", "abc")
 
   # Pick methods
   if (is.null(method)) {
@@ -2139,13 +2005,14 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     stop("No posterior samples available.")
 
   # Colors for methods
-  method_cols <- c(prior = "grey50", conformal = "red", bootstrap = "blue",
-                   mc_dropout = "darkgreen", gan = "orange",
-                   abc_rejection = "steelblue")
+  method_cols <- c(prior = "grey50", bootstrap = "blue", abc = "steelblue")
   if (length(col) == 1 && length(post_methods) == 1)
     method_cols[post_methods] <- col
 
-  sample_methods <- intersect(methods, c("prior", "conformal", "bootstrap", "mc_dropout", "gan", "abc_rejection"))
+  method_labels <- c(prior = "Prior", bootstrap = "Residual bootstrap",
+                     abc = "ABC-NN regression")
+
+  sample_methods <- intersect(methods, all_methods)
 
   par(mfrow = c(1, n_params))
   for (j in seq_len(n_params)) {
@@ -2202,7 +2069,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     legend_lty    <- c()
     for (m in sample_methods) {
       if (!is.null(densities[[m]])) {
-        legend_labels <- c(legend_labels, m)
+        legend_labels <- c(legend_labels, method_labels[m])
         legend_cols   <- c(legend_cols, method_cols[m])
         legend_lty    <- c(legend_lty, if (m == "prior") 3 else 1)
       }
@@ -2447,6 +2314,241 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 }
 
 # ============================================================================
+# Internal: locally-weighted residual bootstrap
+#
+# Captures prediction uncertainty due to simulator stochasticity and emulator
+# imprecision. Uses the already-trained model (no retraining):
+# 1. Predict theta_hat_i = g(S_i) for all validation points
+# 2. Compute residuals r_i = theta_i - theta_hat_i (original scale)
+# 3. Compute distances d_i = ||S_i - S_obs|| in standardized stat space
+# 4. Weight residuals via Epanechnikov kernel: K(u) = 3/4(1-u^2) for |u|<=1
+#    where u = d_i / bandwidth, bandwidth = quantile(distances, 0.1)
+# 5. Sample n_boot residuals with replacement, weighted by kernel
+# 6. Return point_est + sampled residuals
+# ============================================================================
+
+.run.residual.bootstrap <- function(best_model, data, reftable, param.cols,
+                                    observed, type, sfs.dims, n_boot,
+                                    point_est, seed, verbose,
+                                    exclude.cols = NULL, nn_backend = "keras",
+                                    pls = FALSE, n.pls = 20L) {
+
+  nuisance    <- c("mean.rate", "sd.rate")
+  target_cols <- setdiff(param.cols, nuisance)
+  n_params    <- length(target_cols)
+
+  if (verbose)
+    cat(sprintf("\nPipeMaster:: Residual bootstrap (%d samples%s)...\n",
+                n_boot, if (pls) sprintf(", PLS %d", n.pls) else ""))
+
+  # Use validation set from tune.result$data
+  X_val <- data$X_val
+  Y_val <- data$Y_val  # z-scored log-targets
+
+  # Predict on validation set
+  if (nn_backend == "torch") {
+    Y_pred_z <- .torch.predict(best_model, X_val)
+  } else {
+    Y_pred_z <- predict(best_model, X_val, verbose = 0L)
+  }
+
+  # Inverse-transform both to original scale
+  Y_val_orig  <- .inv.transform(Y_val, data$target_mu, data$target_sd)
+  Y_pred_orig <- .inv.transform(Y_pred_z, data$target_mu, data$target_sd)
+
+  # Residuals in original parameter scale: true - predicted
+  residuals <- Y_val_orig - Y_pred_orig  # n_val x n_params
+
+  # Compute distances in standardized feature space
+  # X_val is already z-scored, so compute obs in same space
+  X_obs_z <- .prep.observed(observed, data, type, sfs.dims)
+
+  # Flatten for distance computation
+  if (type == "sumstat") {
+    X_val_flat <- X_val
+    X_obs_flat <- matrix(X_obs_z, nrow = 1)
+  } else {
+    X_val_flat <- matrix(X_val, nrow = nrow(X_val))
+    X_obs_flat <- matrix(X_obs_z, nrow = 1)
+  }
+
+  # PLS projection for distance computation (NN prediction uses full space)
+  if (pls) {
+    # Fit PLS on validation features → parameter residuals
+    pls_fit <- pls.fit(X_val_flat, Y_val_orig - Y_pred_orig, n.comp = n.pls)
+    X_val_flat <- pls.project(pls_fit, X_val_flat)
+    X_obs_flat <- pls.project(pls_fit, X_obs_flat)
+    if (verbose)
+      cat(sprintf("PipeMaster:: PLS: %d stats → %d components\n",
+                  ncol(X_val), ncol(X_val_flat)))
+  }
+
+  # Euclidean distances from each validation point to observed
+  diffs <- sweep(X_val_flat, 2, X_obs_flat[1, ])
+  distances <- sqrt(rowSums(diffs^2))
+
+  # Epanechnikov kernel with adaptive bandwidth (10th percentile of distances)
+  bandwidth <- quantile(distances, 0.10)
+  if (bandwidth < .Machine$double.eps) bandwidth <- quantile(distances, 0.25)
+
+  u <- distances / bandwidth
+  weights <- ifelse(abs(u) <= 1, 0.75 * (1 - u^2), 0)
+
+  # Fallback: if too few non-zero weights, use Gaussian kernel
+  n_nonzero <- sum(weights > 0)
+  if (n_nonzero < 50) {
+    if (verbose)
+      cat(sprintf("PipeMaster:: Epanechnikov kernel gave %d non-zero weights, falling back to Gaussian\n",
+                  n_nonzero))
+    sigma_d <- median(distances)
+    weights <- exp(-0.5 * (distances / sigma_d)^2)
+  }
+
+  # Normalize weights
+  weights <- weights / sum(weights)
+
+  if (verbose) {
+    eff_n <- 1 / sum(weights^2)
+    cat(sprintf("PipeMaster:: Effective sample size: %.0f (of %d validation points)\n",
+                eff_n, length(weights)))
+  }
+
+  # Sample residuals with replacement, weighted by proximity
+  set.seed(seed)
+  idx <- sample(length(weights), size = n_boot, replace = TRUE, prob = weights)
+
+  # Bootstrap samples: point estimate + sampled residual
+  boot_matrix <- matrix(NA, nrow = n_boot, ncol = n_params)
+  for (j in seq_len(n_params))
+    boot_matrix[, j] <- point_est[j] + residuals[idx, j]
+
+  if (verbose)
+    cat(sprintf("PipeMaster:: Residual bootstrap done — %d samples\n", n_boot))
+
+  boot_matrix
+}
+
+# ============================================================================
+# Internal: ABC with NN regression adjustment (Beaumont et al. 2002)
+#
+# Produces a proper Bayesian posterior incorporating both prior uncertainty
+# and simulator stochasticity:
+# 1. Compute distances ||S_i - S_obs|| in standardized stat space for all
+#    reftable rows
+# 2. Accept the closest `tolerance` fraction (e.g. 1% = 1000 from 100K)
+# 3. Predict theta_hat_i = g(S_i) for accepted rows and g(S_obs) for observed
+# 4. Regression adjustment: theta_adj_i = theta_i - (g(S_i) - g(S_obs))
+#    This corrects each accepted theta toward what the NN predicts the
+#    difference should be, sharpening the ABC posterior.
+# ============================================================================
+
+.run.abc.nn.regression <- function(best_model, data, reftable, param.cols,
+                                   observed, type, sfs.dims, tolerance,
+                                   point_est, verbose,
+                                   exclude.cols = NULL, nn_backend = "keras",
+                                   pls = FALSE, n.pls = 20L) {
+
+  nuisance    <- c("mean.rate", "sd.rate")
+  target_cols <- setdiff(param.cols, nuisance)
+  n_params    <- length(target_cols)
+  n_total     <- nrow(reftable)
+
+  if (verbose)
+    cat(sprintf("\nPipeMaster:: ABC-NN regression (tolerance=%.3f, n=%d%s)...\n",
+                tolerance, n_total, if (pls) sprintf(", PLS %d", n.pls) else ""))
+
+  # Prepare all reftable features in the same space as the model
+  all_rows   <- seq_len(n_total)
+  full_split <- .prep.reftable.split(reftable, param.cols, all_rows, type, sfs.dims,
+                                      exclude.cols = exclude.cols)
+  features_all <- full_split$features   # raw features
+  targets_all  <- full_split$targets    # raw target params (raw scale)
+
+  # Z-score features using the model's training normalization
+  feat_mu <- data$feat_mu
+  feat_sd <- data$feat_sd
+
+  X_all_z <- t((t(features_all) - feat_mu) / feat_sd)
+
+  # Prepare observed in same z-scored space (flattened)
+  X_obs_z <- .prep.observed(observed, data, type, sfs.dims)
+
+  # Flatten for distance computation
+  if (type == "sumstat") {
+    X_flat <- X_all_z
+    obs_flat <- matrix(X_obs_z, nrow = 1)
+  } else {
+    X_flat <- matrix(X_all_z, nrow = n_total)
+    obs_flat <- matrix(X_obs_z, nrow = 1)
+  }
+
+  # PLS projection for distance computation (NN prediction uses full space)
+  if (pls) {
+    pls_fit <- pls.fit(X_flat, targets_all, n.comp = n.pls)
+    X_flat_pls <- pls.project(pls_fit, X_flat)
+    obs_flat_pls <- pls.project(pls_fit, obs_flat)
+    if (verbose)
+      cat(sprintf("PipeMaster:: PLS: %d stats → %d components\n",
+                  ncol(X_flat), ncol(X_flat_pls)))
+  } else {
+    X_flat_pls <- X_flat
+    obs_flat_pls <- obs_flat
+  }
+
+  # Euclidean distances (in PLS space if enabled, full space otherwise)
+  diffs <- sweep(X_flat_pls, 2, obs_flat_pls[1, ])
+  distances <- sqrt(rowSums(diffs^2))
+
+  # Accept closest tolerance fraction
+  n_accept <- max(10L, floor(tolerance * n_total))
+  threshold <- sort(distances, partial = n_accept)[n_accept]
+  accepted <- which(distances <= threshold)
+  if (length(accepted) > n_accept) accepted <- accepted[order(distances[accepted])][1:n_accept]
+
+  if (verbose)
+    cat(sprintf("PipeMaster:: Accepted %d/%d (threshold distance=%.3f)\n",
+                length(accepted), n_total, threshold))
+
+  # Get true parameter values for accepted rows (raw scale from reftable)
+  theta_accepted <- targets_all[accepted, , drop = FALSE]
+
+  # Prepare accepted features for NN prediction — reshape for CNN if needed
+  X_acc_z <- X_all_z[accepted, , drop = FALSE]
+  if (type == "sfs1d") {
+    dim(X_acc_z) <- c(nrow(X_acc_z), ncol(X_acc_z), 1L)
+  } else if (type == "sfs2d") {
+    X_acc_z <- array(X_acc_z, dim = c(nrow(X_acc_z), sfs.dims[1], sfs.dims[2], 1L))
+  }
+
+  # Predict theta_hat for accepted rows and for observed
+  if (nn_backend == "torch") {
+    Y_acc_pred_z <- .torch.predict(best_model, X_acc_z)
+    Y_obs_pred_z <- .torch.predict(best_model, X_obs_z)
+  } else {
+    Y_acc_pred_z <- predict(best_model, X_acc_z, verbose = 0L)
+    Y_obs_pred_z <- predict(best_model, X_obs_z, verbose = 0L)
+  }
+
+  # Inverse-transform predictions to original scale
+  theta_hat_acc <- .inv.transform(Y_acc_pred_z, data$target_mu, data$target_sd)
+  theta_hat_obs <- as.numeric(.inv.transform(Y_obs_pred_z, data$target_mu, data$target_sd))
+
+  # targets_all from .prep.reftable.split() is already in original scale
+  theta_true_acc <- theta_accepted
+
+  # Regression adjustment: theta_adj = theta_true - (theta_hat_acc - theta_hat_obs)
+  abc_matrix <- matrix(NA, nrow = length(accepted), ncol = n_params)
+  for (j in seq_len(n_params))
+    abc_matrix[, j] <- theta_true_acc[, j] - (theta_hat_acc[, j] - theta_hat_obs[j])
+
+  if (verbose)
+    cat(sprintf("PipeMaster:: ABC-NN regression done — %d posterior samples\n",
+                nrow(abc_matrix)))
+
+  abc_matrix
+}
+
+# ============================================================================
 # Internal: write standalone model-builder R script for parallel workers
 # ============================================================================
 
@@ -2615,158 +2717,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 }
 
 # ============================================================================
-# Internal: write standalone conformal worker Rscript
-# ============================================================================
-
-.write.conformal.worker.script <- function(filepath) {
-  lines <- c(
-    '#!/usr/bin/env Rscript',
-    'args <- commandArgs(trailingOnly = TRUE)',
-    'task_id <- as.integer(args[1])',
-    '',
-    'load("shared_data.RData")',
-    '',
-    '# Threading env (GPU env set externally by pool launcher)',
-    'n_threads <- as.character(threads_per_worker)',
-    'Sys.setenv(TF_NUM_INTRAOP_THREADS = n_threads,',
-    '           TF_NUM_INTEROP_THREADS = "1",',
-    '           OMP_NUM_THREADS = n_threads)',
-    '',
-    'out_file <- file.path("results", sprintf("conf_%04d.csv", task_id))',
-    'if (file.exists(out_file)) { cat("skip\\n"); q("no") }',
-    '',
-    'suppressPackageStartupMessages({',
-    '  library(keras)',
-    '  library(tensorflow)',
-    '})',
-    'source("_build_model.R")',
-    '',
-    '# Split into train / calibration',
-    'n_cal   <- floor(cal_frac * n_rows)',
-    'n_train <- n_rows - n_cal',
-    '',
-    'set.seed(seed + task_id * 100)',
-    'idx     <- sample(n_rows)',
-    'tr_idx  <- idx[1:n_train]',
-    'cal_idx <- idx[(n_train + 1):n_rows]',
-    '',
-    'feat_tr    <- features_all[tr_idx, ]',
-    'targ_tr    <- targets_all[tr_idx, , drop = FALSE]',
-    'feat_cal   <- features_all[cal_idx, ]',
-    'params_cal <- targets_all[cal_idx, , drop = FALSE]',
-    '',
-    '# Z-score features using train stats',
-    'f_mu  <- colMeans(feat_tr)',
-    'f_sd  <- apply(feat_tr, 2, sd); f_sd[f_sd == 0] <- 1',
-    'X_tr  <- t((t(feat_tr)  - f_mu) / f_sd)',
-    'X_cal <- t((t(feat_cal) - f_mu) / f_sd)',
-    '',
-    '# Log + Z-score targets using train stats',
-    'Y_tr_log <- log(targ_tr)',
-    't_mu <- colMeans(Y_tr_log)',
-    't_sd <- apply(Y_tr_log, 2, sd); t_sd[t_sd == 0] <- 1',
-    'Y_tr <- t((t(Y_tr_log) - t_mu) / t_sd)',
-    '',
-    '# Reshape for CNN if needed',
-    'if (type == "sfs1d") {',
-    '  n_bins <- ncol(X_tr)',
-    '  dim(X_tr)  <- c(nrow(X_tr), n_bins, 1L)',
-    '  dim(X_cal) <- c(nrow(X_cal), n_bins, 1L)',
-    '} else if (type == "sfs2d") {',
-    '  X_tr  <- array(X_tr,  dim = c(nrow(X_tr),  sfs.dims[1], sfs.dims[2], 1L))',
-    '  X_cal <- array(X_cal, dim = c(nrow(X_cal), sfs.dims[1], sfs.dims[2], 1L))',
-    '}',
-    '',
-    '# Split train into train/val for early stopping',
-    'n_tr_rows <- nrow(X_tr)',
-    'n_va <- max(1L, floor(0.1 * n_tr_rows))',
-    'va_rows <- seq_len(n_va)',
-    'tr_rows <- seq(n_va + 1L, n_tr_rows)',
-    '',
-    'if (type == "sumstat") {',
-    '  X_va_s <- X_tr[va_rows, , drop = FALSE]',
-    '  X_tr_s <- X_tr[tr_rows, , drop = FALSE]',
-    '} else if (type == "sfs1d") {',
-    '  X_va_s <- X_tr[va_rows, , , drop = FALSE]',
-    '  X_tr_s <- X_tr[tr_rows, , , drop = FALSE]',
-    '} else {',
-    '  X_va_s <- X_tr[va_rows, , , , drop = FALSE]',
-    '  X_tr_s <- X_tr[tr_rows, , , , drop = FALSE]',
-    '}',
-    'Y_va_s <- Y_tr[va_rows, , drop = FALSE]',
-    'Y_tr_s <- Y_tr[tr_rows, , drop = FALSE]',
-    '',
-    'ens_data <- list(',
-    '  X_train = X_tr_s, X_val = X_va_s,',
-    '  Y_train = Y_tr_s, Y_val = Y_va_s,',
-    '  n_features = ncol(feat_tr),',
-    '  n_bins = if (type != "sumstat") ncol(feat_tr) else NULL,',
-    '  feat_mu = f_mu, feat_sd = f_sd,',
-    '  target_mu = t_mu, target_sd = t_sd',
-    ')',
-    '',
-    'tf$random$set_seed(as.integer(seed + task_id * 1000))',
-    'model <- build_nn(best_hp, ens_data, type, sfs.dims)',
-    '',
-    'bs <- as.integer(best_hp$batch_size)',
-    'model |> fit(',
-    '  x = ens_data$X_train, y = ens_data$Y_train,',
-    '  validation_data = list(ens_data$X_val, ens_data$Y_val),',
-    '  epochs = as.integer(max_epochs), batch_size = bs,',
-    '  callbacks = list(',
-    '    callback_early_stopping(monitor = "val_loss", patience = 30L,',
-    '                            restore_best_weights = TRUE),',
-    '    callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 15L,',
-    '                                  factor = 0.5, min_lr = 1e-6, verbose = 0L)',
-    '  ),',
-    '  verbose = 0L',
-    ')',
-    '',
-    '# Predict on calibration set -> inverse transform',
-    'cal_pred_z <- predict(model, X_cal, verbose = 0L)',
-    'cal_pred   <- exp(t(t(cal_pred_z) * t_sd + t_mu))',
-    '',
-    '# Residuals: true params - predicted params',
-    'cal_resid <- params_cal - cal_pred',
-    '',
-    '# Center on best model point estimate (avoids multi-peaked posteriors)',
-    'if (!is.null(point_est)) {',
-    '  center <- point_est',
-    '} else {',
-    '  if (type == "sumstat") {',
-    '    obs_aug <- c(observed, log1p(abs(observed)))',
-    '    X_obs <- matrix((obs_aug - f_mu) / f_sd, nrow = 1)',
-    '    X_obs[!is.finite(X_obs)] <- 0',
-    '  } else if (type == "sfs1d") {',
-    '    obs_z <- (log1p(observed) - f_mu) / f_sd',
-    '    obs_z[!is.finite(obs_z)] <- 0',
-    '    X_obs <- array(obs_z, dim = c(1L, length(obs_z), 1L))',
-    '  } else {',
-    '    obs_z <- (log1p(observed) - f_mu) / f_sd',
-    '    obs_z[!is.finite(obs_z)] <- 0',
-    '    X_obs <- array(obs_z, dim = c(1L, sfs.dims[1], sfs.dims[2], 1L))',
-    '  }',
-    '  obs_pred_z <- predict(model, X_obs, verbose = 0L)',
-    '  center <- as.numeric(exp(t(t(obs_pred_z) * t_sd + t_mu)))',
-    '}',
-    '',
-    '# Conformal samples: center[j] + cal_resid[, j]',
-    'conf_samples <- matrix(NA, nrow = nrow(cal_resid), ncol = n_params)',
-    'for (j in seq_len(n_params))',
-    '  conf_samples[, j] <- center[j] + cal_resid[, j]',
-    '',
-    'df <- as.data.frame(conf_samples)',
-    'colnames(df) <- target_cols',
-    'write.csv(df, out_file, row.names = FALSE)',
-    'cat(sprintf("  conf %d done (%d samples)\\n", task_id, nrow(conf_samples)))',
-    'k_clear_session()'
-  )
-
-  writeLines(lines, filepath)
-}
-
-# ============================================================================
-# Internal: prepare reftable split for conformal/bootstrap training
+# Internal: prepare reftable split (features + targets from reftable rows)
 # ============================================================================
 
 .prep.reftable.split <- function(reftable, param.cols, row_idx, type, sfs.dims,
@@ -2795,621 +2746,6 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   list(features = features, targets = targets)
 }
 
-# ============================================================================
-# Internal: conformal prediction (sequential ensemble, cores <= 1 fallback)
-# ============================================================================
-
-.run.conformal.sequential <- function(reftable, param.cols, observed, best_hp, type, sfs.dims,
-                           n_ensemble, cal.frac, max_epochs, seed, verbose,
-                           point_est = NULL, exclude.cols = NULL) {
-
-  nuisance <- c("mean.rate", "sd.rate")
-  target_cols <- setdiff(param.cols, nuisance)
-  n_params <- length(target_cols)
-
-  n_total <- nrow(reftable)
-  n_cal   <- floor(cal.frac * n_total)
-  n_train <- n_total - n_cal
-
-  if (verbose)
-    cat(sprintf("\nPipeMaster:: Conformal prediction (%d ensemble \u00d7 %d cal samples)...\n",
-                n_ensemble, n_cal))
-
-  all_conf_samples <- list()
-
-  for (ens_i in seq_len(n_ensemble)) {
-    # Split reftable into train / calibration
-    set.seed(seed + ens_i * 100)
-    idx <- sample(n_total)
-    tr_idx  <- idx[1:n_train]
-    cal_idx <- idx[(n_train + 1):n_total]
-
-    # Prepare train and calibration splits
-    tr_split  <- .prep.reftable.split(reftable, param.cols, tr_idx, type, sfs.dims,
-                                       exclude.cols = exclude.cols)
-    cal_split <- .prep.reftable.split(reftable, param.cols, cal_idx, type, sfs.dims,
-                                       exclude.cols = exclude.cols)
-
-    feat_tr  <- tr_split$features
-    targ_tr  <- tr_split$targets
-    feat_cal <- cal_split$features
-    params_cal <- cal_split$targets
-
-    # Z-score features using train stats
-    f_mu <- colMeans(feat_tr)
-    f_sd <- apply(feat_tr, 2, sd); f_sd[f_sd == 0] <- 1
-    X_tr  <- t((t(feat_tr)  - f_mu) / f_sd)
-    X_cal <- t((t(feat_cal) - f_mu) / f_sd)
-
-    # Log + Z-score targets using train stats
-    Y_tr_log <- log(targ_tr)
-    t_mu <- colMeans(Y_tr_log)
-    t_sd <- apply(Y_tr_log, 2, sd); t_sd[t_sd == 0] <- 1
-    Y_tr <- t((t(Y_tr_log) - t_mu) / t_sd)
-
-    # Reshape for CNN architectures
-    if (type == "sfs1d") {
-      n_bins <- ncol(X_tr)
-      dim(X_tr)  <- c(nrow(X_tr), n_bins, 1L)
-      dim(X_cal) <- c(nrow(X_cal), n_bins, 1L)
-    } else if (type == "sfs2d") {
-      X_tr  <- array(X_tr,  dim = c(nrow(X_tr),  sfs.dims[1], sfs.dims[2], 1L))
-      X_cal <- array(X_cal, dim = c(nrow(X_cal), sfs.dims[1], sfs.dims[2], 1L))
-    }
-
-    # Split train into train/val for early stopping
-    n_tr_rows <- nrow(X_tr)
-    n_va <- max(1L, floor(0.1 * n_tr_rows))
-    va_rows <- seq_len(n_va)
-    tr_rows <- seq(n_va + 1L, n_tr_rows)
-
-    if (type == "sumstat") {
-      X_va_s <- X_tr[va_rows, , drop = FALSE]
-      X_tr_s <- X_tr[tr_rows, , drop = FALSE]
-    } else if (type == "sfs1d") {
-      X_va_s <- X_tr[va_rows, , , drop = FALSE]
-      X_tr_s <- X_tr[tr_rows, , , drop = FALSE]
-    } else {
-      X_va_s <- X_tr[va_rows, , , , drop = FALSE]
-      X_tr_s <- X_tr[tr_rows, , , , drop = FALSE]
-    }
-    Y_va_s <- Y_tr[va_rows, , drop = FALSE]
-    Y_tr_s <- Y_tr[tr_rows, , drop = FALSE]
-
-    # Build data list for .build.nn
-    ens_data <- list(
-      X_train = X_tr_s, X_val = X_va_s,
-      Y_train = Y_tr_s, Y_val = Y_va_s,
-      n_features = ncol(feat_tr),
-      n_bins = if (type != "sumstat") ncol(feat_cal) else NULL,
-      feat_mu = f_mu, feat_sd = f_sd,
-      target_mu = t_mu, target_sd = t_sd
-    )
-
-    # Build and train model
-    tensorflow::tf$random$set_seed(as.integer(seed + ens_i * 1000))
-    model <- .build.nn(best_hp, ens_data, type, sfs.dims)
-
-    bs <- as.integer(best_hp$batch_size)
-    history <- model |> keras::fit(
-      x = ens_data$X_train, y = ens_data$Y_train,
-      validation_data = list(ens_data$X_val, ens_data$Y_val),
-      epochs     = as.integer(max_epochs),
-      batch_size = bs,
-      callbacks  = list(
-        keras::callback_early_stopping(monitor = "val_loss", patience = 30L,
-                                       restore_best_weights = TRUE),
-        keras::callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 15L,
-                                             factor = 0.5, min_lr = 1e-6, verbose = 0L)
-      ),
-      verbose = 0L
-    )
-
-    # Count epochs trained
-    vl <- history$metrics$val_loss
-    if (is.null(vl)) vl <- history$history$val_loss
-    n_ep <- length(unlist(vl))
-
-    # Predict on calibration set -> inverse transform
-    cal_pred_z <- predict(model, X_cal, verbose = 0L)
-    cal_pred   <- .inv.transform(cal_pred_z, t_mu, t_sd)
-
-    # Residuals: true params - predicted params (original scale)
-    cal_resid <- params_cal - cal_pred
-
-    # Center conformal samples on best model's point estimate (if provided)
-    # to avoid multi-peaked posteriors from varying per-ensemble obs_est
-    if (!is.null(point_est)) {
-      center <- point_est
-    } else {
-      X_obs <- .prep.observed.with(observed, f_mu, f_sd, type, sfs.dims)
-      obs_pred_z <- predict(model, X_obs, verbose = 0L)
-      center <- as.numeric(.inv.transform(obs_pred_z, t_mu, t_sd))
-    }
-
-    # Conformal samples: center[j] + cal_resid[, j]
-    ens_samples <- matrix(NA, nrow = nrow(cal_resid), ncol = n_params)
-    for (j in seq_len(n_params))
-      ens_samples[, j] <- center[j] + cal_resid[, j]
-
-    all_conf_samples[[ens_i]] <- ens_samples
-
-    if (verbose)
-      cat(sprintf("  Ensemble %d/%d \u2014 trained %d ep, %d conformal samples\n",
-                  ens_i, n_ensemble, n_ep, nrow(ens_samples)))
-
-    rm(model)
-    gc()
-    tryCatch(keras::k_clear_session(), error = function(e) NULL)
-  }
-
-  # Stack all ensemble samples
-  do.call(rbind, all_conf_samples)
-}
-
-# ============================================================================
-# Internal: conformal prediction — torch backend (sequential)
-# ============================================================================
-
-.run.conformal.sequential.torch <- function(reftable, param.cols, observed, best_hp,
-                                            type, sfs.dims, n_ensemble, cal.frac,
-                                            max_epochs, seed, verbose,
-                                            point_est = NULL, exclude.cols = NULL) {
-
-  nuisance <- c("mean.rate", "sd.rate")
-  target_cols <- setdiff(param.cols, nuisance)
-  n_params <- length(target_cols)
-
-  n_total <- nrow(reftable)
-  n_cal   <- floor(cal.frac * n_total)
-  n_train <- n_total - n_cal
-
-  device <- if (torch::cuda_is_available()) "cuda" else "cpu"
-
-  if (verbose)
-    cat(sprintf("\nPipeMaster:: Conformal prediction [torch/%s] (%d ensemble \u00d7 %d cal samples)...\n",
-                device, n_ensemble, n_cal))
-
-  all_conf_samples <- list()
-
-  for (ens_i in seq_len(n_ensemble)) {
-    set.seed(seed + ens_i * 100)
-    idx <- sample(n_total)
-    tr_idx  <- idx[1:n_train]
-    cal_idx <- idx[(n_train + 1):n_total]
-
-    tr_split  <- .prep.reftable.split(reftable, param.cols, tr_idx, type, sfs.dims,
-                                       exclude.cols = exclude.cols)
-    cal_split <- .prep.reftable.split(reftable, param.cols, cal_idx, type, sfs.dims,
-                                       exclude.cols = exclude.cols)
-
-    feat_tr    <- tr_split$features
-    targ_tr    <- tr_split$targets
-    feat_cal   <- cal_split$features
-    params_cal <- cal_split$targets
-
-    # Z-score features
-    f_mu <- colMeans(feat_tr)
-    f_sd <- apply(feat_tr, 2, sd); f_sd[f_sd == 0] <- 1
-    X_tr  <- t((t(feat_tr)  - f_mu) / f_sd)
-    X_cal <- t((t(feat_cal) - f_mu) / f_sd)
-
-    # Log + Z-score targets
-    Y_tr_log <- log(targ_tr)
-    t_mu <- colMeans(Y_tr_log)
-    t_sd <- apply(Y_tr_log, 2, sd); t_sd[t_sd == 0] <- 1
-    Y_tr <- t((t(Y_tr_log) - t_mu) / t_sd)
-
-    # Split train into train/val for early stopping
-    n_tr_rows <- nrow(X_tr)
-    n_va <- max(1L, floor(0.1 * n_tr_rows))
-    va_rows <- seq_len(n_va)
-    tr_rows <- seq(n_va + 1L, n_tr_rows)
-
-    X_va_s <- X_tr[va_rows, , drop = FALSE]
-    X_tr_s <- X_tr[tr_rows, , drop = FALSE]
-    Y_va_s <- Y_tr[va_rows, , drop = FALSE]
-    Y_tr_s <- Y_tr[tr_rows, , drop = FALSE]
-
-    ens_data <- list(
-      X_train = X_tr_s, X_val = X_va_s,
-      Y_train = Y_tr_s, Y_val = Y_va_s,
-      n_features = ncol(feat_tr),
-      n_bins = if (type != "sumstat") ncol(feat_cal) else NULL,
-      feat_mu = f_mu, feat_sd = f_sd,
-      target_mu = t_mu, target_sd = t_sd
-    )
-
-    # Build and train torch model
-    set.seed(seed + ens_i * 1000)
-    model <- .build.nn.torch(best_hp, ens_data, type, sfs.dims, device = device)
-    train_result <- .torch.train.model(
-      model, ens_data$X_train, ens_data$Y_train,
-      ens_data$X_val, ens_data$Y_val,
-      hp = best_hp, type = type,
-      epochs = as.integer(max_epochs),
-      patience = 30L, lr_patience = 15L,
-      device = device
-    )
-    n_ep <- train_result$epochs_trained
-
-    # Predict on calibration set
-    cal_pred_z <- .torch.predict(model, X_cal, device = device)
-    cal_pred   <- .inv.transform(cal_pred_z, t_mu, t_sd)
-
-    # Residuals
-    cal_resid <- params_cal - cal_pred
-
-    # Center on point estimate or predict observed
-    if (!is.null(point_est)) {
-      center <- point_est
-    } else {
-      X_obs <- .prep.observed.with(observed, f_mu, f_sd, type, sfs.dims)
-      obs_pred_z <- .torch.predict(model, X_obs, device = device)
-      center <- as.numeric(.inv.transform(obs_pred_z, t_mu, t_sd))
-    }
-
-    # Conformal samples
-    ens_samples <- matrix(NA, nrow = nrow(cal_resid), ncol = n_params)
-    for (j in seq_len(n_params))
-      ens_samples[, j] <- center[j] + cal_resid[, j]
-
-    all_conf_samples[[ens_i]] <- ens_samples
-
-    if (verbose)
-      cat(sprintf("  Ensemble %d/%d \u2014 trained %d ep, %d conformal samples\n",
-                  ens_i, n_ensemble, n_ep, nrow(ens_samples)))
-
-    rm(model); gc()
-  }
-
-  do.call(rbind, all_conf_samples)
-}
-
-# ============================================================================
-# Internal: bootstrap posterior estimation
-# ============================================================================
-
-.run.bootstrap <- function(reftable, param.cols, observed, best_hp, type, sfs.dims,
-                           n_boot, max_epochs, cores, gpus = 0, seed, verbose,
-                           exclude.cols = NULL) {
-
-  if (cores <= 1) {
-    return(.run.bootstrap.sequential(
-      reftable, param.cols, observed, best_hp, type, sfs.dims,
-      n_boot, max_epochs, seed, verbose,
-      exclude.cols = exclude.cols
-    ))
-  }
-
-  # Parallel bootstrap via Rscript workers
-  .run.bootstrap.parallel(
-    reftable, param.cols, observed, best_hp, type, sfs.dims,
-    n_boot, max_epochs, cores, gpus = gpus, greedy = greedy, seed, verbose,
-    exclude.cols = exclude.cols
-  )
-}
-
-# ============================================================================
-# Internal: sequential bootstrap (cores = 1)
-# ============================================================================
-
-.run.bootstrap.sequential <- function(reftable, param.cols, observed, best_hp,
-                                      type, sfs.dims, n_boot, max_epochs,
-                                      seed, verbose, exclude.cols = NULL) {
-
-  nuisance <- c("mean.rate", "sd.rate")
-  target_cols <- setdiff(param.cols, nuisance)
-  n_params <- length(target_cols)
-
-  if (verbose)
-    cat(sprintf("\nPipeMaster:: Bootstrap (%d replicates, sequential)...\n", n_boot))
-
-  boot_matrix <- matrix(NA, nrow = n_boot, ncol = n_params)
-
-  # Prepare full data once
-  all_rows <- seq_len(nrow(reftable))
-  full_split <- .prep.reftable.split(reftable, param.cols, all_rows, type, sfs.dims,
-                                      exclude.cols = exclude.cols)
-  features_all <- full_split$features
-  targets_all  <- full_split$targets
-  n_rows <- nrow(features_all)
-
-  for (b in seq_len(n_boot)) {
-    set.seed(seed + b)
-
-    # Bootstrap sample with replacement
-    boot_idx <- sample(n_rows, replace = TRUE)
-    feat_boot <- features_all[boot_idx, ]
-    targ_boot <- targets_all[boot_idx, , drop = FALSE]
-
-    # Z-score features
-    f_mu <- colMeans(feat_boot)
-    f_sd <- apply(feat_boot, 2, sd); f_sd[f_sd == 0] <- 1
-    X_boot <- t((t(feat_boot) - f_mu) / f_sd)
-
-    # Log + Z-score targets
-    Y_boot_log <- log(targ_boot)
-    t_mu <- colMeans(Y_boot_log)
-    t_sd <- apply(Y_boot_log, 2, sd); t_sd[t_sd == 0] <- 1
-    Y_boot <- t((t(Y_boot_log) - t_mu) / t_sd)
-
-    # Reshape for CNN
-    if (type == "sfs1d") {
-      n_bins <- ncol(X_boot)
-      dim(X_boot) <- c(nrow(X_boot), n_bins, 1L)
-    } else if (type == "sfs2d") {
-      X_boot <- array(X_boot, dim = c(nrow(X_boot), sfs.dims[1], sfs.dims[2], 1L))
-    }
-
-    # Split off validation for early stopping
-    n_b <- nrow(X_boot)
-    n_va <- max(1L, floor(0.1 * n_b))
-    va_rows <- seq_len(n_va)
-    tr_rows <- seq(n_va + 1L, n_b)
-
-    if (type == "sumstat") {
-      X_va_b <- X_boot[va_rows, , drop = FALSE]
-      X_tr_b <- X_boot[tr_rows, , drop = FALSE]
-    } else if (type == "sfs1d") {
-      X_va_b <- X_boot[va_rows, , , drop = FALSE]
-      X_tr_b <- X_boot[tr_rows, , , drop = FALSE]
-    } else {
-      X_va_b <- X_boot[va_rows, , , , drop = FALSE]
-      X_tr_b <- X_boot[tr_rows, , , , drop = FALSE]
-    }
-    Y_va_b <- Y_boot[va_rows, , drop = FALSE]
-    Y_tr_b <- Y_boot[tr_rows, , drop = FALSE]
-
-    boot_data <- list(
-      X_train = X_tr_b, X_val = X_va_b,
-      Y_train = Y_tr_b, Y_val = Y_va_b,
-      n_features = ncol(feat_boot),
-      n_bins = if (type != "sumstat") ncol(feat_boot) else NULL,
-      feat_mu = f_mu, feat_sd = f_sd,
-      target_mu = t_mu, target_sd = t_sd
-    )
-
-    tensorflow::tf$random$set_seed(as.integer(seed + b))
-    model <- .build.nn(best_hp, boot_data, type, sfs.dims)
-
-    bs <- as.integer(best_hp$batch_size)
-    model |> keras::fit(
-      x = boot_data$X_train, y = boot_data$Y_train,
-      validation_data = list(boot_data$X_val, boot_data$Y_val),
-      epochs     = as.integer(max_epochs),
-      batch_size = bs,
-      callbacks  = list(
-        keras::callback_early_stopping(monitor = "val_loss", patience = 30L,
-                                       restore_best_weights = TRUE),
-        keras::callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 15L,
-                                             factor = 0.5, min_lr = 1e-6, verbose = 0L)
-      ),
-      verbose = 0L
-    )
-
-    # Predict on observed (normalized with this bootstrap's params)
-    X_obs <- .prep.observed.with(observed, f_mu, f_sd, type, sfs.dims)
-    obs_pred_z <- predict(model, X_obs, verbose = 0L)
-    boot_matrix[b, ] <- as.numeric(.inv.transform(obs_pred_z, t_mu, t_sd))
-
-    if (verbose && (b %% 10 == 0 || b == n_boot))
-      cat(sprintf("  Progress: %d/%d\n", b, n_boot))
-
-    rm(model)
-    gc()
-    tryCatch(keras::k_clear_session(), error = function(e) NULL)
-  }
-
-  boot_matrix
-}
-
-# ============================================================================
-# Internal: bootstrap posterior estimation — torch backend (sequential)
-# ============================================================================
-
-.run.bootstrap.sequential.torch <- function(reftable, param.cols, observed, best_hp,
-                                            type, sfs.dims, n_boot, max_epochs,
-                                            seed, verbose, exclude.cols = NULL) {
-
-  nuisance <- c("mean.rate", "sd.rate")
-  target_cols <- setdiff(param.cols, nuisance)
-  n_params <- length(target_cols)
-
-  device <- if (torch::cuda_is_available()) "cuda" else "cpu"
-
-  if (verbose)
-    cat(sprintf("\nPipeMaster:: Bootstrap [torch/%s] (%d replicates, sequential)...\n",
-                device, n_boot))
-
-  boot_matrix <- matrix(NA, nrow = n_boot, ncol = n_params)
-
-  all_rows <- seq_len(nrow(reftable))
-  full_split <- .prep.reftable.split(reftable, param.cols, all_rows, type, sfs.dims,
-                                      exclude.cols = exclude.cols)
-  features_all <- full_split$features
-  targets_all  <- full_split$targets
-  n_rows <- nrow(features_all)
-
-  for (b in seq_len(n_boot)) {
-    set.seed(seed + b)
-
-    boot_idx  <- sample(n_rows, replace = TRUE)
-    feat_boot <- features_all[boot_idx, ]
-    targ_boot <- targets_all[boot_idx, , drop = FALSE]
-
-    # Z-score features
-    f_mu <- colMeans(feat_boot)
-    f_sd <- apply(feat_boot, 2, sd); f_sd[f_sd == 0] <- 1
-    X_boot <- t((t(feat_boot) - f_mu) / f_sd)
-
-    # Log + Z-score targets
-    Y_boot_log <- log(targ_boot)
-    t_mu <- colMeans(Y_boot_log)
-    t_sd <- apply(Y_boot_log, 2, sd); t_sd[t_sd == 0] <- 1
-    Y_boot <- t((t(Y_boot_log) - t_mu) / t_sd)
-
-    # Split off validation
-    n_b <- nrow(X_boot)
-    n_va <- max(1L, floor(0.1 * n_b))
-    va_rows <- seq_len(n_va)
-    tr_rows <- seq(n_va + 1L, n_b)
-
-    X_va_b <- X_boot[va_rows, , drop = FALSE]
-    X_tr_b <- X_boot[tr_rows, , drop = FALSE]
-    Y_va_b <- Y_boot[va_rows, , drop = FALSE]
-    Y_tr_b <- Y_boot[tr_rows, , drop = FALSE]
-
-    boot_data <- list(
-      X_train = X_tr_b, X_val = X_va_b,
-      Y_train = Y_tr_b, Y_val = Y_va_b,
-      n_features = ncol(feat_boot),
-      n_bins = if (type != "sumstat") ncol(feat_boot) else NULL,
-      feat_mu = f_mu, feat_sd = f_sd,
-      target_mu = t_mu, target_sd = t_sd
-    )
-
-    set.seed(seed + b)
-    model <- .build.nn.torch(best_hp, boot_data, type, sfs.dims, device = device)
-    .torch.train.model(
-      model, boot_data$X_train, boot_data$Y_train,
-      boot_data$X_val, boot_data$Y_val,
-      hp = best_hp, type = type,
-      epochs = as.integer(max_epochs),
-      patience = 30L, lr_patience = 15L,
-      device = device
-    )
-
-    X_obs <- .prep.observed.with(observed, f_mu, f_sd, type, sfs.dims)
-    obs_pred_z <- .torch.predict(model, X_obs, device = device)
-    boot_matrix[b, ] <- as.numeric(.inv.transform(obs_pred_z, t_mu, t_sd))
-
-    if (verbose && (b %% 10 == 0 || b == n_boot))
-      cat(sprintf("  Progress: %d/%d\n", b, n_boot))
-
-    rm(model); gc()
-  }
-
-  boot_matrix
-}
-
-# ============================================================================
-# Internal: write standalone bootstrap worker Rscript
-# ============================================================================
-
-.write.bootstrap.worker.script <- function(filepath) {
-  writeLines(c(
-    '#!/usr/bin/env Rscript',
-    'args <- commandArgs(trailingOnly = TRUE)',
-    'task_id <- as.integer(args[1])',
-    '',
-    'load("shared_data.RData")',
-    '',
-    '# Threading env (GPU env set externally by pool launcher)',
-    'n_threads <- as.character(threads_per_worker)',
-    'Sys.setenv(TF_NUM_INTRAOP_THREADS = n_threads,',
-    '           TF_NUM_INTEROP_THREADS = "1",',
-    '           OMP_NUM_THREADS = n_threads)',
-    '',
-    'out_file <- file.path("results", sprintf("boot_%04d.csv", task_id))',
-    'if (file.exists(out_file)) { cat("skip\\n"); q("no") }',
-    '',
-    'suppressPackageStartupMessages({',
-    '  library(keras)',
-    '  library(tensorflow)',
-    '})',
-    'source("_build_model.R")',
-    '',
-    'set.seed(seed + task_id)',
-    'boot_idx <- sample(n_rows, replace = TRUE)',
-    'feat_boot <- features_all[boot_idx, ]',
-    'targ_boot <- targets_all[boot_idx, , drop = FALSE]',
-    '',
-    'f_mu <- colMeans(feat_boot)',
-    'f_sd <- apply(feat_boot, 2, sd); f_sd[f_sd == 0] <- 1',
-    'X_boot <- t((t(feat_boot) - f_mu) / f_sd)',
-    '',
-    'Y_boot_log <- log(targ_boot)',
-    't_mu <- colMeans(Y_boot_log)',
-    't_sd <- apply(Y_boot_log, 2, sd); t_sd[t_sd == 0] <- 1',
-    'Y_boot <- t((t(Y_boot_log) - t_mu) / t_sd)',
-    '',
-    'if (type == "sfs1d") {',
-    '  n_bins <- ncol(X_boot)',
-    '  dim(X_boot) <- c(nrow(X_boot), n_bins, 1L)',
-    '} else if (type == "sfs2d") {',
-    '  X_boot <- array(X_boot, dim = c(nrow(X_boot), sfs.dims[1], sfs.dims[2], 1L))',
-    '}',
-    '',
-    'n_b <- nrow(X_boot)',
-    'n_va <- max(1L, floor(0.1 * n_b))',
-    'va_rows <- seq_len(n_va)',
-    'tr_rows <- seq(n_va + 1L, n_b)',
-    '',
-    'if (type == "sumstat") {',
-    '  X_va_b <- X_boot[va_rows, , drop = FALSE]',
-    '  X_tr_b <- X_boot[tr_rows, , drop = FALSE]',
-    '} else if (type == "sfs1d") {',
-    '  X_va_b <- X_boot[va_rows, , , drop = FALSE]',
-    '  X_tr_b <- X_boot[tr_rows, , , drop = FALSE]',
-    '} else {',
-    '  X_va_b <- X_boot[va_rows, , , , drop = FALSE]',
-    '  X_tr_b <- X_boot[tr_rows, , , , drop = FALSE]',
-    '}',
-    'Y_va_b <- Y_boot[va_rows, , drop = FALSE]',
-    'Y_tr_b <- Y_boot[tr_rows, , drop = FALSE]',
-    '',
-    'boot_data <- list(',
-    '  X_train = X_tr_b, X_val = X_va_b,',
-    '  Y_train = Y_tr_b, Y_val = Y_va_b,',
-    '  n_features = ncol(feat_boot),',
-    '  n_bins = if (type != "sumstat") ncol(feat_boot) else NULL,',
-    '  feat_mu = f_mu, feat_sd = f_sd,',
-    '  target_mu = t_mu, target_sd = t_sd',
-    ')',
-    '',
-    'tf$random$set_seed(as.integer(seed + task_id))',
-    'model <- build_nn(best_hp, boot_data, type, sfs.dims)',
-    '',
-    'bs <- as.integer(best_hp$batch_size)',
-    'model |> fit(',
-    '  x = boot_data$X_train, y = boot_data$Y_train,',
-    '  validation_data = list(boot_data$X_val, boot_data$Y_val),',
-    '  epochs = as.integer(max_epochs), batch_size = bs,',
-    '  callbacks = list(',
-    '    callback_early_stopping(monitor = "val_loss", patience = 30L,',
-    '                            restore_best_weights = TRUE),',
-    '    callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 15L,',
-    '                                  factor = 0.5, min_lr = 1e-6, verbose = 0L)',
-    '  ),',
-    '  verbose = 0L',
-    ')',
-    '',
-    '# Normalize observed and predict',
-    'if (type == "sumstat") {',
-    '  obs_aug <- c(observed, log1p(abs(observed)))',
-    '  X_obs <- matrix((obs_aug - f_mu) / f_sd, nrow = 1)',
-    '  X_obs[!is.finite(X_obs)] <- 0',
-    '} else if (type == "sfs1d") {',
-    '  obs_z <- (log1p(observed) - f_mu) / f_sd',
-    '  obs_z[!is.finite(obs_z)] <- 0',
-    '  X_obs <- array(obs_z, dim = c(1L, length(obs_z), 1L))',
-    '} else {',
-    '  obs_z <- (log1p(observed) - f_mu) / f_sd',
-    '  obs_z[!is.finite(obs_z)] <- 0',
-    '  X_obs <- array(obs_z, dim = c(1L, sfs.dims[1], sfs.dims[2], 1L))',
-    '}',
-    '',
-    'obs_pred_z <- predict(model, X_obs, verbose = 0L)',
-    'est <- as.numeric(exp(t(t(obs_pred_z) * t_sd + t_mu)))',
-    '',
-    'df <- as.data.frame(matrix(est, nrow = 1))',
-    'colnames(df) <- target_cols',
-    'write.csv(df, out_file, row.names = FALSE)',
-    'cat(sprintf("  boot %d done\\n", task_id))',
-    'k_clear_session()'
-  ), filepath)
-}
 
 # ============================================================================
 # Internal: compute how many TF intra-op threads each worker should use
@@ -3436,6 +2772,10 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   setwd(work_dir)
   on.exit(setwd(old_wd), add = TRUE)
 
+  # Register parent PID so workers can detect if parent dies
+  pid_file <- file.path(work_dir, ".PM_parent.pid")
+  writeLines(as.character(Sys.getpid()), pid_file)
+
   logs_dir <- file.path(work_dir, "logs")
   dir.create(logs_dir, showWarnings = FALSE, recursive = TRUE)
   sentinels_dir <- file.path(work_dir, "sentinels")
@@ -3448,6 +2788,24 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   failed    <- integer(0)
   gpu_counter <- 0L
   retry_count <- integer(n_tasks)  # starts at 0 for each task
+
+  # On exit: remove PID file + kill all workers by their PID files
+  on.exit({
+    tryCatch(file.remove(pid_file), error = function(e) NULL)
+    pid_files <- list.files(sentinels_dir, pattern = "\\.pid$", full.names = TRUE)
+    for (pf in pid_files) {
+      wpid <- tryCatch(as.integer(readLines(pf, warn = FALSE)[1]), error = function(e) NA)
+      if (!is.na(wpid)) {
+        if (.Platform$OS.type == "unix") {
+          system(sprintf("kill -9 -%d 2>/dev/null; kill -9 %d 2>/dev/null", wpid, wpid),
+                 ignore.stdout = TRUE, ignore.stderr = TRUE)
+        } else {
+          system(sprintf("taskkill /F /T /PID %d 2>NUL", wpid),
+                 ignore.stdout = TRUE, ignore.stderr = TRUE)
+        }
+      }
+    }
+  }, add = TRUE)
 
   launch_one <- function(task_idx) {
     task <- tasks[[task_idx]]
@@ -3623,9 +2981,11 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
       } else if (file.exists(a$done_file)) {
         # --- CRASH: process exited but no result CSV ---
-        exit_code <- suppressWarnings(tryCatch(
-          as.integer(trimws(readLines(a$done_file, n = 1L, warn = FALSE))),
-          error = function(e) NA_integer_))
+        exit_code <- suppressWarnings(tryCatch({
+          raw <- readLines(a$done_file, n = 1L, warn = FALSE)
+          if (length(raw) == 0L || nchar(trimws(raw)) == 0L) NA_integer_
+          else as.integer(trimws(raw))
+        }, error = function(e) NA_integer_))
         tail_lines <- .log_tail(a$log_file)
 
         if (retry_count[a$task_idx] < max_retries) {
@@ -3686,214 +3046,6 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
   list(completed = completed, failed = failed)
 }
-
-# ============================================================================
-# Internal: unified parallel pool for conformal + bootstrap
-# ============================================================================
-
-.run.parallel.pool <- function(reftable, param.cols, observed, best_hp,
-                                type, sfs.dims, do_conformal, do_bootstrap,
-                                n_ensemble, n_boot, cal.frac, max_epochs,
-                                cores, gpus, greedy, seed, verbose,
-                                point_est = NULL, exclude.cols = NULL,
-                                nn_backend = "keras") {
-
-  nuisance    <- c("mean.rate", "sd.rate")
-  target_cols <- setdiff(param.cols, nuisance)
-  n_params    <- length(target_cols)
-
-  # Create temp working directory
-  work_dir    <- tempfile("nn_pool_")
-  dir.create(work_dir, recursive = TRUE)
-  results_dir <- file.path(work_dir, "results")
-  dir.create(results_dir)
-
-  # Prepare and save shared data
-  all_rows   <- seq_len(nrow(reftable))
-  full_split <- .prep.reftable.split(reftable, param.cols, all_rows, type, sfs.dims,
-                                      exclude.cols = exclude.cols)
-  features_all <- full_split$features
-  targets_all  <- full_split$targets
-  n_rows     <- nrow(features_all)
-  cal_frac   <- cal.frac
-
-  threads_per_worker <- .compute.threads.per.worker(cores, greedy)
-  shared_file <- file.path(work_dir, "shared_data.RData")
-  save(features_all, targets_all, observed, best_hp,
-       type, sfs.dims, n_rows, n_params, max_epochs, seed, target_cols,
-       cal_frac, point_est, threads_per_worker,
-       file = shared_file)
-
-  # Write model builder and worker scripts (backend-specific)
-  if (nn_backend == "torch") {
-    .torch.write.builder.script(file.path(work_dir, "_build_model_torch.R"), type)
-  } else {
-    .write.builder.script(file.path(work_dir, "_build_model.R"), type)
-  }
-
-  # Build task list: conformal first (priority), then bootstrap
-  tasks <- list()
-
-  if (do_conformal) {
-    if (nn_backend == "torch") {
-      .torch.write.conformal.worker.script(file.path(work_dir, "_conf_worker.R"))
-    } else {
-      .write.conformal.worker.script(file.path(work_dir, "_conf_worker.R"))
-    }
-    for (i in seq_len(n_ensemble)) {
-      tasks[[length(tasks) + 1]] <- list(
-        script = "_conf_worker.R", id = i,
-        result = sprintf("results/conf_%04d.csv", i),
-        prefix = "conf"
-      )
-    }
-  }
-
-  if (do_bootstrap) {
-    if (nn_backend == "torch") {
-      .torch.write.bootstrap.worker.script(file.path(work_dir, "_boot_worker.R"))
-    } else {
-      .write.bootstrap.worker.script(file.path(work_dir, "_boot_worker.R"))
-    }
-    for (b in seq_len(n_boot)) {
-      tasks[[length(tasks) + 1]] <- list(
-        script = "_boot_worker.R", id = b,
-        result = sprintf("results/boot_%04d.csv", b),
-        prefix = "boot"
-      )
-    }
-  }
-
-  n_conf <- if (do_conformal) n_ensemble else 0L
-  n_boot_tasks <- if (do_bootstrap) n_boot else 0L
-
-  if (verbose)
-    cat(sprintf("\nPipeMaster:: Unified pool: %d conformal + %d bootstrap tasks, %d cores (%d threads/worker)%s\n",
-                n_conf, n_boot_tasks, cores, threads_per_worker,
-                if (gpus > 0) sprintf(", %d GPUs", gpus) else ""))
-
-  pool_result <- .launch.rscript.pool(tasks, cores, work_dir,
-                                       gpus = gpus, verbose = verbose)
-
-  # Collect conformal results
-  result <- list(conformal = NULL, bootstrap = NULL)
-
-  if (do_conformal) {
-    conf_list <- list()
-    for (i in seq_len(n_ensemble)) {
-      csv_file <- file.path(results_dir, sprintf("conf_%04d.csv", i))
-      if (file.exists(csv_file)) {
-        conf_list[[length(conf_list) + 1]] <- as.matrix(read.csv(csv_file))
-      }
-    }
-    if (length(conf_list) > 0)
-      result$conformal <- do.call(rbind, conf_list)
-
-    if (verbose)
-      cat(sprintf("PipeMaster:: Conformal: %d samples from %d/%d ensemble models\n",
-                  if (!is.null(result$conformal)) nrow(result$conformal) else 0L,
-                  length(conf_list), n_ensemble))
-  }
-
-  # Collect bootstrap results
-  if (do_bootstrap) {
-    boot_matrix <- matrix(NA, nrow = n_boot, ncol = n_params)
-    for (b in seq_len(n_boot)) {
-      csv_file <- file.path(results_dir, sprintf("boot_%04d.csv", b))
-      if (file.exists(csv_file)) {
-        row <- read.csv(csv_file)
-        boot_matrix[b, ] <- as.numeric(row[1, ])
-      }
-    }
-    result$bootstrap <- boot_matrix
-
-    n_fail <- sum(is.na(boot_matrix[, 1]))
-    if (verbose)
-      cat(sprintf("PipeMaster:: Bootstrap: %d/%d successful\n",
-                  n_boot - n_fail, n_boot))
-  }
-
-  # Clean up temp files
-  unlink(work_dir, recursive = TRUE)
-
-  result
-}
-
-# ============================================================================
-# Internal: parallel bootstrap via Rscript workers
-# ============================================================================
-
-.run.bootstrap.parallel <- function(reftable, param.cols, observed, best_hp,
-                                    type, sfs.dims, n_boot, max_epochs,
-                                    cores, gpus = 0, greedy = TRUE, seed, verbose,
-                                    exclude.cols = NULL) {
-
-  nuisance <- c("mean.rate", "sd.rate")
-  target_cols <- setdiff(param.cols, nuisance)
-  n_params <- length(target_cols)
-  threads_per_worker <- .compute.threads.per.worker(cores, greedy)
-
-  if (verbose)
-    cat(sprintf("\nPipeMaster:: Bootstrap (%d replicates, %d cores, %d threads/worker)...\n",
-                n_boot, cores, threads_per_worker))
-
-  # Create temp working directory
-  work_dir <- tempfile("nn_boot_")
-  dir.create(work_dir, recursive = TRUE)
-  results_dir <- file.path(work_dir, "results")
-  dir.create(results_dir)
-
-  # Prepare full data and save shared .RData
-  all_rows <- seq_len(nrow(reftable))
-  full_split <- .prep.reftable.split(reftable, param.cols, all_rows, type, sfs.dims,
-                                      exclude.cols = exclude.cols)
-  features_all <- full_split$features
-  targets_all  <- full_split$targets
-  n_rows <- nrow(features_all)
-
-  shared_file <- file.path(work_dir, "shared_data.RData")
-  save(features_all, targets_all, observed, best_hp,
-       type, sfs.dims, n_rows, n_params, max_epochs, seed, target_cols,
-       threads_per_worker,
-       file = shared_file)
-
-  # Write model builder and worker scripts
-  .write.builder.script(file.path(work_dir, "_build_model.R"), type)
-  .write.bootstrap.worker.script(file.path(work_dir, "_boot_worker.R"))
-
-  # Build task list
-  tasks <- list()
-  for (b in seq_len(n_boot)) {
-    tasks[[b]] <- list(
-      script = "_boot_worker.R", id = b,
-      result = sprintf("results/boot_%04d.csv", b),
-      prefix = "boot"
-    )
-  }
-
-  pool_result <- .launch.rscript.pool(tasks, cores, work_dir,
-                                       gpus = gpus, verbose = verbose)
-
-  # Collect results
-  boot_matrix <- matrix(NA, nrow = n_boot, ncol = n_params)
-  for (b in seq_len(n_boot)) {
-    csv_file <- file.path(results_dir, sprintf("boot_%04d.csv", b))
-    if (file.exists(csv_file)) {
-      row <- read.csv(csv_file)
-      boot_matrix[b, ] <- as.numeric(row[1, ])
-    }
-  }
-
-  actual_failures <- sum(is.na(boot_matrix[, 1]))
-  if (verbose)
-    cat(sprintf("  Failures: %d/%d\n", actual_failures, n_boot))
-
-  # Clean up temp files
-  unlink(work_dir, recursive = TRUE)
-
-  boot_matrix
-}
-
 # ============================================================================
 # Torch backend for tune.nn
 #
@@ -3905,7 +3057,9 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 #' @keywords internal
 .tune.nn.torch <- function(reftable, param.cols, type, sfs.dims,
                            max_epochs, eta, search_space, exclude.cols,
-                           val.frac, top_k, seed, verbose) {
+                           val.frac, n_searches = 1L, cores = 1L,
+                           gpus = 0L, gpu.threshold = 4L, greedy = TRUE,
+                           top_k, seed, verbose) {
 
   if (!requireNamespace("torch", quietly = TRUE))
     stop("tune.nn(backend='torch') requires the 'torch' R package.\n",
@@ -3921,8 +3075,11 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
   top_k <- as.integer(top_k)
   if (top_k < 1L) stop("top_k must be >= 1")
+  n_searches <- as.integer(n_searches)
+  n_concurrent <- min(as.integer(cores), n_searches)
 
   # --- Prepare data (reuse existing prep) ---
+  if (verbose) cat(sprintf("PipeMaster:: tune.nn \u2014 Hyperband (ResNet)\n"))
   data <- .prep.data(reftable, param.cols, type, sfs.dims, exclude.cols,
                      val.frac, seed)
 
@@ -3935,62 +3092,277 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   # --- Search space ---
   ss <- if (!is.null(search_space)) search_space else .emulator.search.space()
 
-  # --- Detect device ---
-  device <- "cpu"
-  if (torch::cuda_is_available()) {
-    device <- "cuda"
-    if (verbose) cat("PipeMaster:: Using CUDA GPU for torch training\n")
+  # ==========================================================================
+  # Sequential mode (single search, no workers)
+  # ==========================================================================
+  if (n_searches <= 1L || n_concurrent <= 1L) {
+
+    device <- "cpu"
+    if (torch::cuda_is_available()) {
+      device <- "cuda"
+      if (verbose) cat("PipeMaster:: Using CUDA GPU for torch training\n")
+    }
+
+    torch::torch_manual_seed(as.integer(seed))
+    hb <- .torch.hyperband(ss, data, type, sfs.dims = sfs.dims,
+                           max_epochs = as.integer(max_epochs),
+                           eta = as.integer(eta),
+                           seed = as.integer(seed),
+                           verbose = verbose,
+                           device = device)
+
+    if (verbose)
+      cat(sprintf("\nPipeMaster:: Best config: %s\n", .hp.to.string(hb$best_hp, type)))
+
+    torch::torch_manual_seed(as.integer(seed))
+    best_model <- .build.nn.torch(hb$best_hp, data, type)
+    best_model$to(device = torch::torch_device(device))
+
+    if (!is.null(hb$best_state))
+      best_model$load_state_dict(hb$best_state)
+
+    start_ep <- if (!is.null(hb$best_state)) hb$best_epochs else 0L
+    retrain <- .torch.train.model(
+      best_model, data$X_train, data$Y_train, data$X_val, data$Y_val,
+      hp = hb$best_hp, type = type,
+      epochs = as.integer(max_epochs), initial_epoch = start_ep,
+      patience = 30L, lr_patience = 15L,
+      device = device
+    )
+
+    if (verbose)
+      cat(sprintf("PipeMaster:: Retrained: val_loss=%.6f, epochs=%d\n",
+                  retrain$val_loss, retrain$epochs_trained))
+
+    metrics <- .torch.compute.model.metrics(best_model, data, type, device = device)
+
+    if (verbose) {
+      cat(sprintf("  R\u00b2:  %s\n", paste(sprintf("%s=%.4f", names(metrics$r2), metrics$r2), collapse = "  ")))
+      cat(sprintf("  MPE: %s\n", paste(sprintf("%s=%.1f%%", names(metrics$mpe), metrics$mpe), collapse = "  ")))
+    }
+
+    return(list(
+      best_hp         = hb$best_hp,
+      best_val_loss   = retrain$val_loss,
+      all_results     = hb$all_results,
+      best_model      = best_model,
+      models          = list(best_model),
+      models_val_loss = retrain$val_loss,
+      models_metrics  = list(metrics),
+      data            = data,
+      type            = type,
+      sfs.dims        = sfs.dims,
+      exclude.cols    = exclude.cols,
+      backend         = "torch"
+    ))
   }
 
-  # --- Run Hyperband ---
-  torch::torch_manual_seed(as.integer(seed))
-  hb <- .torch.hyperband(ss, data, type, sfs.dims = sfs.dims,
-                         max_epochs = as.integer(max_epochs),
-                         eta = as.integer(eta),
-                         seed = as.integer(seed),
-                         verbose = verbose,
-                         device = device)
+  # ==========================================================================
+  # Parallel mode: save data as torch tensors, launch Rscript workers
+  # ==========================================================================
+  work_dir <- tempfile("hb_torch_search_")
+  dir.create(work_dir, recursive = TRUE)
+  results_dir <- file.path(work_dir, "results")
+  dir.create(results_dir)
 
-  # --- Retrain best model ---
-  if (verbose)
-    cat(sprintf("\nPipeMaster:: Best config: %s\n", .hp.to.string(hb$best_hp, type)))
+  # Save data for workers. Two strategies:
+  # (a) bigmemory: file-backed matrices shared via mmap — ~0 RSS per worker
+  # (b) fallback:  .rds files — each worker loads a full copy
+  use_bigmemory <- requireNamespace("bigmemory", quietly = TRUE)
 
-  torch::torch_manual_seed(as.integer(seed))
-  best_model <- .build.nn.torch(hb$best_hp, data, type)
-  best_model$to(device = torch::torch_device(device))
+  if (use_bigmemory) {
+    .save_bigmatrix <- function(mat, name) {
+      bm <- bigmemory::as.big.matrix(mat, type = "double",
+              backingfile = paste0(name, ".bin"),
+              descriptorfile = paste0(name, ".desc"),
+              backingpath = work_dir)
+      bigmemory::flush(bm)
+      bm
+    }
+    .save_bigmatrix(data$X_train, "X_train")
+    .save_bigmatrix(data$Y_train, "Y_train")
+    .save_bigmatrix(data$X_val,   "X_val")
+    .save_bigmatrix(data$Y_val,   "Y_val")
 
-  if (!is.null(hb$best_state))
-    best_model$load_state_dict(hb$best_state)
+    if (verbose) {
+      bin_mb <- sum(file.size(file.path(work_dir,
+        c("X_train.bin", "Y_train.bin", "X_val.bin", "Y_val.bin")))) / 1e6
+      cat(sprintf("PipeMaster:: Saved shared data via bigmemory (%.1f MB, mmap)\n", bin_mb))
+    }
+  } else {
+    saveRDS(data$X_train, file.path(work_dir, "X_train.rds"), compress = FALSE)
+    saveRDS(data$Y_train, file.path(work_dir, "Y_train.rds"), compress = FALSE)
+    saveRDS(data$X_val,   file.path(work_dir, "X_val.rds"),   compress = FALSE)
+    saveRDS(data$Y_val,   file.path(work_dir, "Y_val.rds"),   compress = FALSE)
 
-  start_ep <- if (!is.null(hb$best_state)) hb$best_epochs else 0L
-  retrain <- .torch.train.model(
-    best_model, data$X_train, data$Y_train, data$X_val, data$Y_val,
-    hp = hb$best_hp, type = type,
-    epochs = as.integer(max_epochs), initial_epoch = start_ep,
-    patience = 30L, lr_patience = 15L,
-    device = device
-  )
+    if (verbose) {
+      rds_mb <- sum(file.size(file.path(work_dir,
+        c("X_train.rds", "Y_train.rds", "X_val.rds", "Y_val.rds")))) / 1e6
+      cat(sprintf("PipeMaster:: Saved data files (%.1f MB, per-worker copies)\n", rds_mb))
+    }
+  }
 
-  if (verbose)
-    cat(sprintf("PipeMaster:: Retrained: val_loss=%.6f, epochs=%d\n",
-                retrain$val_loss, retrain$epochs_trained))
+  # Save metadata only (small .RData — no data matrices)
+  n_features <- n_feat
+  n_targets  <- n_targ
+  n_bins     <- data$n_bins
 
-  # --- Compute metrics ---
-  metrics <- .torch.compute.model.metrics(best_model, data, type, device = device)
-  models_metrics <- list(metrics)
+  cfgs <- if (length(max_epochs) == 1L && length(eta) == 1L) {
+    .generate.search.configs(n_searches, max_epochs, eta)
+  } else {
+    data.frame(eta = rep_len(as.integer(eta), n_searches),
+               max_epochs = rep_len(as.integer(max_epochs), n_searches))
+  }
+  search_max_epochs  <- cfgs$max_epochs
+  search_eta         <- cfgs$eta
+  search_seeds       <- seed + (seq_len(n_searches) - 1L) * 10000L
+  saved_lib_paths    <- .libPaths()
+  threads_per_worker <- .compute.threads.per.worker(n_concurrent, greedy)
+  search_space_saved <- ss
+
+  pkg_source_dir <- ""
+  if ("devtools_shims" %in% search()) {
+    pkg_path <- find.package("PipeMaster", quiet = TRUE)
+    if (file.exists(file.path(pkg_path, "DESCRIPTION"))) pkg_source_dir <- pkg_path
+  }
+
+  save(type, sfs.dims, n_features, n_targets, n_bins,
+       use_bigmemory,
+       search_seeds, saved_lib_paths, threads_per_worker,
+       search_max_epochs, search_eta, search_space_saved,
+       pkg_source_dir,
+       file = file.path(work_dir, "shared_search_meta.RData"))
+
+  # Free parent memory: save data for later metrics, drop heavy objects
+  data_rds <- file.path(work_dir, "prep_data.rds")
+  saveRDS(data, data_rds, compress = FALSE)
+  rm(data, reftable); gc()
+
+  # Write torch worker script
+  .torch.write.search.worker.script(file.path(work_dir, "_search_worker.R"))
 
   if (verbose) {
-    cat(sprintf("  R²:  %s\n", paste(sprintf("%s=%.4f", names(metrics$r2), metrics$r2), collapse = "  ")))
-    cat(sprintf("  MPE: %s\n", paste(sprintf("%s=%.1f%%", names(metrics$mpe), metrics$mpe), collapse = "  ")))
+    cat(sprintf("PipeMaster:: Launching %d searches (%d concurrent)\n",
+                n_searches, n_concurrent))
+    for (k in seq_len(n_searches))
+      cat(sprintf("  Search %d: eta=%d, max_epochs=%d\n",
+                  k, search_eta[k], search_max_epochs[k]))
   }
 
+  # Build task list
+  n_gpu_searches <- if (gpus > 0L) min(n_searches, gpu.threshold * gpus) else 0L
+  tasks <- lapply(seq_len(n_searches), function(k) {
+    if (gpus > 0L && k <= n_gpu_searches) {
+      gpu_id <- (k - 1L) %% gpus
+      task_gpu_env <- sprintf("CUDA_VISIBLE_DEVICES=%d", gpu_id)
+    } else {
+      task_gpu_env <- "CUDA_VISIBLE_DEVICES=-1"
+    }
+    list(
+      script  = "_search_worker.R",
+      id      = k,
+      result  = sprintf("results/search_%04d/done.txt", k),
+      prefix  = "search",
+      gpu_env = task_gpu_env
+    )
+  })
+
+  pool_result <- .launch.rscript.pool(
+    tasks, n_concurrent, work_dir,
+    gpus = 0L,
+    verbose = verbose, max_retries = 1L)
+
+  # Collect results and rank by val_loss
+  all_search_results <- list()
+  search_entries <- list()
+
+  for (k in seq_len(n_searches)) {
+    search_dir <- file.path(results_dir, sprintf("search_%04d", k))
+    rds_file   <- file.path(search_dir, "result.rds")
+
+    if (file.exists(rds_file)) {
+      res <- tryCatch(readRDS(rds_file), error = function(e) NULL)
+      if (!is.null(res)) {
+        search_res <- res$all_results
+        search_res$search <- k
+        all_search_results[[length(all_search_results) + 1L]] <- search_res
+
+        if (verbose)
+          cat(sprintf("  Search %d: val_loss=%.6f\n", k, res$best_val_loss))
+
+        search_entries[[length(search_entries) + 1L]] <- list(
+          val_loss   = res$best_val_loss,
+          hp         = res$best_hp,
+          search_dir = search_dir
+        )
+      }
+    } else {
+      if (verbose) cat(sprintf("  Search %d: FAILED (no result)\n", k))
+    }
+  }
+
+  if (length(search_entries) == 0L)
+    stop("All parallel searches failed. Check worker logs in ", work_dir)
+
+  # Sort by val_loss and take top-K
+  vl_vec <- vapply(search_entries, `[[`, numeric(1), "val_loss")
+  ord <- order(vl_vec)
+  n_keep <- min(top_k, length(search_entries))
+  search_entries <- search_entries[ord[seq_len(n_keep)]]
+
+  # Load top-K torch models
+  models <- lapply(search_entries, function(entry) {
+    tryCatch(
+      .torch.load.model(file.path(entry$search_dir, "best_model.pt")),
+      error = function(e) {
+        warning("Could not load torch model (val_loss=",
+                sprintf("%.6f", entry$val_loss), "): ",
+                conditionMessage(e), call. = FALSE)
+        NULL
+      }
+    )
+  })
+  models_val_loss <- vapply(search_entries, `[[`, numeric(1), "val_loss")
+
+  keep <- !vapply(models, is.null, logical(1))
+  models <- models[keep]
+  models_val_loss <- models_val_loss[keep]
+
+  if (length(models) == 0L)
+    stop("All top-K models failed to load. Check worker logs in ", work_dir)
+
+  best_hp <- search_entries[[1L]]$hp
+
+  combined_results <- if (length(all_search_results) > 0)
+    do.call(rbind, all_search_results) else data.frame()
+
+  # Reload data for metrics computation (was freed before worker launch)
+  data <- readRDS(data_rds)
+
+  # Compute R² and MPE for each model
+  models_metrics <- lapply(models, .torch.compute.model.metrics,
+                           data = data, type = type, device = "cpu")
+
+  if (verbose) {
+    cat(sprintf("\nPipeMaster:: Best across %d searches: val_loss=%.6f\n",
+                n_searches, models_val_loss[1L]))
+    cat(sprintf("PipeMaster:: Kept top %d models (val_loss: %s)\n",
+                length(models),
+                paste(sprintf("%.6f", models_val_loss), collapse = ", ")))
+    cat(sprintf("PipeMaster:: Best config: %s\n", .hp.to.string(best_hp, type)))
+    .print.model.metrics(models_metrics, models_val_loss, verbose)
+  }
+
+  Sys.sleep(1)
+  unlink(work_dir, recursive = TRUE)
+
   list(
-    best_hp         = hb$best_hp,
-    best_val_loss   = retrain$val_loss,
-    all_results     = hb$all_results,
-    best_model      = best_model,
-    models          = list(best_model),
-    models_val_loss = retrain$val_loss,
+    best_hp         = best_hp,
+    best_val_loss   = models_val_loss[1L],
+    all_results     = combined_results,
+    best_model      = models[[1L]],
+    models          = models,
+    models_val_loss = models_val_loss,
     models_metrics  = models_metrics,
     data            = data,
     type            = type,

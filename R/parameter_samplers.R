@@ -142,6 +142,56 @@ get.locfile<-function(model){
   return(locfile)
 }
 
+# Check if parent process is still alive (cross-platform)
+#
+# Used by simulation workers to detect when the parent process has been
+# killed or crashed, so they can exit cleanly instead of running as orphans.
+#
+# @param pid_file Path to the .PM_parent.pid file written by the parent.
+# @return TRUE if parent is alive (or pid_file doesn't exist, i.e. single-core
+#   mode), FALSE if parent is confirmed dead.
+#
+.pm.parent.alive <- function(pid_file) {
+  if (!file.exists(pid_file)) return(TRUE)  # no pid file = single-core, always OK
+  pid <- tryCatch(
+    as.integer(readLines(pid_file, n = 1L, warn = FALSE)),
+    error = function(e) NA_integer_
+  )
+  if (is.na(pid)) return(TRUE)  # can't read pid, assume alive
+  # signal 0 checks existence without killing (cross-platform via tools)
+  tryCatch({ tools::pskill(pid, 0); TRUE },
+           error = function(e) FALSE)
+}
+
+# Write parent PID file and register on.exit cleanup that removes it
+# and kills all worker processes.
+#
+# @param pid_file Path to write the parent PID.
+# @param worker_pids_env An environment to collect worker PIDs into.
+#   The on.exit handler reads worker_pids_env$pids to kill them.
+# @param envir The environment to register on.exit in (parent function).
+#
+.pm.register.parent <- function(pid_file, worker_pids_env, envir = parent.frame()) {
+  writeLines(as.character(Sys.getpid()), pid_file)
+
+  do.call(on.exit, list(substitute({
+    # Remove PID file so workers detect parent death
+    tryCatch(file.remove(pid_file), error = function(e) NULL)
+    # Kill any remaining workers
+    for (wpid in worker_pids_env$pids) {
+      tryCatch({
+        if (.Platform$OS.type == "unix") {
+          system(sprintf("kill -9 -%d 2>/dev/null; kill -9 %d 2>/dev/null", wpid, wpid),
+                 ignore.stdout = TRUE, ignore.stderr = TRUE)
+        } else {
+          system(sprintf("taskkill /F /T /PID %d 2>NUL", wpid),
+                 ignore.stdout = TRUE, ignore.stderr = TRUE)
+        }
+      }, error = function(e) NULL)
+    }
+  }), add = TRUE), envir = envir)
+}
+
 # internal function to generate the locus file
 sample.mu.rates<-function(model){
   MEAN <- runif(1, as.numeric(model$loci[1,4]), as.numeric(model$loci[1,5]))

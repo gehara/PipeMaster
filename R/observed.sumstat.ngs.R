@@ -116,11 +116,18 @@ phylip_to_ms_file <- function(filepath, pop.assign, output_file, verbose = FALSE
     i <- i + 1
 
     # Read sequences as strings (NOT character matrices)
+    # Detect tab-delimited (long names) vs fixed-width (10-char names)
     names_vec <- character(ntax)
     seqs <- character(ntax)
     for(j in 1:ntax) {
-      names_vec[j] <- trimws(substr(lines[i], 1, 10))
-      seqs[j] <- gsub("\\s", "", substr(lines[i], 11, nchar(lines[i])))
+      if (grepl("\t", lines[i])) {
+        parts <- strsplit(lines[i], "\t")[[1]]
+        names_vec[j] <- trimws(parts[1])
+        seqs[j] <- gsub("\\s", "", parts[2])
+      } else {
+        names_vec[j] <- trimws(substr(lines[i], 1, 10))
+        seqs[j] <- gsub("\\s", "", substr(lines[i], 11, nchar(lines[i])))
+      }
       i <- i + 1
     }
 
@@ -214,6 +221,8 @@ observed.sumstats <- function(model, path.to.phylip = NULL, path.to.vcf = NULL,
   if(is.null(nrow(model$loci)))
     stop("Your model is incomplete. Go through the gene menu first and then get.data.structure().")
 
+  if (is.character(pop.assign) && length(pop.assign) == 1L && file.exists(pop.assign))
+    pop.assign <- read.table(pop.assign, header = TRUE)
   pop.assign <- data.frame(pop.assign)
   if(ncol(pop.assign) < 2) stop("pop.assign must have at least 2 columns")
   if(length(which(pop.assign[,2] %in% 1:10 == FALSE)) > 0)

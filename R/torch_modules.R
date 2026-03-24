@@ -363,21 +363,21 @@
 # ============================================================================
 
 #' @keywords internal
-.build.nn.torch <- function(hp, data, type, sfs.dims = NULL,
-                            mc_dropout = FALSE, device = "cpu") {
+.build.nn.torch <- function(hp, data, type, sfs.dims = NULL, device = "cpu") {
 
-  n_targets <- ncol(data$Y_train)
+  .ncol2 <- function(x) if (inherits(x, "torch_tensor")) x$size(2) else ncol(x)
+  n_targets <- .ncol2(data$Y_train)
 
   model <- switch(type,
     sumstat = , emulator = {
-      n_features <- ncol(data$X_train)
-      .PipeMasterResNet(n_features, n_targets, hp, mc_dropout = mc_dropout)
+      n_features <- .ncol2(data$X_train)
+      .PipeMasterResNet(n_features, n_targets, hp)
     },
     sfs1d = {
-      .PipeMasterCNN1D(data$n_bins, n_targets, hp, mc_dropout = mc_dropout)
+      .PipeMasterCNN1D(data$n_bins, n_targets, hp)
     },
     sfs2d = {
-      .PipeMasterCNN2D(sfs.dims, n_targets, hp, mc_dropout = mc_dropout)
+      .PipeMasterCNN2D(sfs.dims, n_targets, hp)
     },
     stop(sprintf("Unknown type: %s", type))
   )
@@ -408,33 +408,6 @@
     pred <- model(X)
     as.matrix(pred$cpu())
   })
-}
-
-# ============================================================================
-# MC Dropout predict: multiple forward passes with dropout active
-#
-# Returns array [n_obs, n_targets, n_passes]
-# ============================================================================
-
-#' @keywords internal
-.torch.predict.mc <- function(model, X, n_passes = 100L, device = NULL) {
-  model$train()  # keep dropout active
-
-  # Auto-detect model device if not specified
-  if (is.null(device))
-    device <- model$parameters[[1]]$device
-
-  if (!inherits(X, "torch_tensor"))
-    X <- torch::torch_tensor(X, dtype = torch::torch_float(), device = device)
-
-  preds <- array(NA_real_, dim = c(nrow(as.matrix(X)), ncol(as.matrix(model(X)$cpu())), n_passes))
-
-  torch::with_no_grad({
-    for (i in seq_len(n_passes))
-      preds[, , i] <- as.matrix(model(X)$cpu())
-  })
-
-  preds
 }
 
 # ============================================================================

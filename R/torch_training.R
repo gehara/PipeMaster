@@ -33,13 +33,27 @@
 
   dev <- torch::torch_device(device)
 
-  # Convert data to tensors
-  X_tr_t <- torch::torch_tensor(X_train, dtype = torch::torch_float(), device = dev)
-  Y_tr_t <- torch::torch_tensor(Y_train, dtype = torch::torch_float(), device = dev)
-  X_va_t <- torch::torch_tensor(X_val,   dtype = torch::torch_float(), device = dev)
-  Y_va_t <- torch::torch_tensor(Y_val,   dtype = torch::torch_float(), device = dev)
+  # Detect big.matrix inputs (shared memory, batch-by-batch access)
+  is_bigmem <- inherits(X_train, "big.matrix")
 
-  n_train <- X_tr_t$size(1)
+  if (is_bigmem) {
+    # big.matrix path: only convert validation data to tensors
+    n_train <- nrow(X_train)
+    X_va_t <- torch::torch_tensor(X_val, dtype = torch::torch_float(), device = dev)
+    Y_va_t <- torch::torch_tensor(Y_val, dtype = torch::torch_float(), device = dev)
+  } else {
+    # Standard path: convert all data to tensors
+    .to_tensor <- function(x) {
+      if (inherits(x, "torch_tensor")) return(x$to(dtype = torch::torch_float(), device = dev))
+      torch::torch_tensor(x, dtype = torch::torch_float(), device = dev)
+    }
+    X_tr_t <- .to_tensor(X_train)
+    Y_tr_t <- .to_tensor(Y_train)
+    X_va_t <- .to_tensor(X_val)
+    Y_va_t <- .to_tensor(Y_val)
+    n_train <- X_tr_t$size(1)
+  }
+
   batch_size <- as.integer(hp$batch_size)
 
   # Loss function
@@ -73,20 +87,28 @@
   for (epoch in seq(initial_epoch + 1L, epochs)) {
     model$train()
 
-    # Shuffle training data
-    perm <- torch::torch_randperm(n_train, device = dev) + 1L  # 1-indexed
-    X_tr_shuf <- X_tr_t[perm]
-    Y_tr_shuf <- Y_tr_t[perm]
-
-    # Mini-batch loop
+    # Shuffle indices
+    perm <- sample.int(n_train)
     n_batches <- ceiling(n_train / batch_size)
     epoch_loss <- 0.0
 
     for (b in seq_len(n_batches)) {
       start_idx <- (b - 1L) * batch_size + 1L
       end_idx   <- min(b * batch_size, n_train)
-      X_batch <- X_tr_shuf[start_idx:end_idx]
-      Y_batch <- Y_tr_shuf[start_idx:end_idx]
+      batch_idx <- perm[start_idx:end_idx]
+
+      if (is_bigmem) {
+        # Read batch from mmap, convert to tensor on the fly
+        X_batch <- torch::torch_tensor(
+          X_train[batch_idx, , drop = FALSE],
+          dtype = torch::torch_float(), device = dev)
+        Y_batch <- torch::torch_tensor(
+          Y_train[batch_idx, , drop = FALSE],
+          dtype = torch::torch_float(), device = dev)
+      } else {
+        X_batch <- X_tr_t[batch_idx]
+        Y_batch <- Y_tr_t[batch_idx]
+      }
 
       optimizer$zero_grad()
       pred <- model(X_batch)
@@ -448,8 +470,8 @@
     'args <- commandArgs(trailingOnly = TRUE)',
     'task_id <- as.integer(args[1])',
     '',
-    '# Load shared data',
-    'load("shared_search.RData")',
+    '# Load metadata (small — no data matrices)',
+    'load("shared_search_meta.RData")',
     '',
     '# Threading env',
     'n_threads <- as.character(threads_per_worker)',
@@ -473,6 +495,26 @@
     '  if (cuda_is_available()) device <- "cuda"',
     '}',
     '',
+    '# Load data — bigmemory (shared mmap) or rds (per-worker copy)',
+    'if (use_bigmemory) {',
+    '  suppressPackageStartupMessages(library(bigmemory))',
+    '  X_train <- attach.big.matrix("X_train.desc")',
+    '  Y_train <- attach.big.matrix("Y_train.desc")',
+    '  X_val   <- torch_tensor(attach.big.matrix("X_val.desc")[,], dtype = torch_float())',
+    '  Y_val   <- torch_tensor(attach.big.matrix("Y_val.desc")[,], dtype = torch_float())',
+    '} else {',
+    '  .rds_to_tensor <- function(path) {',
+    '    m <- readRDS(path)',
+    '    t <- torch_tensor(m, dtype = torch_float())',
+    '    rm(m); gc()',
+    '    t',
+    '  }',
+    '  X_train <- .rds_to_tensor("X_train.rds")',
+    '  Y_train <- .rds_to_tensor("Y_train.rds")',
+    '  X_val   <- .rds_to_tensor("X_val.rds")',
+    '  Y_val   <- .rds_to_tensor("Y_val.rds")',
+    '}',
+    '',
     '# Create task-specific output directory',
     'out_dir <- file.path("results", sprintf("search_%04d", task_id))',
     'dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)',
@@ -481,7 +523,7 @@
     'hb_data <- list(',
     '  X_train = X_train, X_val = X_val,',
     '  Y_train = Y_train, Y_val = Y_val,',
-    '  n_features = n_features, n_bins = n_bins',
+    '  n_features = n_features, n_targets = n_targets, n_bins = n_bins',
     ')',
     '',
     '# Per-search config',
@@ -491,11 +533,19 @@
     'cat(sprintf("Search %d starting (seed=%d, eta=%d, max_epochs=%d)\\n",',
     '            task_id, worker_seed, worker_eta, worker_max_epochs))',
     '',
+    '# Check parent alive before starting expensive work',
+    'if (file.exists(".PM_parent.pid") && !PipeMaster:::.pm.parent.alive(".PM_parent.pid")) {',
+    '  cat("Parent died, worker exiting.\\n"); q("no") }',
+    '',
     'hb <- PipeMaster:::.torch.hyperband(',
     '  search_space = search_space_saved,',
     '  data = hb_data, type = type, sfs.dims = sfs.dims,',
     '  max_epochs = worker_max_epochs, eta = worker_eta,',
     '  seed = worker_seed, verbose = TRUE, device = device)',
+    '',
+    '# Check parent alive before retraining',
+    'if (file.exists(".PM_parent.pid") && !PipeMaster:::.pm.parent.alive(".PM_parent.pid")) {',
+    '  cat("Parent died, worker exiting.\\n"); q("no") }',
     '',
     '# Retrain best config to worker_max_epochs',
     'torch_manual_seed(as.integer(worker_seed))',
@@ -525,10 +575,10 @@
     '# Save model and results',
     'PipeMaster:::.torch.save.model(model, file.path(out_dir, "best_model.pt"),',
     '  type = type, hp = hb$best_hp,',
-    '  n_features = if (type %in% c("sumstat", "emulator")) ncol(hb_data$X_train) else NULL,',
+    '  n_features = n_features,',
     '  n_bins = hb_data$n_bins,',
     '  sfs_dims = sfs.dims,',
-    '  n_targets = ncol(hb_data$Y_train))',
+    '  n_targets = n_targets)',
     '',
     'saveRDS(list(',
     '  best_hp       = hb$best_hp,',
@@ -567,215 +617,6 @@
     '}'
   )
   writeLines(lines, filepath)
-}
-
-# ============================================================================
-# Write standalone conformal worker Rscript (torch backend)
-# ============================================================================
-
-#' @keywords internal
-.torch.write.conformal.worker.script <- function(filepath) {
-  writeLines(c(
-    '#!/usr/bin/env Rscript',
-    'args <- commandArgs(trailingOnly = TRUE)',
-    'task_id <- as.integer(args[1])',
-    '',
-    'load("shared_data.RData")',
-    '',
-    'n_threads <- as.character(threads_per_worker)',
-    'Sys.setenv(OMP_NUM_THREADS = n_threads,',
-    '           MKL_NUM_THREADS = n_threads)',
-    '',
-    'out_file <- file.path("results", sprintf("conf_%04d.csv", task_id))',
-    'if (file.exists(out_file)) { cat("skip\\n"); q("no") }',
-    '',
-    'suppressPackageStartupMessages(library(PipeMaster))',
-    'library(torch)',
-    'source("_build_model_torch.R")',
-    '',
-    'device <- if (torch::cuda_is_available()) "cuda" else "cpu"',
-    '',
-    '# Split into train / calibration',
-    'n_cal   <- floor(cal_frac * n_rows)',
-    'n_train <- n_rows - n_cal',
-    '',
-    'set.seed(seed + task_id * 100)',
-    'idx     <- sample(n_rows)',
-    'tr_idx  <- idx[1:n_train]',
-    'cal_idx <- idx[(n_train + 1):n_rows]',
-    '',
-    'feat_tr    <- features_all[tr_idx, ]',
-    'targ_tr    <- targets_all[tr_idx, , drop = FALSE]',
-    'feat_cal   <- features_all[cal_idx, ]',
-    'params_cal <- targets_all[cal_idx, , drop = FALSE]',
-    '',
-    '# Z-score features using train stats',
-    'f_mu  <- colMeans(feat_tr)',
-    'f_sd  <- apply(feat_tr, 2, sd); f_sd[f_sd == 0] <- 1',
-    'X_tr  <- t((t(feat_tr)  - f_mu) / f_sd)',
-    'X_cal <- t((t(feat_cal) - f_mu) / f_sd)',
-    '',
-    '# Log + Z-score targets using train stats',
-    'Y_tr_log <- log(targ_tr)',
-    't_mu <- colMeans(Y_tr_log)',
-    't_sd <- apply(Y_tr_log, 2, sd); t_sd[t_sd == 0] <- 1',
-    'Y_tr <- t((t(Y_tr_log) - t_mu) / t_sd)',
-    '',
-    '# Split train into train/val for early stopping',
-    'n_tr_rows <- nrow(X_tr)',
-    'n_va <- max(1L, floor(0.1 * n_tr_rows))',
-    'va_rows <- seq_len(n_va)',
-    'tr_rows <- seq(n_va + 1L, n_tr_rows)',
-    '',
-    'X_va_s <- X_tr[va_rows, , drop = FALSE]',
-    'X_tr_s <- X_tr[tr_rows, , drop = FALSE]',
-    'Y_va_s <- Y_tr[va_rows, , drop = FALSE]',
-    'Y_tr_s <- Y_tr[tr_rows, , drop = FALSE]',
-    '',
-    'ens_data <- list(',
-    '  X_train = X_tr_s, X_val = X_va_s,',
-    '  Y_train = Y_tr_s, Y_val = Y_va_s,',
-    '  n_features = ncol(feat_tr),',
-    '  n_bins = if (type != "sumstat") ncol(feat_tr) else NULL,',
-    '  feat_mu = f_mu, feat_sd = f_sd,',
-    '  target_mu = t_mu, target_sd = t_sd',
-    ')',
-    '',
-    'set.seed(seed + task_id * 1000)',
-    'model <- build_nn_torch(best_hp, ens_data, type, sfs.dims)',
-    'model$to(device = torch::torch_device(device))',
-    '',
-    'train_model_torch(model, ens_data, best_hp, type, max_epochs, device)',
-    '',
-    '# Predict on calibration set -> inverse transform',
-    'cal_pred_z <- predict_torch(model, X_cal, device)',
-    'cal_pred   <- exp(t(t(cal_pred_z) * t_sd + t_mu))',
-    '',
-    '# Residuals: true params - predicted params',
-    'cal_resid <- params_cal - cal_pred',
-    '',
-    '# Center on best model point estimate (avoids multi-peaked posteriors)',
-    'if (!is.null(point_est)) {',
-    '  center <- point_est',
-    '} else {',
-    '  if (type == "sumstat") {',
-    '    obs_aug <- c(observed, log1p(abs(observed)))',
-    '    X_obs <- matrix((obs_aug - f_mu) / f_sd, nrow = 1)',
-    '    X_obs[!is.finite(X_obs)] <- 0',
-    '  } else if (type == "sfs1d") {',
-    '    obs_z <- (log1p(observed) - f_mu) / f_sd',
-    '    obs_z[!is.finite(obs_z)] <- 0',
-    '    X_obs <- array(obs_z, dim = c(1L, length(obs_z), 1L))',
-    '  } else {',
-    '    obs_z <- (log1p(observed) - f_mu) / f_sd',
-    '    obs_z[!is.finite(obs_z)] <- 0',
-    '    X_obs <- array(obs_z, dim = c(1L, sfs.dims[1], sfs.dims[2], 1L))',
-    '  }',
-    '  obs_pred_z <- predict_torch(model, X_obs, device)',
-    '  center <- as.numeric(exp(t(t(obs_pred_z) * t_sd + t_mu)))',
-    '}',
-    '',
-    '# Conformal samples: center[j] + cal_resid[, j]',
-    'conf_samples <- matrix(NA, nrow = nrow(cal_resid), ncol = n_params)',
-    'for (j in seq_len(n_params))',
-    '  conf_samples[, j] <- center[j] + cal_resid[, j]',
-    '',
-    'df <- as.data.frame(conf_samples)',
-    'colnames(df) <- target_cols',
-    'write.csv(df, out_file, row.names = FALSE)',
-    'cat(sprintf("  conf %d done (%d samples)\\n", task_id, nrow(conf_samples)))'
-  ), filepath)
-}
-
-# ============================================================================
-# Write standalone bootstrap worker Rscript (torch backend)
-# ============================================================================
-
-#' @keywords internal
-.torch.write.bootstrap.worker.script <- function(filepath) {
-  writeLines(c(
-    '#!/usr/bin/env Rscript',
-    'args <- commandArgs(trailingOnly = TRUE)',
-    'task_id <- as.integer(args[1])',
-    '',
-    'load("shared_data.RData")',
-    '',
-    'n_threads <- as.character(threads_per_worker)',
-    'Sys.setenv(OMP_NUM_THREADS = n_threads,',
-    '           MKL_NUM_THREADS = n_threads)',
-    '',
-    'out_file <- file.path("results", sprintf("boot_%04d.csv", task_id))',
-    'if (file.exists(out_file)) { cat("skip\\n"); q("no") }',
-    '',
-    'suppressPackageStartupMessages(library(PipeMaster))',
-    'library(torch)',
-    'source("_build_model_torch.R")',
-    '',
-    'device <- if (torch::cuda_is_available()) "cuda" else "cpu"',
-    '',
-    'set.seed(seed + task_id)',
-    'boot_idx <- sample(n_rows, replace = TRUE)',
-    'feat_boot <- features_all[boot_idx, ]',
-    'targ_boot <- targets_all[boot_idx, , drop = FALSE]',
-    '',
-    'f_mu <- colMeans(feat_boot)',
-    'f_sd <- apply(feat_boot, 2, sd); f_sd[f_sd == 0] <- 1',
-    'X_boot <- t((t(feat_boot) - f_mu) / f_sd)',
-    '',
-    'Y_boot_log <- log(targ_boot)',
-    't_mu <- colMeans(Y_boot_log)',
-    't_sd <- apply(Y_boot_log, 2, sd); t_sd[t_sd == 0] <- 1',
-    'Y_boot <- t((t(Y_boot_log) - t_mu) / t_sd)',
-    '',
-    '# Split off validation',
-    'n_b <- nrow(X_boot)',
-    'n_va <- max(1L, floor(0.1 * n_b))',
-    'va_rows <- seq_len(n_va)',
-    'tr_rows <- seq(n_va + 1L, n_b)',
-    '',
-    'X_va_b <- X_boot[va_rows, , drop = FALSE]',
-    'X_tr_b <- X_boot[tr_rows, , drop = FALSE]',
-    'Y_va_b <- Y_boot[va_rows, , drop = FALSE]',
-    'Y_tr_b <- Y_boot[tr_rows, , drop = FALSE]',
-    '',
-    'boot_data <- list(',
-    '  X_train = X_tr_b, X_val = X_va_b,',
-    '  Y_train = Y_tr_b, Y_val = Y_va_b,',
-    '  n_features = ncol(feat_boot),',
-    '  n_bins = if (type != "sumstat") ncol(feat_boot) else NULL,',
-    '  feat_mu = f_mu, feat_sd = f_sd,',
-    '  target_mu = t_mu, target_sd = t_sd',
-    ')',
-    '',
-    'set.seed(seed + task_id)',
-    'model <- build_nn_torch(best_hp, boot_data, type, sfs.dims)',
-    'model$to(device = torch::torch_device(device))',
-    '',
-    'train_model_torch(model, boot_data, best_hp, type, max_epochs, device)',
-    '',
-    '# Normalize observed and predict',
-    'if (type == "sumstat") {',
-    '  obs_aug <- c(observed, log1p(abs(observed)))',
-    '  X_obs <- matrix((obs_aug - f_mu) / f_sd, nrow = 1)',
-    '  X_obs[!is.finite(X_obs)] <- 0',
-    '} else if (type == "sfs1d") {',
-    '  obs_z <- (log1p(observed) - f_mu) / f_sd',
-    '  obs_z[!is.finite(obs_z)] <- 0',
-    '  X_obs <- array(obs_z, dim = c(1L, length(obs_z), 1L))',
-    '} else {',
-    '  obs_z <- (log1p(observed) - f_mu) / f_sd',
-    '  obs_z[!is.finite(obs_z)] <- 0',
-    '  X_obs <- array(obs_z, dim = c(1L, sfs.dims[1], sfs.dims[2], 1L))',
-    '}',
-    '',
-    'obs_pred_z <- predict_torch(model, X_obs, device)',
-    'est <- as.numeric(exp(t(t(obs_pred_z) * t_sd + t_mu)))',
-    '',
-    'df <- as.data.frame(matrix(est, nrow = 1))',
-    'colnames(df) <- target_cols',
-    'write.csv(df, out_file, row.names = FALSE)',
-    'cat(sprintf("  boot %d done\\n", task_id))'
-  ), filepath)
 }
 
 # ============================================================================

@@ -21,6 +21,11 @@
 #' @param tol numeric — tolerance (acceptance fraction, default 0.01).
 #' @param distance character — distance metric: \code{"sd"} (default),
 #'   \code{"mad"}, or \code{"mahalanobis"}.
+#' @param pls logical — if TRUE, project summary statistics into PLS
+#'   component space before computing distances (default FALSE).
+#'   Recommended when the number of statistics is large (>100).
+#' @param n.pls integer — number of PLS components to retain (default 20).
+#'   Ignored if \code{pls = FALSE}.
 #' @param prior data.frame or NULL — prior samples for plotting (optional).
 #' @param verbose logical — print progress (default TRUE).
 #'
@@ -38,6 +43,8 @@ abc.rejection <- function(reftable, observed,
                           param.cols,
                           tol = 0.01,
                           distance = c("sd", "mad", "mahalanobis"),
+                          pls = FALSE,
+                          n.pls = 20L,
                           prior = NULL,
                           verbose = TRUE) {
 
@@ -71,9 +78,19 @@ abc.rejection <- function(reftable, observed,
                  length(observed), n_stats))
 
   if (verbose) {
-    cat(sprintf("PipeMaster:: abc.rejection: %s samples, tol=%.4f → keep %s, distance=%s\n",
+    cat(sprintf("PipeMaster:: abc.rejection: %s samples, tol=%.4f → keep %s, distance=%s, pls=%s\n",
                 format(n_samples, big.mark = ","), tol,
-                format(n_accept, big.mark = ","), distance))
+                format(n_accept, big.mark = ","), distance,
+                if (pls) sprintf("TRUE(%d)", n.pls) else "FALSE"))
+  }
+
+  # --- PLS dimensionality reduction ---
+  if (pls) {
+    n.pls <- as.integer(n.pls)
+    pls_fit <- pls.fit(pred_orig, theta_orig, n.comp = n.pls, scale = TRUE)
+    pred_orig <- pls.project(pls_fit, pred_orig)
+    observed  <- pls.project(pls_fit, observed)
+    n_stats   <- ncol(pred_orig)
   }
 
   # --- Compute distances ---

@@ -510,7 +510,10 @@ main.menu.gui <- function(input = NULL) {
     if (length(frag_idx) > 0) ms_tokens <- ms_tokens[1:(frag_idx[1] - 1)]
 
     # Extract events from tokens
-    ne_current <- rep(Ne0, npops)  # default
+    ne_current <- rep(Ne0, npops)  # default (time=0)
+    # Track all Ne values over time per pop for migration rate back-conversion
+    # Each entry: list(time_coal, pop, ne_abs)
+    ne_history <- list()
     events <- list()
     mig_events <- list()
     growth_rates <- list()
@@ -522,11 +525,15 @@ main.menu.gui <- function(input = NULL) {
         pop <- as.integer(ms_tokens[i + 1])
         ne_rel <- as.numeric(ms_tokens[i + 2])
         ne_current[pop] <- ne_rel * Ne0
+        ne_history[[length(ne_history) + 1]] <- list(
+          time_coal = 0, pop = pop, ne = ne_rel * Ne0)
         i <- i + 3
       } else if (tok == "-en" && i + 3 <= length(ms_tokens)) {
         time_coal <- as.numeric(ms_tokens[i + 1])
         pop <- as.integer(ms_tokens[i + 2])
         ne_rel <- as.numeric(ms_tokens[i + 3])
+        ne_history[[length(ne_history) + 1]] <- list(
+          time_coal = time_coal, pop = pop, ne = ne_rel * Ne0)
         # -en at time 0 is just setting initial Ne (single pop case)
         if (time_coal == 0) {
           ne_current[pop] <- ne_rel * Ne0
@@ -548,17 +555,29 @@ main.menu.gui <- function(input = NULL) {
       } else if (tok == "-m" && i + 3 <= length(ms_tokens)) {
         pop1 <- as.integer(ms_tokens[i + 1])
         pop2 <- as.integer(ms_tokens[i + 2])
-        rate <- as.numeric(ms_tokens[i + 3])
+        rate_ms <- as.numeric(ms_tokens[i + 3])
+        # ms -m i j M: present-day migration, convert back to 4Nm using Ne at time 0
+        rate_4Nm <- rate_ms * ne_current[pop1] / Ne0
+        # ms -m i j: fraction of pop i from pop j → migrants move from j to i
         mig_events[[length(mig_events) + 1]] <- list(
-          from = pop1, to = pop2, rate = rate, time = 0)
+          from = pop2, to = pop1, rate = rate_4Nm, time = 0)
         i <- i + 4
       } else if (tok == "-em" && i + 4 <= length(ms_tokens)) {
         time_coal <- as.numeric(ms_tokens[i + 1])
         pop1 <- as.integer(ms_tokens[i + 2])
         pop2 <- as.integer(ms_tokens[i + 3])
-        rate <- as.numeric(ms_tokens[i + 4])
+        rate_ms <- as.numeric(ms_tokens[i + 4])
+        # ms -em t i j M: ancestral migration, convert back to 4Nm
+        # Find the receiving pop's Ne at this time from ne_history
+        # (most recent -en for this pop at or before time_coal)
+        ne_recv <- ne_current[pop1]  # default: time-0 Ne
+        for (h in ne_history) {
+          if (h$pop == pop1 && h$time_coal <= time_coal) ne_recv <- h$ne
+        }
+        rate_4Nm <- rate_ms * ne_recv / Ne0
+        # ms -em t i j: same convention as -m
         mig_events[[length(mig_events) + 1]] <- list(
-          from = pop1, to = pop2, rate = rate, time = time_coal * ms_scalar)
+          from = pop2, to = pop1, rate = rate_4Nm, time = time_coal * ms_scalar)
         i <- i + 5
       } else if (tok == "-g" && i + 2 <= length(ms_tokens)) {
         pop <- as.integer(ms_tokens[i + 1])
@@ -718,9 +737,9 @@ main.menu.gui <- function(input = NULL) {
          axes = FALSE, cex.lab = 1.3 * font_scale, cex.main = 1.5 * font_scale)
     ax_ticks <- axTicks(2)
     # Add merge times and Ne change times as extra ticks on y-axis
-    merge_times <- sapply(merges, `[[`, "time")
-    ne_change_times <- sapply(events[sapply(events, `[[`, "type") == "ne_change"],
-                              `[[`, "time")
+    merge_times <- if (length(merges) > 0) sapply(merges, `[[`, "time") else numeric(0)
+    ne_evts <- events[sapply(events, `[[`, "type") == "ne_change"]
+    ne_change_times <- if (length(ne_evts) > 0) sapply(ne_evts, `[[`, "time") else numeric(0)
     event_times <- sort(unique(c(merge_times, ne_change_times)))
     # Regular axis: only show 0 and max tick, rest as unlabeled ticks
     ax_max <- max(ax_ticks)
@@ -741,29 +760,31 @@ main.menu.gui <- function(input = NULL) {
           if (!is.null(rv$en) && !is.null(rv$en$time)) rv$en$time[, 1],
           if (!is.null(rv$en_joins) && !is.null(rv$en_joins$time)) rv$en_joins$time[, 1])
 
+        # First pass: assign join names (priority)
         for (ev in events) {
+          if (ev$type != "join") next
           ti <- which(abs(event_times - ev$time) < 1)
           if (length(ti) == 0) next
           ti <- ti[1]
-          if (nchar(ev_labels[ti]) > 0) {
-            # Already labeled — append if different
-            next
-          }
-          if (ev$type == "join") {
-            # Match join by pop pair
-            if (!is.null(rv$ej)) {
-              pair_str <- paste(ev$src, ev$tgt)
-              for (k in 1:nrow(rv$ej)) {
-                if (rv$ej[k, 3] == pair_str) {
-                  ev_labels[ti] <- rv$ej[k, 1]; break
-                }
+          if (nchar(ev_labels[ti]) > 0) next
+          if (!is.null(rv$ej)) {
+            pair_str <- paste(ev$src, ev$tgt)
+            for (k in 1:nrow(rv$ej)) {
+              if (rv$ej[k, 3] == pair_str) {
+                ev_labels[ti] <- rv$ej[k, 1]; break
               }
             }
-          } else if (ev$type == "ne_change" && !is.null(ev$en_seq)) {
-            # Match by en_seq → index into combined time names
-            if (ev$en_seq <= length(all_en_time_names)) {
-              ev_labels[ti] <- all_en_time_names[ev$en_seq]
-            }
+          }
+        }
+        # Second pass: fill remaining (Ne change times not tied to a join)
+        for (ev in events) {
+          if (ev$type != "ne_change" || is.null(ev$en_seq)) next
+          ti <- which(abs(event_times - ev$time) < 1)
+          if (length(ti) == 0) next
+          ti <- ti[1]
+          if (nchar(ev_labels[ti]) > 0) next
+          if (ev$en_seq <= length(all_en_time_names)) {
+            ev_labels[ti] <- all_en_time_names[ev$en_seq]
           }
         }
 
@@ -1023,13 +1044,15 @@ main.menu.gui <- function(input = NULL) {
         # Rate labels or parameter names near arrowheads
         if (show_values || show_params) {
           x_off <- (x_right - x_left) * 0.12
-          # Helper to find mig param name
+          # Helper to find mig param name for an arrow from source → destination.
+          # The flag stores "-m receiver source" (ms convention), so we match
+          # pops[1] == to (receiver) and pops[2] == from (source).
           find_mig_name <- function(from, to, ancestral) {
             src <- if (ancestral && !is.null(rv$em)) rv$em$size else rv$m
             if (is.null(src)) return("")
             for (k in 1:nrow(src)) {
               pops <- strsplit(src[k, 3], " ")[[1]]
-              if (length(pops) >= 2 && as.integer(pops[1]) == from && as.integer(pops[2]) == to)
+              if (length(pops) >= 2 && as.integer(pops[1]) == to && as.integer(pops[2]) == from)
                 return(src[k, 1])
             }
             ""
@@ -3045,10 +3068,24 @@ main.menu.gui <- function(input = NULL) {
               arg = "/tmp/plot/"),
             error = function(e) NULL)
           if (!is.null(cmd)) {
-            # Format: ms command + sampled parameters
+            # Format: ms command + sampled parameters + conditions
             p <- cmd[[2]]
             param_str <- paste(sprintf("  %-18s = %s", p[1,], p[2,]), collapse = "\n")
-            ms_str <- paste0("ms command:\n", cmd[[1]], "\n\nSampled parameters:\n", param_str)
+            # Collect active conditions
+            cond_lines <- character(0)
+            for (ctype in c("size", "time", "mig")) {
+              cl <- model$conds[[ctype]]
+              if (is.null(cl) || length(cl) == 0) next
+              for (cc in cl) {
+                cond_lines <- c(cond_lines,
+                  sprintf("  %s %s %s", cc$param1, cc$op, cc$param2))
+              }
+            }
+            cond_str <- if (length(cond_lines) > 0)
+              paste0("\n\nConditions:\n", paste(cond_lines, collapse = "\n"))
+            else ""
+            ms_str <- paste0("ms command:\n", cmd[[1]],
+                             "\n\nSampled parameters:\n", param_str, cond_str)
             output$txt_ms_command <- shiny::renderText(ms_str)
           }
         }
