@@ -77,7 +77,7 @@ controls max concurrent workers, \code{gpus} controls GPU assignment.}
 \item{verbose}{logical — print progress (default TRUE).}
 }
 \value{
-An object of class \code{"nn.posterior"} (a list) with:
+An object of class \code{"posterior"} (a list) with:
 \describe{
   \item{point_estimate}{named numeric vector — inverse-transformed point
     prediction from best model}

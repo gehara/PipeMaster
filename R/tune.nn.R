@@ -1702,7 +1702,7 @@ load.tune.result <- function(path) {
 #' @param seed integer — random seed (default 42).
 #' @param verbose logical — print progress (default TRUE).
 #'
-#' @return An object of class \code{"nn.posterior"} (a list) with:
+#' @return An object of class \code{"posterior"} (a list) with:
 #' \describe{
 #'   \item{point_estimate}{named numeric vector — inverse-transformed point
 #'     prediction from best model}
@@ -1827,7 +1827,7 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
       prior          = NULL,
       param_names    = param_names
     )
-    class(result) <- "nn.posterior"
+    class(result) <- "posterior"
     return(result)
   }
 
@@ -1891,12 +1891,12 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
     prior          = prior_samples,
     param_names    = param_names
   )
-  class(result) <- "nn.posterior"
+  class(result) <- "posterior"
   result
 }
 
 #' @export
-summary.nn.posterior <- function(object, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), ...) {
+summary.posterior <- function(object, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), ...) {
   param_names <- object$param_names
   n_params <- length(param_names)
   q_labels <- paste0(formatC(probs * 100, format = "fg"), "%")
@@ -1922,12 +1922,12 @@ summary.nn.posterior <- function(object, probs = c(0.025, 0.25, 0.5, 0.75, 0.975
     out$bootstrap <- .summarize(object$bootstrap)
   if (!is.null(object$abc))
     out$abc <- .summarize(object$abc)
-  class(out) <- "summary.nn.posterior"
+  class(out) <- "summary.posterior"
   out
 }
 
 #' @export
-print.summary.nn.posterior <- function(x, digits = 2, ...) {
+print.summary.posterior <- function(x, digits = 2, ...) {
   cat("Point estimate:\n")
   print(round(x$point_estimate, digits))
   if (!is.null(x$bootstrap)) {
@@ -1942,14 +1942,14 @@ print.summary.nn.posterior <- function(x, digits = 2, ...) {
 }
 
 #' @export
-print.nn.posterior <- function(x, ...) {
+print.posterior <- function(x, ...) {
   methods <- c()
   if (!is.null(x$bootstrap))
     methods <- c(methods, sprintf("bootstrap (%d samples)", nrow(x$bootstrap)))
   if (!is.null(x$abc))
     methods <- c(methods, sprintf("ABC-NN regression (%d samples)", nrow(x$abc)))
   if (length(methods) == 0) methods <- "point only"
-  cat(sprintf("nn.posterior object — %s\n", paste(methods, collapse = " + ")))
+  cat(sprintf("posterior object — %s\n", paste(methods, collapse = " + ")))
   cat("Point estimate:\n")
   print(round(x$point_estimate, 2))
   cat("\nUse summary() for posterior quantiles, density() for density objects.\n")
@@ -1957,7 +1957,7 @@ print.nn.posterior <- function(x, ...) {
 }
 
 #' @export
-density.nn.posterior <- function(x, method = NULL, ...) {
+density.posterior <- function(x, method = NULL, ...) {
   param_names <- x$param_names
   sample_methods <- c("bootstrap", "abc")
 
@@ -1981,7 +1981,7 @@ density.nn.posterior <- function(x, method = NULL, ...) {
 }
 
 #' @export
-plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
+plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
                              show_point_est = TRUE, show_prior = FALSE,
                              true_values = NULL, bw.adjust = 1, ...) {
   param_names <- x$param_names

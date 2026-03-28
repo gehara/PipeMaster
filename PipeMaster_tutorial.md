@@ -298,28 +298,14 @@ result <- abc.rejection(
 result$point_estimate
 
 # Posterior samples
-head(result$abc_rejection)
+head(result$abc)
 ```
 
 ### Plotting ABC posteriors
 
 ```r
-# Compare prior and posterior
-par(mfrow = c(1, 3))
 true_vals <- c(Ne0.pop1 = 2807, Ne1.pop1 = 4485, t.Ne1.pop1 = 2162)
-
-for (i in seq_along(param_cols)) {
-  prior <- reftable[[param_cols[i]]]
-  post  <- result$abc_rejection[, i]
-
-  plot(density(prior), col = "grey", lwd = 2, lty = 3,
-       main = param_cols[i], xlab = param_cols[i])
-  lines(density(post), col = "steelblue", lwd = 2)
-  abline(v = true_vals[i], col = "red", lty = 2, lwd = 2)
-  legend("topright", c("Prior", "Posterior", "True"),
-         col = c("grey", "steelblue", "red"),
-         lwd = 2, lty = c(3, 1, 2), bty = "n")
-}
+plot(result, true_values = true_vals, show_prior = TRUE)
 ```
 
 ---

@@ -35,12 +35,12 @@ statistics.}
 \item{verbose}{logical — print progress (default TRUE).}
 }
 \value{
-An object of class \code{"nn.posterior"} with:
+An object of class \code{"posterior"} with:
 \describe{
   \item{point_estimate}{weighted mean of accepted samples (weight = 1/distance)}
-  \item{abc_rejection}{matrix of accepted parameter samples}
+  \item{abc}{matrix of accepted parameter samples}
   \item{abc_distance}{distance metric used}
-  \item{prior}{prior samples (if provided)}
+  \item{prior}{prior samples from the reftable}
   \item{param_names}{parameter column names}
 }
 }

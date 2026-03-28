@@ -29,12 +29,12 @@
 #' @param prior data.frame or NULL — prior samples for plotting (optional).
 #' @param verbose logical — print progress (default TRUE).
 #'
-#' @return An object of class \code{"nn.posterior"} with:
+#' @return An object of class \code{"posterior"} with:
 #' \describe{
 #'   \item{point_estimate}{weighted mean of accepted samples (weight = 1/distance)}
-#'   \item{abc_rejection}{matrix of accepted parameter samples}
+#'   \item{abc}{matrix of accepted parameter samples}
 #'   \item{abc_distance}{distance metric used}
-#'   \item{prior}{prior samples (if provided)}
+#'   \item{prior}{prior samples from the reftable}
 #'   \item{param_names}{parameter column names}
 #' }
 #'
@@ -144,8 +144,9 @@ abc.rejection <- function(reftable, observed,
     cat(sprintf("PipeMaster:: Point estimate: %s\n", est_str))
   }
 
-  # --- Prior samples ---
-  prior_samples <- NULL
+  # --- Prior samples (from reftable or explicit) ---
+  prior_samples <- as.matrix(theta_orig[, param.cols, drop = FALSE])
+  colnames(prior_samples) <- param.cols
   if (!is.null(prior)) {
     pcols <- intersect(param.cols, colnames(prior))
     pcols <- setdiff(pcols, nuisance)
@@ -155,17 +156,17 @@ abc.rejection <- function(reftable, observed,
     }
   }
 
-  # --- Return nn.posterior object ---
+  # --- Return posterior object ---
   result <- list(
     point_estimate = point_est,
     conformal      = NULL,
     bootstrap      = NULL,
     mc_dropout     = NULL,
-    abc_rejection  = accepted,
+    abc            = accepted,
     abc_distance   = distance,
     prior          = prior_samples,
     param_names    = param.cols
   )
-  class(result) <- "nn.posterior"
+  class(result) <- "posterior"
   result
 }
