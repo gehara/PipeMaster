@@ -88,7 +88,7 @@ sim.sumstats <- function(model, nsim.blocks, block.size = 10,
         sfs_len <- floor(nsam / 2)
         if(folded) {
           folded_len <- length(fold_sfs(numeric(nsam - 1)))
-          sfs.names <- paste0("sfs_fold_", seq(0, folded_len - 1))
+          sfs.names <- paste0("sfs_", seq(0, folded_len - 1))
         } else {
           sfs.names <- paste0("sfs_", seq(0, sfs_len - 1))
         }

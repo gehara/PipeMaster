@@ -1,4 +1,6 @@
-ms.string.generator<-function(model,size.pars,mig.pars,time.pars,use.alpha,scalar=1){
+ms.string.generator<-function(model,size.pars,mig.pars,time.pars,use.alpha,scalar=1,
+                              mig_scale=c("Nm","m")){
+  mig_scale <- match.arg(mig_scale)
 
   # rescale to inheritance scalar and transform size parameters to relative to Ne0
   size.pars[,4:5] <- as.numeric(size.pars[,4]) * scalar
@@ -71,7 +73,12 @@ ms.string.generator<-function(model,size.pars,mig.pars,time.pars,use.alpha,scala
     for(i in 1:nrow(curr.mig)){
       curr.mig[i,3]<-strsplit(curr.mig[i,3]," ")[[1]][1]
       }
-    curr.mig[,4] <- as.numeric(curr.mig[,4]) / as.numeric(curr.Ne[match(curr.mig[,3],curr.Ne[,3]),4])
+    if (mig_scale == "m") {
+      curr.mig[,4] <- as.numeric(curr.mig[,4]) * 400000  # m * 4*Ne0
+    } else {
+      # Nm mode: Nm * 4 / Ne_coal = 4*Ne0*m; or legacy 4Nm: 4Nm / Ne_coal = 4*Ne0*m
+      curr.mig[,4] <- as.numeric(curr.mig[,4]) * 4 / as.numeric(curr.Ne[match(curr.mig[,3],curr.Ne[,3]),4])
+    }
     curr.mig[,3] <- mig.pars[1:nrow(curr.mig),3]
 
   ###### generate current migration string
@@ -88,21 +95,23 @@ ms.string.generator<-function(model,size.pars,mig.pars,time.pars,use.alpha,scala
         emt[i,3]<-strsplit(emt[i,3]," ")[[1]][1]
         }
 
-      if(nrow(en)==0){
-        em[,4]<-as.numeric(em[,4])/as.numeric(curr.Ne[match(emt[,3],curr.Ne[,3]),4])
+      if (mig_scale == "m") {
+        em[,4] <- as.numeric(em[,4]) * 400000  # m * 4*Ne0
+      } else if(nrow(en)==0){
+        em[,4]<-as.numeric(em[,4]) * 4 /as.numeric(curr.Ne[match(emt[,3],curr.Ne[,3]),4])
         } else {
           if(sum(as.numeric(em[,4]))>0){
             for(j in 1:nrow(em)){
               x<-which(ent[,3]==emt[j,3])
               if(length(x)==0){
-                em[j,4]<-as.numeric(em[j,4])/as.numeric(curr.Ne[match(emt[j,3],curr.Ne[,3]),4])
+                em[j,4]<-as.numeric(em[j,4]) * 4 /as.numeric(curr.Ne[match(emt[j,3],curr.Ne[,3]),4])
               } else {
                 y<-which(as.numeric(ent[x,4])<=as.numeric(emt[j,4]))
                 if(length(y)==0){
-                em[j,4]<-as.numeric(em[j,4])/as.numeric(curr.Ne[match(emt[j,3],curr.Ne[,3]),4])
+                em[j,4]<-as.numeric(em[j,4]) * 4 /as.numeric(curr.Ne[match(emt[j,3],curr.Ne[,3]),4])
                 } else {
                   y<-which(as.numeric(ent[x,4])==max(as.numeric(ent[x[y],4])))[1]
-                  em[j,4]<-as.numeric(em[j,4])/as.numeric(en[x[y],4])
+                  em[j,4]<-as.numeric(em[j,4]) * 4 /as.numeric(en[x[y],4])
                 }
             }
           }

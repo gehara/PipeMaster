@@ -91,7 +91,7 @@ tune.nn <- function(reftable, param.cols,
 
   # --- Dispatch to torch backend ---
   if (backend == "torch") {
-    return(.tune.nn.torch(reftable = reftable, param.cols = param.cols,
+    res <- .tune.nn.torch(reftable = reftable, param.cols = param.cols,
                           type = type, sfs.dims = sfs.dims,
                           max_epochs = max_epochs, eta = eta,
                           search_space = search_space,
@@ -101,7 +101,8 @@ tune.nn <- function(reftable, param.cols,
                           gpus = gpus, gpu.threshold = gpu.threshold,
                           greedy = greedy,
                           top_k = top_k,
-                          seed = seed, verbose = verbose))
+                          seed = seed, verbose = verbose)
+    return(res)
   }
 
   # --- Keras dependency check ---
@@ -1982,7 +1983,7 @@ density.nn.posterior <- function(x, method = NULL, ...) {
 #' @export
 plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
                              show_point_est = TRUE, show_prior = FALSE,
-                             true_values = NULL, ...) {
+                             true_values = NULL, bw.adjust = 1, ...) {
   param_names <- x$param_names
   n_params <- length(param_names)
 
@@ -2014,7 +2015,9 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
   sample_methods <- intersect(methods, all_methods)
 
-  par(mfrow = c(1, n_params))
+  ncol <- min(n_params, 5)
+  nrow <- ceiling(n_params / ncol)
+  par(mfrow = c(nrow, ncol))
   for (j in seq_len(n_params)) {
     pname <- param_names[j]
 
@@ -2032,9 +2035,9 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
       vals <- vals[is.finite(vals)]
       if (length(vals) <= 2) next
       if (!is.null(prior_range)) {
-        d <- density(vals, from = prior_range[1], to = prior_range[2])
+        d <- density(vals, from = prior_range[1], to = prior_range[2], adjust = bw.adjust)
       } else {
-        d <- density(vals)
+        d <- density(vals, adjust = bw.adjust)
       }
       densities[[m]]   <- d
       density_lty[[m]] <- if (m == "prior") 3 else 1
@@ -2753,11 +2756,16 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
 .compute.threads.per.worker <- function(cores, greedy = TRUE) {
   if (!greedy) return(1L)
+  n_logical <- parallel::detectCores()
   n_physical <- tryCatch(
     parallel::detectCores(logical = FALSE),
-    error = function(e) parallel::detectCores()
+    error = function(e) n_logical
   )
-  if (is.na(n_physical)) n_physical <- cores
+  if (is.na(n_physical)) n_physical <- n_logical
+  if (is.na(n_physical)) return(1L)
+  # detectCores(logical=FALSE) is unreliable on some systems (reports logical
+  # count). Cap at half of logical cores as a conservative estimate.
+  n_physical <- min(n_physical, ceiling(n_logical / 2))
   max(1L, floor(n_physical / cores))
 }
 
@@ -3082,6 +3090,7 @@ plot.nn.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   if (verbose) cat(sprintf("PipeMaster:: tune.nn \u2014 Hyperband (ResNet)\n"))
   data <- .prep.data(reftable, param.cols, type, sfs.dims, exclude.cols,
                      val.frac, seed)
+  reftable <- NULL  # release reference, data has everything we need
 
   n_feat <- ncol(data$X_train)
   n_targ <- ncol(data$Y_train)

@@ -1,25 +1,28 @@
 ---
-title: "PipeMaster Tutorial"
-subtitle: "Simulation-Based Inference with stdpopsim Models"
+title: "PipeMaster v2 Tutorial"
+subtitle: "Demographic Inference from RAD-seq and WGS Data"
 output:
   html_document:
-    toc: false
+    toc: true
     toc_depth: 3
-    df_print: paged
+  pdf_document:
+    toc: true
+    toc_depth: '3'
 ---
 
-This tutorial demonstrates PipeMaster's two main inference pipelines — **Site Frequency Spectrum (SFS)** and **summary statistics** — using four well-characterized demographic models from [stdpopsim](https://popsim-consortium.github.io/stdpopsim-docs/stable/). Because these models have known true parameters, we can verify that PipeMaster's simulations and ABC estimation recover the correct values.
+This tutorial demonstrates PipeMaster's inference pipeline using three
+demographic models of increasing complexity. All data files are included
+with the package — no external downloads are needed.
 
 ## Contents
 
-1. [Installation](#installation)
-2. [Demographic Models](#demographic-models)
-3. [Building Models in PipeMaster](#building-models-in-pipemaster)
-4. [Pseudo-Observed Data](#pseudo-observed-data)
-5. [SFS-Based Inference](#sfs-based-inference)
-6. [Summary Statistics-Based Inference](#summary-statistics-based-inference)
-7. [Visualization](#visualization)
-8. [References](#references)
+1. [Installation](#1-installation)
+2. [Example Models](#2-example-models)
+3. [Computing Observed Statistics](#3-computing-observed-statistics)
+4. [Simulating Reference Tables](#4-simulating-reference-tables)
+5. [ABC Rejection](#5-abc-rejection)
+6. [Supervised Machine Learning (SML)](#6-supervised-machine-learning)
+7. [Out-of-Distribution Diagnostics](#7-out-of-distribution-diagnostics)
 
 ---
 
@@ -38,602 +41,483 @@ Load the package:
 library(PipeMaster)
 ```
 
-PipeMaster depends on `ape`, `abc`, `e1071`, and `msm`. These are installed automatically. For the Shiny GUI, you also need `shinydashboard`, `shinyjs`, and `DT`.
+PipeMaster requires `ape`, `e1071`, and `msm` (installed automatically).
+For the Shiny GUI, you also need `shiny`, `shinydashboard`, `shinyjs`, and
+`DT`. For the torch neural network backend, install the `torch` package.
 
-### Simulation engine
+### Simulation engines
 
-PipeMaster includes modified versions of **ms** (Hudson 2002) and **msABC** (Pavlidis et al. 2010) compiled as native C code that runs directly within R — no external binaries or system calls are needed. The ms engine generates coalescent genealogies and sequence data, while the msABC extension computes summary statistics (nucleotide diversity, Tajima's D, FST, etc.) on the fly during simulation. The SFS is also computed natively in C from the coalescent output. This integrated approach makes PipeMaster portable across platforms and avoids the overhead of writing and parsing intermediate files.
+PipeMaster includes two coalescent simulation engines:
+
+- **msABC** (built-in C) — a modified version of msABC (Pavlidis et al.
+  2010), itself based on Hudson's ms (Hudson 2002). Fast for short loci
+  (RAD-seq, 100 bp). Uses `sim.sumstats()`.
+- **scrm** (vendored C++) — a modified version of scrm (Staab et al.
+  2015). Fast for long loci with recombination (WGS, 100 kb). Uses
+  `sim.scrm.sumstats()`.
+
+Both engines compute summary statistics and the site frequency spectrum (SFS)
+in C during simulation — no intermediate files or parsing overhead.
 
 ### Parameter scaling
 
-The coalescent simulator ms works with scaled parameters. PipeMaster handles this conversion internally — **you specify parameters in natural units** (actual Ne, generations, per-bp mutation rate) and PipeMaster rescales them before passing to ms:
+You specify parameters in **natural units** (Ne, generations, per-bp mutation
+rate). PipeMaster converts them to coalescent units internally:
 
 | Natural unit | Coalescent scale | Formula |
 |---|---|---|
-| Effective population size (Ne) | Relative size | Ne / Ne0 |
+| Population size (Ne) | Relative size | Ne / Ne0 |
 | Time (generations) | Coalescent time | t / (4 * Ne0) |
 | Mutation rate (per bp per gen) | Theta per locus | 4 * Ne0 * mu * L |
-| Migration rate (fraction per gen) | Scaled migration | 4 * Ne0 * m |
+| Migration (Nm) | Scaled migration | 4 * Ne0 * m |
 
-Where **Ne0** is a reference effective population size used as the scaling constant, **mu** is the per-site per-generation mutation rate, **L** is the locus length in base pairs, and **m** is the per-generation migration fraction.
-
-For single-population models, Ne0 is set to the sampled value of the current Ne. For multi-population models, Ne0 is fixed at 100,000 as an arbitrary reference — relative sizes and times are adjusted accordingly. Priors in PipeMaster are always specified in natural units (actual Ne, generations), so you never need to compute the scaling yourself.
-
-### Workflow
-
-A typical PipeMaster analysis follows these steps:
-
-```
-1. Build model          Define tree topology, Ne, migration, divergence times
-       |                → main.menu.gui() or programmatic construction
-       v
-2. Set priors           Specify prior distributions for each parameter
-       |                → get.prior.table(), update.priors()
-       v
-3. Observed data        Compute SFS or summary statistics from empirical data
-       |                → obs.sfs() or obs.sumstat.ngs()
-       v
-4. Simulate             Generate reference table of simulations under the model
-       |                → sim.sfs() or sim.sumstat()
-       v
-5. Inference            Compare observed to simulated, estimate parameters
-       |                → abc() from the abc package
-       v
-6. Evaluate             Check posterior distributions, model fit
-                        → posterior plots, cross-validation
-```
+Where Ne0 = 100,000 is the reference population size used for scaling.
 
 ---
 
-## 2. Demographic Models
+## 2. Example Models
 
-We use four stdpopsim models that cover the full range of demographic scenarios:
+PipeMaster ships three example models based on well-characterized
+[stdpopsim](https://popsim-consortium.github.io/stdpopsim-docs/stable/)
+demographic histories. Each comes with pseudo-observed RAD-seq data (VCF)
+and pre-computed WGS observed statistics.
 
-### 2.1 Vaquita2Epoch (Robinson et al. 2022)
+### 2.1 Vaquita two-epoch bottleneck
 
-A single-population bottleneck model for the vaquita porpoise (*Phocoena sinus*).
+A single-population bottleneck model for the vaquita porpoise (*Phocoena
+sinus*) (Robinson et al. 2022). Three parameters.
 
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| Ne_present | 2,807 | Current effective population size |
-| Ne_ancient | 4,485 | Ancestral effective population size |
-| t_bottleneck | 2,162 gen | Time of size change |
-| mu | 5.83e-9 | Mutation rate per bp per generation |
+| Parameter | True value | Description |
+|-----------|------------|-------------|
+| Ne0.pop1 | 2,807 | Current Ne |
+| Ne1.pop1 | 4,485 | Ancestral Ne |
+| t.Ne1.pop1 | 2,162 gen | Time of size change |
 
-**Tree:** `(1);`
+Tree: `(1);` | Constraint: Ne0 < Ne1 (bottleneck)
 
-![Vaquita2Epoch model](tests/data/Vaquita2Epoch/vaquita_10K/model_Vaquita2Epoch.png)
+### 2.2 Orangutan isolation with migration
 
-### 2.2 Africa_1T12 (Tennessen et al. 2012)
+Two-population model for Bornean and Sumatran orangutans (Locke et al.
+2011). Eight parameters with asymmetric migration in Nm scale.
 
-A single African population with three size epochs (ancient, middle, recent expansion).
+| Parameter | True value | Description |
+|-----------|------------|-------------|
+| Ne0.pop1 | 8,805 | Current Bornean Ne |
+| Ne0.pop2 | 37,661 | Current Sumatran Ne |
+| Ne1.pop1 | 10,617 | Ancestral Bornean Ne |
+| Ne1.pop2 | 7,317 | Ancestral Sumatran Ne |
+| Ne.anc_1_2 | 17,934 | Ancestral Ne at split |
+| join1 | 20,157 gen | Divergence time |
+| mig0.1_2 | 0.06 Nm | Migration into Bornean |
+| mig0.2_1 | 0.415 Nm | Migration into Sumatran |
 
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| Ne_present | 432,125 | Current Ne (after recent growth) |
-| Ne_middle | 14,474 | Ne during middle epoch |
-| Ne_ancient | 7,310 | Ancestral Ne |
-| t_middle | 205 gen | Start of recent expansion |
-| t_ancient | 5,920 gen | Start of middle epoch |
-| mu | 2.36e-8 | Mutation rate per bp per generation |
+Tree: `(1,2);` | Migration scale: Nm
 
-**Tree:** `(1);`
+### 2.3 Human Out-of-Africa
 
-![Africa_1T12 model](tests/data/Africa_1T12/model_Africa_1T12.png)
+Three-population model for YRI, CEU, and CHB (Gutenkunst et al. 2009).
+Fourteen free parameters with symmetric migration in per-generation rate (m).
 
-### 2.3 PonAbe TwoSpecies (Locke et al. 2011)
+| Parameter | True value | Description |
+|-----------|------------|-------------|
+| Ne0.pop1 | 12,300 | Current YRI Ne |
+| Ne0.pop2 | 29,725 | Current CEU Ne |
+| Ne0.pop3 | 54,090 | Current CHB Ne |
+| Ne1.pop1 | 7,300 | Ancestral Ne |
+| Ne1.pop2 | 2,100 | OoA bottleneck Ne |
+| Ne1.pop3 | 510 | Initial CHB Ne |
+| Ne.anc_3_2 | 2,100 | Ne at CEU-CHB merge |
+| join3_2 | 848 gen | CEU-CHB split time |
+| join2_1 | 5,600 gen | OoA split time |
+| t.Ne1.pop1 | 8,800 gen | YRI Ne change time |
+| m_YRI_CEU | 2.47e-5 | Per-gen rate |
+| m_YRI_CHB | 7.67e-6 | Per-gen rate |
+| m_CEU_CHB | 6.38e-5 | Per-gen rate |
+| m_ancestral | 1.71e-3 | Per-gen rate (YRI-OoA) |
 
-Two orangutan species (Sumatran and Bornean) with isolation-with-migration and exponential size change.
+Tree: `((3,2),1);` | Migration scale: m (symmetric via conditions)
 
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| Ne_Sumatran | 37,661 | Present Sumatran Ne (growth) |
-| Ne_Bornean | 8,805 | Present Bornean Ne (decline) |
-| Ne_ancestral | 17,934 | Ancestral Ne |
-| t_split | 20,157 gen | Divergence time |
-| m_S->B | 1.099e-5 | Migration rate Sumatran to Bornean |
-| m_B->S | 6.646e-6 | Migration rate Bornean to Sumatran |
-| mu | 2e-8 | Mutation rate per bp per generation |
-
-**Tree:** `(1,2);`
-
-![PonAbe model](tests/data/PonAbe_TwoSpecies/model_PonAbe_TwoSpecies.png)
-
-### 2.4 OutOfAfrica_3G09 (Gutenkunst et al. 2009)
-
-The classic three-population Out-of-Africa model (YRI, CEU, CHB) with migration and exponential growth in non-African populations.
-
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| Ne_YRI | 12,300 | African population |
-| Ne_CEU | 29,725 | European (present, after growth) |
-| Ne_CHB | 54,090 | East Asian (present, after growth) |
-| Ne_CEU_bot | 1,000 | European bottleneck size |
-| Ne_CHB_bot | 510 | East Asian bottleneck size |
-| Ne_ancestral | 7,300 | Deep ancestral Ne |
-| t_EU_AS | 848 gen | CEU-CHB split |
-| t_OoA | 5,600 gen | Out-of-Africa split |
-| t_ancestral | 8,800 gen | Ancestral Ne change |
-| mu | 2.35e-8 | Mutation rate per bp per generation |
-
-**Tree:** `((1,2),3);`
-
-![OutOfAfrica_3G09 model](tests/data/OutOfAfrica_3G09/model_OutOfAfrica_3G09.png)
-
----
-
-## 3. Building Models in PipeMaster
-
-### 3.1 Using the Shiny GUI
-
-The recommended way to build models interactively:
-
-```r
-my.model <- main.menu.gui()
-```
-
-This launches a web-based GUI where you can:
-- Set the population tree topology
-- Configure Ne, migration, and time priors
-- Set parameter conditions (e.g., Ne_pop1 > Ne_pop2)
-- Configure loci and sample sizes
-- Preview the model plot
-
-![Shiny GUI](tests/data/shiny_gui.png)
-
-### 3.2 Building models programmatically
-
-For reproducible analyses, build models directly in R. Here is the Vaquita2Epoch model:
-
-```r
-n_loci <- 10000
-n_hap  <- 40  # 20 diploid = 40 haploid samples
-
-# Loci matrix: 10000 loci x 100bp
-loci <- matrix(NA, nrow=n_loci, ncol=6)
-for (i in 1:n_loci) {
-  loci[i,] <- c("rate", "100", "1", "1e-10", "1e-08", "runif")
-}
-
-# Sample configuration
-I <- matrix(NA, nrow=n_loci, ncol=4)
-for (i in 1:n_loci) {
-  I[i,] <- c(paste0("locus",i), "-I", "1", "40")
-}
-
-# Build model
-Vaquita2Epoch <- list(
-  loci = loci,
-  I    = I,
-  flags = list(
-    n = matrix(c("Ne0.pop1", "-n", "1", "500", "10000", "runif"),
-               nrow=1, ncol=6, byrow=TRUE),
-    en = list(
-      size = matrix(c("Ne1.pop1", "-en", "1", "1000", "15000", "runif"),
-                    nrow=1, ncol=6, byrow=TRUE),
-      time = matrix(c("t.Ne1.pop1", "-en", "1", "500", "5000", "runif"),
-                    nrow=1, ncol=6, byrow=TRUE)
-    ),
-    ej = NULL
-  ),
-  conds = list(
-    size.matrix = {
-      sm <- matrix(NA, nrow=2, ncol=2)
-      diag(sm) <- "0"
-      rownames(sm) <- colnames(sm) <- c("Ne0.pop1","Ne1.pop1")
-      # Bottleneck: present Ne < ancestral Ne
-      sm["Ne0.pop1","Ne1.pop1"] <- "<"
-      sm["Ne1.pop1","Ne0.pop1"] <- ">"
-      sm
-    },
-    mig.matrix  = matrix(NA, nrow=0, ncol=0),
-    time.matrix = {
-      tm <- matrix("0", nrow=1, ncol=1)
-      rownames(tm) <- colnames(tm) <- "t.Ne1.pop1"
-      tm
-    }
-  ),
-  tree = "(1);"
-)
-class(Vaquita2Epoch) <- "Model"
-```
-
-### 3.3 Checking and updating priors
-
-Use `get.prior.table()` to inspect priors and `update.priors()` to modify them:
-
-```r
-tab <- get.prior.table(Vaquita2Epoch)
-tab
-#      Parameter prior.1 prior.2 distribution
-# 1   Ne0.pop1     500   10000        runif
-# 2   Ne1.pop1    1000   15000        runif
-# 3 t.Ne1.pop1     500    5000        runif
-
-# Narrow the Ne0 prior
-tab[1, 2:3] <- c(1000, 5000)
-Vaquita2Epoch <- update.priors(tab, Vaquita2Epoch)
-```
-
-### 3.4 Loading pre-built test models
-
-All models in this tutorial are included in the test data:
-
-```r
-load("tests/data/test_models.RData")
-# Available: Africa_1T12, OutOfAfrica_2T12, OutOfAfrica_3G09,
-#            Vaquita2Epoch, PonAbe_TwoSpecies
-```
-
----
-
-## 4. Pseudo-Observed Data
-
-### 4.1 Pre-computed data
-
-The pseudo-observed data for this tutorial was generated with [stdpopsim](https://popsim-consortium.github.io/stdpopsim-docs/stable/) (Adrion et al. 2020) — 10,000 independent loci of 100bp each per model. The pre-computed observed SFS and summary statistics are included in `tests/data/test_models.RData`, which is loaded with:
-
-```r
-load("tests/data/test_models.RData")
-```
-
-This provides the model objects and the following observed data:
-
-| Object | Model | Type |
-|--------|-------|------|
-| `observed_sfs_Vaquita2Epoch` | Vaquita2Epoch | SFS |
-| `observed_sfs_Africa_1T12` | Africa_1T12 | SFS |
-| `observed_sfs_PonAbe` | PonAbe TwoSpecies | Joint SFS (2D) |
-| `observed_sfs_OutOfAfrica_3G09` | OutOfAfrica_3G09 | Joint SFS (3D) |
-| `observed_sumstats_Vaquita2Epoch` | Vaquita2Epoch | Summary statistics |
-| `observed_sumstats_OutOfAfrica_3G09` | OutOfAfrica_3G09 | Summary statistics |
-
-### 4.2 Computing observed SFS from your own data
-
-For your own empirical data, use `obs.sfs()` to compute the observed SFS from PHYLIP or FASTA alignments:
-
-```r
-# From PHYLIP file (faster for many loci)
-pop_assign <- read.table("my_pop_assign.txt", header = FALSE)
-obs_sfs <- obs.sfs(model = my_model,
-                   path.to.phylip = "my_data.phy",
-                   pop.assign = pop_assign,
-                   one.snp = TRUE)
-
-# From FASTA directory (one file per locus)
-obs_sfs <- obs.sfs(model = my_model,
-                   path.to.fasta = "my_fasta_dir",
-                   pop.assign = pop_assign,
-                   one.snp = TRUE)
-```
-
-The `one.snp = TRUE` option samples one SNP per locus to reduce linkage-induced variance.
-
-### 4.3 Computing observed summary statistics from your own data
-
-Use `obs.sumstat.ngs()` for summary statistics from FASTA or PHYLIP data:
-
-```r
-pop_assign <- read.table("my_pop_assign.txt", header = FALSE)
-obs_stats <- obs.sumstat.ngs(model = my_model,
-                             path.to.phylip = "my_data.phy",
-                             pop.assign = pop_assign)
-```
-
----
-
-## 5. SFS-Based Inference
-
-The SFS workflow uses `sim.sfs()` to simulate site frequency spectra and the `abc` package for parameter estimation.
-
-**Note:** PipeMaster's SFS includes the monomorphic class (bin 0), which counts loci with no segregating sites. This is important because the proportion of monomorphic loci carries information about effective population size and divergence times. Most SFS-based methods drop the monomorphic class, but retaining it improves parameter estimation, especially for recent bottlenecks and small populations.
-
-### 5.1 Single-pop SFS: Vaquita2Epoch
+### Loading example data
 
 ```r
 library(PipeMaster)
-library(abc)
-load("tests/data/test_models.RData")
 
-# Step 1: Simulate SFS reference table (100,000 simulations)
-sim.sfs(model = Vaquita2Epoch,
-        nsim.blocks = 10,
-        block.size = 1000,
-        use.alpha = FALSE,
-        one.snp = TRUE,
-        output.name = "sfs_vaq",
-        ncores = 10)
+# File paths for Vaquita example
+extdir <- system.file("extdata", "Vaquita2Epoch", package = "PipeMaster")
+list.files(extdir)
+# [1] "model_diffuse.RData"      "model_informative.RData"
+# [2] "obs_allstats_wgs.txt"     "pop_assign.txt"
+# [3] "Vaquita2Epoch_RAD.vcf"
 
-# Step 2: Load simulations and observed SFS
-sim_data <- read.table("SIM_SFS_sfs_vaq.txt", header = TRUE, sep = "\t")
+# Load model
+load(file.path(extdir, "model_informative.RData"))
+model <- get(ls(pattern = "Vaquita"))
 
-# Separate parameters from SFS bins
-sfs_cols   <- grep("^sfs_", colnames(sim_data), value = TRUE)
+# File paths
+vcf_file <- file.path(extdir, "Vaquita2Epoch_RAD.vcf")
+pop_file <- file.path(extdir, "pop_assign.txt")
+```
+
+---
+
+## 3. Computing Observed Statistics
+
+`observed.sumstats()` computes summary statistics and the folded SFS from
+a VCF or PHYLIP file. It uses the same C stat functions as the simulation
+engines, ensuring consistency between observed and simulated data.
+
+### From a VCF file
+
+```r
+# Compute observed stats from the shipped RAD VCF
+obs <- observed.sumstats(
+  model       = model,
+  path.to.vcf = vcf_file,
+  pop.assign  = pop_file
+)
+cat(sprintf("Observed: %d summary statistics + SFS bins\n", ncol(obs)))
+```
+
+### Multi-population example (PonAbe)
+
+```r
+extdir_pa <- system.file("extdata", "PonAbe_TwoSpecies", package = "PipeMaster")
+load(file.path(extdir_pa, "model_informative.RData"))
+model_pa <- get(ls(pattern = "PonAbe"))
+
+obs_pa <- observed.sumstats(
+  model       = model_pa,
+  path.to.vcf = file.path(extdir_pa, "PonAbe_TwoSpecies_RAD.vcf"),
+  pop.assign  = file.path(extdir_pa, "pop_assign.txt")
+)
+```
+
+### Using pre-computed WGS observed stats
+
+WGS VCFs are too large to ship with the package. Pre-computed observed
+statistics are provided instead:
+
+```r
+obs_wgs <- read.table(
+  file.path(extdir, "obs_allstats_wgs.txt"),
+  header = TRUE
+)
+```
+
+---
+
+## 4. Simulating Reference Tables
+
+A reference table contains many simulations under the model with parameters
+sampled from the prior distribution. Each row contains the sampled parameters
+and the resulting summary statistics.
+
+### RAD-seq reference table (msABC engine)
+
+For short loci (e.g., 100 bp RAD-seq), use `sim.sumstats()`:
+
+```r
+sim.sumstats(
+  model       = model,
+  nsim.blocks = 10,       # blocks per worker
+  block.size  = 10,       # simulations per block
+  mu.rates    = 5.83e-9,  # mutation rate per bp per gen
+  ncores      = 4,        # parallel workers
+  path        = "output/vaquita",
+  output.name = "reftable"
+)
+# Output: output/vaquita/SIMS_reftable.txt
+```
+
+Total simulations = nsim.blocks x block.size x ncores. For the Vaquita
+model with 3 parameters, 10,000-50,000 simulations are sufficient.
+
+### WGS reference table (scrm engine)
+
+For long loci with recombination (e.g., 100 kb WGS), use
+`sim.scrm.sumstats()`:
+
+```r
+sim.scrm.sumstats(
+  model       = model,
+  nsim.blocks = 10,
+  block.size  = 10,
+  mu.rates    = 5.83e-9,  # mutation rate
+  rec.rates   = 1e-8,     # recombination rate
+  skip.zns    = TRUE,     # skip ZnS (O(segsites^2))
+  ncores      = 4,
+  path        = "output/vaquita_wgs",
+  output.name = "reftable"
+)
+```
+
+### Loading a reference table
+
+```r
+reftable <- read.table("output/vaquita/SIMS_reftable.txt", header = TRUE)
+
+# Identify parameter and statistic columns
 param_cols <- c("Ne0.pop1", "Ne1.pop1", "t.Ne1.pop1")
-sim_sfs    <- as.matrix(sim_data[, sfs_cols])
-sim_params <- as.matrix(sim_data[, param_cols])
-
-# Observed SFS (from stdpopsim or obs.sfs)
-obs_sfs <- as.numeric(observed_sfs_Vaquita2Epoch[1, sfs_cols])
-
-# Step 3: ABC parameter estimation
-posterior <- abc(target  = obs_sfs,
-                param   = sim_params,
-                sumstat = sim_sfs,
-                tol     = 0.005,
-                method  = "neuralnet",
-                numnet  = 10,
-                sizenet = 10)
-
-summary(posterior)
-
-# Compare with true values
-# Ne0.pop1 = 2807, Ne1.pop1 = 4485, t.Ne1.pop1 = 2162
+nuisance   <- c("mean.rate", "sd.rate")
+stat_cols  <- setdiff(colnames(reftable), c(param_cols, nuisance))
 ```
 
-### 5.2 Single-pop SFS with growth: Africa_1T12
+### Simulation budget guidelines
 
-The Africa_1T12 model has exponential growth. Use `use.alpha = TRUE` to enable exponential size change in the most recent epoch:
+| Model complexity | Parameters | Recommended sims |
+|------------------|------------|------------------|
+| 1-pop (Vaquita) | 3 | 10,000-50,000 |
+| 2-pop IM (PonAbe) | 8 | 50,000-100,000 |
+| 3-pop (OoA) | 14-19 | 100,000-300,000 |
+
+---
+
+## 5. ABC Rejection
+
+`abc.rejection()` performs ABC with optional PLS distance projection.
+It accepts the simulated reference table and observed statistics, and
+returns posterior samples at multiple tolerance levels.
 
 ```r
-sim.sfs(model = Africa_1T12,
-        nsim.blocks = 10,
-        block.size = 1000,
-        use.alpha = TRUE,
-        one.snp = TRUE,
-        output.name = "sfs_afr",
-        ncores = 10)
+# Prepare observed vector (matching stat columns)
+obs_raw <- as.numeric(obs[1, stat_cols])
+
+# Run ABC rejection at three tolerance levels
+result <- abc.rejection(
+  reftable   = reftable,
+  observed   = obs_raw,
+  param.cols = param_cols,
+  tol        = 0.01,       # accept closest 1%
+  distance   = "sd",       # standardized Euclidean distance
+  pls        = TRUE,       # PLS distance projection
+  verbose    = TRUE
+)
+
+# Point estimate (weighted median of accepted simulations)
+result$point_estimate
+
+# Posterior samples
+head(result$abc_rejection)
 ```
 
-For models without an outgroup, use folded SFS:
+### Plotting ABC posteriors
 
 ```r
-# Simulated folded SFS
-sim.sfs(model = Africa_1T12,
-        nsim.blocks = 10,
-        block.size = 1000,
-        use.alpha = TRUE,
-        one.snp = TRUE,
-        folded = TRUE,
-        output.name = "sfs_afr_folded",
-        ncores = 10)
+# Compare prior and posterior
+par(mfrow = c(1, 3))
+true_vals <- c(Ne0.pop1 = 2807, Ne1.pop1 = 4485, t.Ne1.pop1 = 2162)
 
-# Observed folded SFS
-obs_folded <- obs.sfs(model = Africa_1T12,
-                      path.to.phylip = "tests/data/Africa_1T12/phylip_Africa_1T12.phy",
-                      pop.assign = pop_assign_afr,
-                      one.snp = TRUE,
-                      folded = TRUE)
-```
+for (i in seq_along(param_cols)) {
+  prior <- reftable[[param_cols[i]]]
+  post  <- result$abc_rejection[, i]
 
-### 5.3 Two-pop joint SFS: PonAbe
-
-For multi-population models, `sim.sfs()` computes the joint SFS automatically:
-
-```r
-sim.sfs(model = PonAbe_TwoSpecies,
-        nsim.blocks = 10,
-        block.size = 1000,
-        use.alpha = FALSE,
-        one.snp = TRUE,
-        output.name = "sfs_ponabe",
-        ncores = 10)
-
-# Load and run ABC
-sim_data <- read.table("SIM_SFS_sfs_ponabe.txt", header = TRUE, sep = "\t")
-sfs_cols <- grep("^sfs_", colnames(sim_data), value = TRUE)
-param_cols <- c("Ne0.pop1", "Ne0.pop2", "Ne1.pop1",
-                "join1", "mig0.1_2", "mig0.2_1")
-
-# Visualize the joint SFS
-plot.2D.sfs(as.numeric(observed_sfs_PonAbe[1, sfs_cols]),
-            pop_sizes = c(40, 40),
-            pop_names = c("Sumatran", "Bornean"))
-```
-
-### 5.4 Three-pop joint SFS: OutOfAfrica_3G09
-
-The 3-population model produces a flattened 3D SFS:
-
-```r
-sim.sfs(model = OutOfAfrica_3G09,
-        nsim.blocks = 10,
-        block.size = 1000,
-        use.alpha = FALSE,
-        one.snp = TRUE,
-        output.name = "sfs_ooa3",
-        ncores = 10)
-
-# ABC on flattened 3D SFS
-sim_data <- read.table("SIM_SFS_sfs_ooa3.txt", header = TRUE, sep = "\t")
-sfs_cols <- grep("^sfs_", colnames(sim_data), value = TRUE)
-
-# Remove zero-variance columns (many bins will be empty)
-col_sd <- apply(sim_data[, sfs_cols], 2, sd)
-keep <- sfs_cols[col_sd > 1e-10]
-
-param_cols <- c("Ne0.pop1", "Ne0.pop2", "Ne0.pop3",
-                "Ne1.pop2", "Ne1.pop3", "Ne1.pop1",
-                "join2_3", "join1")
-
-posterior <- abc(target  = as.numeric(observed_sfs_OutOfAfrica_3G09[1, keep]),
-                param   = as.matrix(sim_data[, param_cols]),
-                sumstat = as.matrix(sim_data[, keep]),
-                tol     = 0.005,
-                method  = "rejection")
-
-summary(posterior)
+  plot(density(prior), col = "grey", lwd = 2, lty = 3,
+       main = param_cols[i], xlab = param_cols[i])
+  lines(density(post), col = "steelblue", lwd = 2)
+  abline(v = true_vals[i], col = "red", lty = 2, lwd = 2)
+  legend("topright", c("Prior", "Posterior", "True"),
+         col = c("grey", "steelblue", "red"),
+         lwd = 2, lty = c(3, 1, 2), bty = "n")
+}
 ```
 
 ---
 
-## 6. Summary Statistics-Based Inference
+## 6. Supervised Machine Learning
 
-The summary statistics workflow uses `sim.sumstat()` for simulation and computes moments (mean, variance, skewness, kurtosis) of per-locus statistics across loci.
+PipeMaster's SML pipeline trains a neural network to learn the mapping from
+summary statistics to parameters, then predicts parameters for the observed
+data with uncertainty quantification.
 
-### 6.1 Vaquita2Epoch with sim.sumstat()
+### Step 1: Hyperparameter search with `tune.nn()`
 
 ```r
-# Simulate summary statistics
-sim.sumstat(model = Vaquita2Epoch,
-            nsim.blocks = 10,
-            block.size = 1000,
-            use.alpha = FALSE,
-            output.name = "sumstat_vaq",
-            ncores = 10)
+tune_result <- tune.nn(
+  reftable,
+  param.cols   = param_cols,
+  type         = "sumstat",
+  exclude.cols = nuisance,
+  max_epochs   = 100,      # max training epochs per model
+  eta          = 3,        # Hyperband reduction factor
+  n_searches   = 20,       # parallel Hyperband searches
+  top_k        = 3,        # keep top 3 models as ensemble
+  cores        = 4,        # parallel workers
+  seed         = 42,
+  backend      = "torch",  # or "keras"
+  verbose      = TRUE
+)
 
-# Load simulations
-sim_data <- read.table("SIMS_sumstat_vaq.txt", header = TRUE)
-
-# Separate parameters from summary statistics
-# Parameters are the first columns (before s_mean_*)
-stat_cols <- grep("^s_", colnames(sim_data), value = TRUE)
-param_end <- min(grep("^s_", colnames(sim_data))) - 1
-param_cols <- colnames(sim_data)[1:param_end]
-
-# Select summary statistics (exclude some for cleaner inference)
-keep_stats <- stat_cols[!grepl("thomson|ZnS", stat_cols)]
-
-# Observed summary statistics
-obs_stats <- observed_sumstats_Vaquita2Epoch
-obs_vec   <- as.numeric(obs_stats[1, keep_stats])
-
-# ABC
-posterior <- abc(target  = obs_vec,
-                param   = as.matrix(sim_data[, param_cols]),
-                sumstat = as.matrix(sim_data[, keep_stats]),
-                tol     = 0.05,
-                method  = "neuralnet")
-
-summary(posterior)
+# Save for later use
+save.tune.result(tune_result, "output/vaquita/tune_result")
 ```
 
-### 6.2 OutOfAfrica_3G09 with sim.sumstat()
+The `backend` parameter selects the neural network framework:
+- `"torch"` — pure R, no Python dependency, lower memory usage
+- `"keras"` — requires Python + TensorFlow, slightly faster training
 
-Multi-population summary statistics include per-population stats, overall stats, and pairwise statistics (Fst, shared polymorphisms, private alleles, fixed differences):
+### Step 2: Prediction with `nn.predict()`
 
 ```r
-sim.sumstat(model = OutOfAfrica_3G09,
-            nsim.blocks = 10,
-            block.size = 1000,
-            use.alpha = FALSE,
-            output.name = "sumstat_ooa",
-            ncores = 10)
+pred <- nn.predict(
+  tune_result,
+  observed   = obs_raw,
+  reftable   = reftable,
+  param.cols = param_cols,
+  method     = c("bootstrap", "ABC_NN_regression"),
+  n_boot     = 5000,       # bootstrap resamples
+  tolerance  = 0.05,       # ABC-NN acceptance tolerance
+  seed       = 42,
+  verbose    = TRUE
+)
 
-sim_data <- read.table("SIMS_sumstat_ooa.txt", header = TRUE)
+# Point estimate (weighted ensemble prediction)
+pred$point_estimate
+
+# Posterior summary
+summary(pred)
 ```
 
-### 6.3 SFS vs Summary Statistics
+Two uncertainty methods are available:
 
-Both approaches have trade-offs:
+- **Residual bootstrap**: Locally-weighted resampling of NN prediction
+  residuals. Captures prediction uncertainty without reference to the prior.
+- **ABC-NN regression**: Beaumont et al. (2002) regression adjustment.
+  Proper Bayesian posterior incorporating prior and likelihood.
 
-| | SFS | Summary Statistics |
-|---|---|---|
-| **Information** | Full allele frequency distribution | Moments of per-locus statistics |
-| **Dimensionality** | Grows as product of sample sizes | Fixed set of statistics |
-| **Computation** | Fast (native C) | Fast (native C) |
-| **Missing data** | Requires same number of samples per locus | Handles missing data across loci |
-| **Locus length** | Requires uniform locus length | Handles variable locus lengths |
-| **Best for** | Clean data, uniform sampling | Empirical data with gaps or variable coverage |
-| **Linkage** | Use `one.snp=TRUE` to reduce | Naturally handles multi-site loci |
-
----
-
-## 7. Visualization
-
-### 7.1 Model plots
-
-Use `PlotModel()` to visualize demographic models. Rectangle widths are proportional to Ne, arrows show migration:
+### Step 3: Plot posteriors
 
 ```r
-# Plot with average of priors
-PlotModel(Vaquita2Epoch, average.of.priors = TRUE,
-          pop.labels = c("Vaquita"))
-
-# Plot with a single random draw from priors
-PlotModel(OutOfAfrica_3G09, average.of.priors = FALSE,
-          pop.labels = c("YRI", "CEU", "CHB"))
-
-# Plot PonAbe with population labels
-PlotModel(PonAbe_TwoSpecies, average.of.priors = TRUE,
-          pop.labels = c("Sumatran", "Bornean"))
+plot(pred, true_values = true_vals, bw.adjust = 2)
 ```
 
-### 7.2 Prior distributions
+The `bw.adjust` parameter controls density smoothing (default 1, increase
+for smoother curves).
 
-Visualize the prior distributions of your model parameters:
-
-```r
-plot.priors(Vaquita2Epoch, nsamples = 1000)
-```
-
-### 7.3 Simulated vs observed
-
-Compare simulated summary statistics with observed values. The observed value is shown as a red line:
+### Loading saved results
 
 ```r
-sim_data <- read.table("SIMS_sumstat_vaq.txt", header = TRUE)
-stat_cols <- grep("^s_mean", colnames(sim_data), value = TRUE)
-plot.sim.obs(sim_data[, stat_cols], as.numeric(obs_stats[1, stat_cols]))
-```
-
-### 7.4 PCA
-
-Plot principal components of simulated data against the observed:
-
-```r
-# Combine multiple models
-models_combined <- rbind(sim_model1[, stat_cols],
-                         sim_model2[, stat_cols])
-index <- c(rep("Model1", nrow(sim_model1)),
-           rep("Model2", nrow(sim_model2)))
-
-plotPCs(models = models_combined,
-        index = index,
-        observed = obs_vec,
-        subsample = 0.5)
-```
-
-### 7.5 Joint SFS heatmap
-
-Visualize 2D joint SFS as a heatmap:
-
-```r
-# From observed data
-plot.2D.sfs(as.numeric(observed_sfs_PonAbe[1, sfs_cols]),
-            pop_sizes = c(40, 40),
-            pop_names = c("Sumatran", "Bornean"))
-
-# From a matrix
-sfs_matrix <- as.matrix(read.table(
-  "tests/data/PonAbe_TwoSpecies/observed_joint_sfs_matrix_PonAbe.txt"))
-plot.2D.sfs(sfs_matrix,
-            pop_names = c("Sumatran", "Bornean"))
-
-# Folded joint SFS
-plot.2D.sfs(sfs_matrix,
-            pop_names = c("Sumatran", "Bornean"),
-            folded = TRUE)
+tune_result <- load.tune.result("output/vaquita/tune_result")
 ```
 
 ---
 
-## 8. References
+## 7. Out-of-Distribution Diagnostics
 
-- **Adrion JG** et al. (2020). A community-maintained standard library of population genetic models. *eLife*, 9, e54967.
+`OOD.diagnose()` checks whether the observed data is compatible with the
+simulated reference table. This is critical — if the observed data falls
+outside the range of simulations, inference results are unreliable.
 
-- **Gutenkunst RN**, Hernandez RD, Williamson SH, Bustamante CD (2009). Inferring the joint demographic history of multiple populations from multidimensional SNP frequency data. *PLoS Genetics*, 5(10), e1000695.
+### Without a trained model (stat-level checks only)
 
-- **Locke DP** et al. (2011). Comparative and demographic analysis of orang-utan genomes. *Nature*, 469, 529-533.
+```r
+ood <- OOD.diagnose(
+  trained.nn = NULL,
+  observed   = obs_raw,
+  reftable   = reftable[, stat_cols],
+  stat.cols  = stat_cols,
+  plot       = TRUE
+)
+cat(sprintf("Overall: %s\n", ood$overall))
+```
 
-- **Robinson JA** et al. (2022). The critically endangered vaquita is not doomed to extinction by inbreeding depression. *Science*, 376, 635-639.
+Three checks are performed:
+1. **Mahalanobis distance** — is the observed point far from the centroid?
+2. **PCA projection** — does the observed point fall within the PCA cloud?
+3. **Per-stat percentiles** — are individual statistics within range?
 
-- **Tennessen JA** et al. (2012). Evolution and functional impact of rare coding variation from deep sequencing of human exomes. *Science*, 337, 64-69.
+### With a trained model (adds model disagreement check)
 
-- **Beaumont MA**, Zhang W, Balding DJ (2002). Approximate Bayesian computation in population genetics. *Genetics*, 162(4), 2025-2035.
+```r
+ood <- OOD.diagnose(
+  trained.nn = tune_result,
+  observed   = obs_raw,
+  reftable   = reftable[, stat_cols],
+  stat.cols  = stat_cols,
+  plot       = TRUE
+)
+```
 
-- **Gehara M**, Garda AA, Werneck FP et al. (2017). Estimating synchronous demographic changes across populations using hABC. *Molecular Ecology*, 26, 4190-4206.
+Check 4 (model disagreement) compares predictions across ensemble models.
+Large disagreement suggests the observed data is in a region where the
+neural network is uncertain.
 
-- **Hudson RR** (2002). Generating samples under a Wright-Fisher neutral model of genetic variation. *Bioinformatics*, 18(2), 337-338.
+### Using OOD to filter statistics
 
-- **Pavlidis P**, Laurent S, Stephan W (2010). msABC: a modification of Hudson's ms to facilitate multi-locus ABC analysis. *Molecular Ecology Resources*, 10(4), 723-727.
+```r
+# Drop outlier statistics before inference
+ood_pass <- !ood$percentiles$outlier
+stat_cols_filtered <- stat_cols[ood_pass]
+cat(sprintf("Kept %d/%d statistics\n",
+            length(stat_cols_filtered), length(stat_cols)))
+```
+
+---
+
+## Migration Parameterization
+
+PipeMaster v2 supports two migration scales, selected via
+`model$mig_scale`:
+
+### Nm (number of migrants) — default
+
+Migration priors specify Nm, the number of migrants per generation into the
+receiving population. This is population-size-dependent: the same Nm implies
+different per-generation rates for populations with different Ne.
+
+```r
+model$mig_scale  # "Nm"
+model$flags$m    # migration priors in Nm units
+```
+
+### m (per-generation rate) — symmetric migration
+
+For models with symmetric migration (e.g., Gutenkunst 2009), use
+`model$mig_scale = "m"`. Both directions share the same prior and are
+constrained equal:
+
+```r
+model$mig_scale <- "m"
+# In model$conds$mig:
+#   mig0.1_2 = mig0.2_1  (symmetric YRI-CEU)
+#   mig0.1_3 = mig0.3_1  (symmetric YRI-CHB)
+```
+
+---
+
+## Interactive Model Building
+
+PipeMaster includes a Shiny GUI for interactive model building:
+
+```r
+main.menu.gui()
+```
+
+The GUI provides:
+- Population tree builder with drag-and-drop
+- Prior distribution specification with real-time validation
+- Migration rate configuration (Nm or m scale)
+- Condition constraints (parameter ordering, equality)
+- Model visualization with `PlotModel()`
+- Export to R object or file
+
+---
+
+## References
+
+- Gutenkunst R.N. et al. (2009) Inferring the joint demographic history of
+  multiple populations from multidimensional SNP frequency data. *PLoS
+  Genetics* 5: e1000695.
+- Locke D.P. et al. (2011) Comparative and demographic analysis of
+  orang-utan genomes. *Nature* 469: 529-533.
+- Robinson J.A. et al. (2022) The critically endangered vaquita is not
+  doomed to extinction by inbreeding depression. *Science* 376: 635-639.
+- Beaumont M.A. et al. (2002) Approximate Bayesian computation in
+  population genetics. *Genetics* 162: 2025-2035.
+- Hudson R.R. (2002) Generating samples under a Wright-Fisher neutral
+  model of genetic variation. *Bioinformatics* 18: 337-338.
+- Pavlidis P., Laurent S. & Stephan W. (2010) msABC: a modification of
+  Hudson's ms to facilitate multi-locus ABC analysis. *Molecular Ecology
+  Resources* 10: 723-727.
+- Staab P.R. et al. (2015) scrm: efficiently simulating long sequences
+  using the approximated coalescent with recombination. *Bioinformatics*
+  31: 1680-1682.

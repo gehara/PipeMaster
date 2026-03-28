@@ -67,9 +67,11 @@
   }
 
   # Optimizer with L2 regularization (weight_decay)
+  # Keras regularizer_l2(l) adds l*sum(w^2) to loss -> gradient = 2*l*w
+  # Torch weight_decay adds wd*w to gradient directly -> use 2*l2_reg to match keras
   l2_reg <- if (!is.null(hp$l2_reg)) hp$l2_reg else 0
   optimizer <- torch::optim_adam(model$parameters, lr = hp$learning_rate,
-                                weight_decay = l2_reg)
+                                weight_decay = 2 * l2_reg)
 
   # LR scheduler
   scheduler <- torch::lr_reduce_on_plateau(optimizer, mode = "min",
@@ -488,6 +490,8 @@
     '}',
     '',
     'suppressPackageStartupMessages(library(torch))',
+    'torch::torch_set_num_threads(as.integer(n_threads))',
+    'torch::torch_set_num_interop_threads(1L)',
     '',
     '# GPU setup',
     'device <- "cpu"',

@@ -325,51 +325,80 @@ observed.sumstats <- function(model, path.to.phylip = NULL, path.to.vcf = NULL,
   }
 
   # =========================================================================
-  # Uniform samples path: sumstats + SFS (fast C batch)
+  # Uniform samples path: sumstats + SFS via compute_sumstats (same C as scrm)
   # =========================================================================
 
-  # Step 3: Call msABC_combined_batch_call (nsims=1) -> sumstats text + SFS
-  if(verbose) cat("PipeMaster:: [3/4] Computing summary statistics and SFS via msABC...")
+  # Step 3: Parse ms file into haplotype matrices
+  if(verbose) cat("PipeMaster:: [3/5] Parsing ms file into haplotype matrices...")
+  t0 <- proc.time()
+  setwd(saved_wd)
+
+  ms_lines <- readLines(ms_file)
+  n_ms <- length(ms_lines)
+  haplist <- vector("list", nrow(model$I))
+  loc <- 0L
+  i <- 1L
+
+  while (i <= n_ms) {
+    line <- ms_lines[i]
+    if (!grepl("^segsites:", line)) { i <- i + 1L; next }
+
+    loc <- loc + 1L
+    ss <- as.integer(sub("segsites: ", "", line))
+    i <- i + 2L  # skip positions line
+
+    if (ss == 0) {
+      haplist[[loc]] <- NULL
+      next
+    }
+
+    hap_strings <- ms_lines[i:(i + nsam - 1L)]
+    i <- i + nsam
+
+    # Convert to integer matrix (nsam x segsites)
+    mat <- matrix(0L, nrow = nsam, ncol = ss)
+    for (h in seq_len(nsam))
+      mat[h, ] <- as.integer(strsplit(hap_strings[h], "", fixed = TRUE)[[1]])
+
+    # one.snp: subsample one random column for SFS (stats use full matrix)
+    if (one.snp && ss > 1L) {
+      col_idx <- sample.int(ss, 1L)
+      haplist[[loc]] <- mat[, col_idx, drop = FALSE]
+    } else {
+      haplist[[loc]] <- mat
+    }
+  }
+  if(verbose) cat(sprintf(" done (%d loci, %.1f sec)\n", loc, (proc.time() - t0)[3]))
+
+  # Step 4: Compute stats + SFS via compute_sumstats (same C code as scrm)
+  if(verbose) cat("PipeMaster:: [4/5] Computing summary statistics and SFS...")
   t0 <- proc.time()
 
-  # mu_rates matrix: use locfile mu values (theta from mu is irrelevant for --obs stats)
-  mu_mat <- matrix(as.numeric(locfile[, "mu"]), nrow = nloci_rows, ncol = 1)
-
-  combined <- .Call("msABC_combined_batch_call",
-                    command,        # character vector length 1
-                    mu_mat,         # nloci_rows x 1 matrix
-                    NULL,           # rec_rates (not needed for obs)
-                    pop_sizes_vec,  # integer vector
-                    one.snp,        # logical
-                    "stochastic",   # irrelevant for observed data
-                    monomorphic,    # logical (unused in C, processed in R)
-                    PACKAGE = "PipeMaster")
-  setwd(saved_wd)
+  cs_result <- .Call("compute_sumstats_batch_call",
+                     haplist,
+                     as.integer(pop_sizes_vec),
+                     as.integer(npop),
+                     FALSE,  # skip_zns = FALSE for observed data
+                     PACKAGE = "PipeMaster")
   if(verbose) cat(sprintf(" done (%.1f sec)\n", (proc.time() - t0)[3]))
 
-  # Step 4: Parse results
-  if(verbose) cat("PipeMaster:: [4/4] Parsing output...")
+  # Step 5: Build output
+  if(verbose) cat("PipeMaster:: [5/5] Building output...")
 
-  # --- Summary statistics from text output ---
-  text_output <- combined[[1]][1]
-  lines <- strsplit(text_output, "\n", fixed = TRUE)[[1]]
-  lines <- lines[nchar(lines) > 0]
-  x <- strsplit(lines, "\t")
-  frag_nam <- x[[1]]
-  values <- as.numeric(x[[2]])
+  # --- Summary statistics (already named: s_mean_*, s_var_*, s_skew_*, s_kurt_*) ---
+  stat_values <- as.numeric(cs_result$stats)
+  stat_names  <- names(cs_result$stats)
 
   # Filter thomson, FayWuH/fwh (same as sim.sumstats; ZnS retained)
-  cols_remove <- grep("thomson|FayWuH|fwh", frag_nam)
+  cols_remove <- grep("thomson|FayWuH|fwh", stat_names)
   if(length(cols_remove) > 0) {
-    frag_nam <- frag_nam[-cols_remove]
-    values <- values[-cols_remove]
+    stat_values <- stat_values[-cols_remove]
+    stat_names  <- stat_names[-cols_remove]
   }
 
-  # --- SFS from C accumulator ---
-  # Observed SFS is already folded (ms conversion uses major allele as ref)
-  sfs_vec <- as.numeric(combined[[2]][1, ])
+  # --- SFS (folded, same convention as scrm: sfs[folded-1]) ---
+  sfs_vec <- as.numeric(cs_result$sfs)
 
-  # SFS column names (same logic as sim.sumstats)
   if(npop == 1) {
     sfs_len <- floor(nsam / 2)
     sfs_vec <- sfs_vec[1:sfs_len]
@@ -387,8 +416,8 @@ observed.sumstats <- function(model, path.to.phylip = NULL, path.to.vcf = NULL,
   }
 
   # Combine: sumstats | SFS (same column order as sim.sumstats, minus parameters)
-  observed <- c(values, sfs_vec)
-  names_all <- c(frag_nam, sfs.names)
+  observed <- c(stat_values, sfs_vec)
+  names_all <- c(stat_names, sfs.names)
   result <- t(data.frame(observed))
   colnames(result) <- names_all
   rownames(result) <- NULL
@@ -397,7 +426,7 @@ observed.sumstats <- function(model, path.to.phylip = NULL, path.to.vcf = NULL,
 
   elapsed <- (proc.time() - t_total)[3]
   if(verbose) cat(sprintf(" done\nPipeMaster:: Finished — %d sumstats + %d SFS bins in %.1f sec\n",
-                          length(frag_nam), length(sfs.names), elapsed))
+                          length(stat_names), length(sfs.names), elapsed))
 
   setwd(WD)
   return(result)

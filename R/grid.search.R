@@ -329,7 +329,7 @@ grid.search <- function(model, observed, grid = NULL, n_points = 10, n_reps = 10
     sfs_len <- floor(nsam / 2)
     if(folded) {
       folded_len <- ncol(sim_mat) - as.integer(monomorphic)
-      sfs_names <- paste0("sfs_fold_", seq(0, folded_len - 1))
+      sfs_names <- paste0("sfs_", seq(0, folded_len - 1))
     } else {
       sfs_names <- paste0("sfs_", seq(0, sfs_len - 1))
     }
@@ -622,7 +622,7 @@ sim.sumstat.lhs <- function(model, n_points = 500, n_reps = 1, design = NULL,
         sfs_len <- floor(nsam / 2)
         if(folded) {
           folded_len <- length(fold_sfs(numeric(nsam - 1)))
-          stat_names <- paste0("sfs_fold_", seq(0, folded_len - 1))
+          stat_names <- paste0("sfs_", seq(0, folded_len - 1))
         } else {
           stat_names <- paste0("sfs_", seq(0, sfs_len - 1))
         }

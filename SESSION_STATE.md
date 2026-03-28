@@ -85,6 +85,31 @@ Two approaches for gradient-based parameter optimization:
 - Scales to high dimensions, reuses existing infrastructure
 - Status: core pipeline implemented (train/optimize/ABC/MCMC)
 
+### HIGH PRIORITY: OoA SML Improvement Plan
+
+The OoA informative SML posteriors are poor compared to PonAbe (19 params vs 8).
+Sims/params ratio is 2.4× worse, sims/stats ratio is 10× worse. ML theory
+(polynomial scaling with dimensionality) predicts 100K sims is insufficient for 19 params.
+
+Redesigned simulation budgets following SBI literature (~10-15K sims/param):
+- Vaquita (3 params): 50K sims, 10 PLS, 20 searches × 100 epochs
+- PonAbe (8 params): 100K sims, 20 PLS, 20 searches × 100 epochs
+- OoA (19 params): 300K sims, 50 PLS, 40 searches × 200 epochs
+
+After segovia hardware upgrade (new HD, 2× 12GB GeForce GPUs):
+- [ ] Generate 200K additional OoA simulations (target 300K total)
+- [ ] Increase PLS components from 30 to 50
+- [ ] Increase Hyperband budget: n_searches=40, max_epochs=200
+- [ ] Re-run OoA SML with all improvements
+- [ ] Re-run Vaquita with 50K sims (currently 100K, reduce to match budget)
+- [ ] Re-run PonAbe with 20 PLS (currently 15)
+- [ ] Compare posteriors across all models
+
+Hardware needed:
+- [ ] Replace dying 4TB HDD on segovia (SMART: 186K uncorrectable sectors)
+- [ ] Buy additional RAM for segovia (if going beyond 128GB)
+- [ ] Install 2× 12GB GeForce GPUs for torch training
+
 ### Other TODO Items
 
 - [ ] Verify monomorphic class (bin 0) in simulated and observed SFS
@@ -317,33 +342,124 @@ OoA SFS reductions (on segovia):
 
 ## Session Work (2026-03-23)
 
-**Done this session:**
+**Done:**
 - Killed tracker-miner-fs (100% CPU for 93h), permanently disabled
-- Fixed WGS reftable misplacement: `source()` in WGS `build_model.R` clobbered
-  `out_dir`, writing reftables to RAD dirs. Fix: removed nested `source()`.
-  Moved 6 reftables to correct WGS dirs, rebuilt all RAD+WGS model.RData files.
+- Fixed WGS reftable misplacement, rebuilt all RAD+WGS model.RData files
 - Verified Ne.anc params present in all multi-pop reftables (RAD + WGS)
-- Wrote unified `robinson_pipeline.sh` — aria2c + gzip verification + full
-  pipeline in one script. Launched with `--clean` on segovia (Step 1 in progress,
-  finding and fixing corrupt FASTQs)
+- Wrote unified `robinson_pipeline.sh`, launched with `--clean` on segovia
 - Wrote `tests/run_sml_rad_all.sh` — runs all 6 RAD SML jobs sequentially
-- Updated all SML Hyperband params to `max_epochs=100, n_searches=20, cores=20`
-- PonAbe diffuse has stale `tune_result` (7 params, missing Ne.anc_1_2) — must
-  delete before running: `rm -rf tests/PonAbe_TwoSpecies/SML/rad_10Kx100bp/diffuse/tune_result`
+
+## Session Work (2026-03-24)
+
+**Done:**
+- Trimmed CLAUDE.md from 41K → 17K chars (moved TODO/benchmarks/session state out)
+- Created `SESSION_STATE.md` and `manuscript/benchmarks.md`
+- Torch parallel Hyperband backend for `tune.nn()`:
+  - `.tune.nn.torch()` now supports `n_searches`/`cores` (parallel worker pool)
+  - Workers load data as torch tensors directly (no R matrix intermediate)
+  - `.torch.train.model()` accepts both R matrices and torch tensors
+  - `.build.nn.torch()` handles both via `.ncol2()` helper
+- **bigmemory shared data**: file-backed matrices shared via mmap across workers
+  - Parent creates `big.matrix` backing files, workers attach via descriptors
+  - Training loop reads batch-by-batch from mmap (no full-data tensor in workers)
+  - Per-worker RAM: ~3 GB (down from ~30 GB with keras, ~22 GB with rds+torch)
+  - OoA 20 searches × 20 cores fits in ~80 GB on 125 GB segovia
+- Default backend changed from `"auto"` to `"torch"`
+- `observed.sumstats()` bug fixes:
+  - Accept file path for `pop.assign` (auto-reads with `read.table`)
+  - Tab-delimited PHYLIP name parsing (detects tab vs fixed-width 10-char)
+- RAD SML: Vaquita (inf+diff) and PonAbe (inf+diff) completed via `run_sml_rad_all.sh`
+- Committed and pushed: `ccd9b39`
 
 **Running on segovia:**
-- Robinson pipeline: Step 1 (FASTQ verify+download), 8/24 SRRs done, 6 corrupt
-  files re-downloaded successfully. Monitor: `tail -30 /mnt/sda/vaquita_robinson/pipeline.log`
-- SML RAD: **not yet launched** — user will launch manually
+- Robinson pipeline: Step 1 (FASTQ download), downloading SRR15435923_2.fastq.gz
+  Monitor: `tail -30 /mnt/sda/vaquita_robinson/pipeline.log`
+- OoA SML: user to launch manually with `cores=20, backend="torch"`
 
-**PipeMaster on segovia:** installed 2026-03-19 (has nn.predict rewrite, Ne.anc,
-all uncommitted changes through that date). `Date:` field in DESCRIPTION is
-stale (2026-02-15) but `Built:` timestamp is 2026-03-19.
+**PipeMaster on segovia:** installed 2026-03-24 with torch parallel + bigmemory.
+bigmemory package installed on segovia.
 
-## Disk Space (local)
-- 143GB free (Dropbox unsync of projects_finished complete)
-- OoA reftables gzipped on segovia (14GB → ~500MB each)
-- GPU: RTX A2000 4GB — does not fit OoA SML (5K inputs), all SML runs use CPU
+## Session Work (2026-03-27)
+
+**Bugs found and fixed:**
+1. **Kurtosis convention mismatch**: msABC `kurtstat()` returned raw kurtosis
+   (normal=3), scrm/compute_sumstats used excess kurtosis (normal=0).
+   Fix: added `- 3.0` to `kurtstat()` in `src/ms.c`. All backends now excess.
+2. **SFS corruption in msABC --obs mode**: `msABC_combined_batch_call` lost
+   4634/336K variants, destroyed sfs_13/sfs_14. Fix: refactored
+   `observed.sumstats()` to use `compute_sumstats_batch_call` (same C as scrm).
+3. **pop_assign missing headers**: `read.table(header=TRUE)` ate first sample.
+   Fix: added `sample\tpop` header to all 8 pop_assign files.
+4. **Torch L2 regularization**: `weight_decay=l2_reg` gives half the keras
+   strength. Fix: `weight_decay = 2 * l2_reg` in `R/torch_training.R`.
+5. **Torch thread oversubscription**: workers never called
+   `torch_set_num_threads()`. Fix: added after `library(torch)` in worker script.
+
+**Regeneration completed:**
+- All 8 observed stats files regenerated (excess kurtosis, correct SFS)
+  - 5 WGS: Vaquita, PonAbe stdpopsim, PonAbe real (tarrega), OoA stdpopsim, OoA real (tarrega)
+  - 3 RAD: Vaquita 100x, PonAbe 100x, OoA 100x
+- All 6 RAD reftables regenerated on segovia (excess kurtosis)
+- Vaquita WGS reftables downsampled from 25600 to 10240 sims
+- OoA WGS SFS reduced (marginal2d, 69K → 5043 bins) on segovia
+- PipeMaster installed on tarrega (R 4.3.3, user library ~/R/library)
+- Cleared 166GB Dropbox cache (was at 1.1GB free → 168GB free)
+
+**Vaquita WGS results (completed):**
+- Keras ABC+SML: informative + diffuse — completed via `run_wgs_all.sh`
+- Torch SML: informative + diffuse — completed via `run_wgs_torch.sh`
+- Keras vs torch comparison: equivalent results (<1% difference in Ne estimates)
+- Torch ~37% slower (39 min vs 29 min for 20 searches) but uses less RAM
+- Diffuse priors give better-calibrated posteriors (all 3 params covered by 95% CI)
+- Key finding: ABC-NN regression matches residual bootstrap → NN captures
+  coalescent stochasticity as dominant uncertainty source
+- `bw.adjust` parameter added to `plot.nn.posterior()` for smoother density plots
+- `.compute.threads.per.worker()` fixed: cap at `ceiling(n_logical/2)`
+
+**Manuscript updated:**
+- Vaquita results section: point estimates, bootstrap/ABC convergence finding
+- Prior width effect: diffuse priors give better calibration (training data diversity)
+- Keras vs torch backend validation section
+
+## Session Work (2026-03-28)
+
+**Migration parameterization overhaul:**
+- Added `mig_scale` parameter to `ms.string.generator()` and `msABC.commander()`
+- Three modes: `"Nm"` (number of migrants, new default), `"m"` (per-gen rate),
+  legacy `"4Nm"` (old models without mig_scale field)
+- Conversion: Nm mode `Nm * 4 / Ne_coal`, m mode `m * 400000`, legacy `M / Ne_coal`
+- GUI: radio button "Nm (number of migrants)" / "m (per-generation rate)" with
+  dynamic help text explaining each convention
+- Verified: ms commands identical between m and Nm modes when using equivalent
+  true values (tested on OoA model)
+- Files changed: `R/ms.string.generator.R`, `R/msABC.commander.R`, `R/shiny_menu.R`
+
+**OoA model rebuilt (m parameterization):**
+- Exact Gutenkunst 2009 parameters: m from 2*N_A*m paper values
+- 14 free params (was 18): 7 Ne + 3 times + 3 symmetric mig + 1 ancestral mig
+- Symmetric migration via `=` conditions in `conds$mig`
+- Ne.anc_2_1 moved to nuisance (= Ne0.pop1 by constraint)
+- Ancestral migration m_AF_B = 1.71e-3 (was 0.44 in 4Nm, ~200x too low)
+- Build script: `tests/OutOfAfrica_3G09/data/wgs_10Kx100kb/build_model_m.R`
+
+**PonAbe model rebuilt (Nm parameterization):**
+- Migration priors converted from 4Nm to Nm (divided by 4)
+- mig0.1_2 true: 0.06 Nm, mig0.2_1 true: 0.415 Nm
+- `mig_scale = "Nm"` in model object
+- Verified: ms command correct with Nm conversion
+
+**PonAbe WGS SML results (completed, old 4Nm models):**
+- Informative + diffuse completed via `run_wgs_sml_all.sh`
+- Will need rerun with new Nm models after reftable regeneration
+
+**Running on segovia:**
+- Reftable regeneration: OoA (3 remaining) + PonAbe (4), all 32 cores
+  OoA RAD informative done, RAD diffuse running (~55%)
+  Monitor: `ssh segovia "tail -f ~/Dropbox/github/PipeMaster/tests/generate_reftables_all.log"`
+
+**Running on tarrega:**
+- Robinson pipeline Step 2 (trim+align): 2/12 samples done, on SRR15435901
+  Monitor: `ssh tarrega "grep 'SRR.*start\|Done:' /mnt/12T_Storage_B/marcelo/vaquita_robinson/pipeline.log"`
 
 ## Known Issues
 - OoA migration: 8 independent rates, original Gutenkunst model has 4
@@ -351,11 +467,16 @@ stale (2026-02-15) but `Built:` timestamp is 2026-03-19.
 - `pls.fit()` captures only ~25% variance on OoA 5K-stat reftable — PLS
   maximizes param covariance not total variance, so this is expected
 - ABC not very good on RADseq data — expected, motivates WGS comparison
+- Orphan workers survive when parent is killed forcefully (SIGKILL/OOM) —
+  `on.exit()` cleanup doesn't run. Workers only check parent between
+  brackets/searches, not mid-training.
 
 ## Next Steps
-- [ ] Launch SML RAD: `tests/run_sml_rad_all.sh` (delete PonAbe diffuse tune_result first)
-- [ ] Wait for Vaquita pipeline (Step 1 downloading, then ~6 days alignment)
-- [ ] Run ABC/SML on WGS reftables (all 6 available)
-- [ ] OoA WGS: reduce SFS (69K cols) before ABC/SML
-- [ ] Run diffuse prior ABC after informative results reviewed
-- [ ] Commit all uncommitted changes
+- [ ] Wait for reftable regeneration on segovia (OoA + PonAbe, ~12h)
+- [ ] Reduce OoA WGS SFS (marginal2d) after reftable generation
+- [ ] Run WGS SML for PonAbe (Nm models) and OoA (m models)
+- [ ] Run RAD SML for PonAbe and OoA with new models
+- [ ] Run ABC for all models
+- [ ] Wait for Robinson pipeline on tarrega (~4 days remaining)
+- [ ] Commit and push all bug fixes + migration parameterization
+- [ ] Compare RAD vs WGS inference quality across models

@@ -1,0 +1,16 @@
+sample	pop
+ind001	1
+ind002	1
+ind003	1
+ind004	1
+ind005	1
+ind006	1
+ind007	1
+ind008	1
+ind009	1
+ind010	1
+ind011	1
+ind012	1
+ind013	1
+ind014	1
+ind015	1

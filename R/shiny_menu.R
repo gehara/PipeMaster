@@ -309,6 +309,8 @@ main.menu.gui <- function(input = NULL) {
     model$conds <- conds
     model$tree  <- rv$tree_string
     model$sum_anc_ne <- rv$sum_anc_ne
+    if (!is.null(rv$mig_scale))
+      model$mig_scale <- rv$mig_scale
 
     # Labels: model name + population names
     pop_names <- if (!is.null(rv$pop_names)) rv$pop_names else
@@ -1383,6 +1385,15 @@ main.menu.gui <- function(input = NULL) {
                 shiny::column(4,
                   shiny::conditionalPanel(
                     condition = "input.check_migration == true",
+                    shiny::radioButtons("mig_scale", "Migration Scale:",
+                      choices = c("Nm (number of migrants)" = "Nm",
+                                  "m (per-generation rate)" = "m"),
+                      selected = "Nm", inline = TRUE)
+                  )
+                ),
+                shiny::column(4,
+                  shiny::conditionalPanel(
+                    condition = "input.check_migration == true",
                     shiny::selectInput("select_mig_dist", "Migration Prior Distribution:",
                       choices = c("Uniform" = "uniform", "Normal" = "normal"),
                       selected = "uniform")
@@ -1395,41 +1406,9 @@ main.menu.gui <- function(input = NULL) {
             condition = "input.check_migration == true",
             shiny::fluidRow(
               shinydashboard::box(
-                title = "Current Migration Rates (4Nm)", width = 12,
+                title = shiny::uiOutput("mig_box_title"), width = 12,
                 status = "info", solidHeader = TRUE,
-                shiny::helpText(
-                  "Migration is specified as 4Nm (population-scaled rate).",
-                  shiny::tags$b("mig0.i_j"), "= pop i receives migrants from pop j.",
-                  "For example,", shiny::tags$b("mig0.1_2"), "= gene flow into pop 1 from pop 2."
-                ),
-                shiny::tags$div(
-                  class = "alert alert-warning", style = "margin-top: 10px;",
-                  shiny::icon("exclamation-triangle"),
-                  shiny::tags$b(" Ne changes affect migration rates."),
-                  " Migration rates (M = 4Nm) are scaled by the current Ne (Ne0) of the",
-                  " receiving population. Internally, the coalescent simulator stores the",
-                  " per-generation rate m = M/Ne0, which remains fixed even if Ne changes",
-                  " over time via ancestral Ne. This means the effective number of migrants",
-                  " per generation (Nm) changes proportionally to the Ne change of the",
-                  " receiving population.",
-                  shiny::tags$br(), shiny::tags$br(),
-                  "For example, if Ne doubles at some time in the past, the effective Nm",
-                  " also doubles from that point backward, even though the user-specified M",
-                  " was set relative to the current Ne0.",
-                  shiny::tags$br(), shiny::tags$br(),
-                  shiny::tags$b("To maintain constant Nm through time:"),
-                  " add an ancestral migration change with the same M value at the same",
-                  " time as the Ne change. PipeMaster will automatically rescale the",
-                  " migration rate by the Ne at that time point, keeping Nm = M/4 constant.",
-                  " In the Conditions tab, set:",
-                  shiny::tags$ul(
-                    shiny::tags$li(shiny::tags$code("t.mig1.i_j = t.Ne1.popi"),
-                      " (sync migration change time to Ne change time)"),
-                    shiny::tags$li(shiny::tags$code("mig1.i_j = mig0.i_j"),
-                      " (same M value, PipeMaster rescales by ancestral Ne)")
-                  ),
-                  "This works for both msABC and scrm backends."
-                ),
+                shiny::uiOutput("mig_help_text"),
                 DT::DTOutput("table_migration"),
                 shiny::br(),
                 shiny::helpText("Click a cell to edit."),
@@ -1917,6 +1896,7 @@ main.menu.gui <- function(input = NULL) {
       I             = NULL,
       ne_changes    = NULL,
       sum_anc_ne    = TRUE,
+      mig_scale     = "Nm",
       en_joins      = NULL,
       size_conds    = NULL,
       time_conds    = NULL,
@@ -1944,6 +1924,7 @@ main.menu.gui <- function(input = NULL) {
         rv$loci <- revert_dist(tmpl$loci)
         rv$I    <- tmpl$I
         rv$sum_anc_ne <- if (!is.null(tmpl$sum_anc_ne)) tmpl$sum_anc_ne else TRUE
+        rv$mig_scale  <- if (!is.null(tmpl$mig_scale)) tmpl$mig_scale else "Nm"
 
         # Load labels BEFORE npops (so ui_pop_names reads them on re-render)
         if (!is.null(tmpl$labels)) {
@@ -2014,6 +1995,8 @@ main.menu.gui <- function(input = NULL) {
         if (!is.null(rv$en)) shiny::updateCheckboxInput(session, "check_ancestral_ne", value = TRUE)
         if (!is.null(rv$em)) shiny::updateCheckboxInput(session, "check_anc_mig", value = TRUE)
         shiny::updateCheckboxInput(session, "check_sum_anc_ne", value = rv$sum_anc_ne)
+        if (!is.null(rv$mig_scale))
+          shiny::updateRadioButtons(session, "mig_scale", selected = rv$mig_scale)
 
         # Mark template as loaded — prevents tree validation from overwriting
         rv$template_loaded <- TRUE
@@ -2450,6 +2433,78 @@ main.menu.gui <- function(input = NULL) {
     # Sum ancestral Ne checkbox
     shiny::observeEvent(input$check_sum_anc_ne, {
       rv$sum_anc_ne <- isTRUE(input$check_sum_anc_ne)
+    })
+
+    # Migration scale radio button
+    shiny::observeEvent(input$mig_scale, {
+      rv$mig_scale <- input$mig_scale
+    })
+
+    # Dynamic migration box title
+    output$mig_box_title <- shiny::renderUI({
+      if (isTRUE(rv$mig_scale == "m")) {
+        shiny::tags$span("Current Migration Rates (m, per-generation)")
+      } else {
+        shiny::tags$span("Current Migration Rates (Nm)")
+      }
+    })
+
+    # Dynamic migration help text
+    output$mig_help_text <- shiny::renderUI({
+      if (isTRUE(rv$mig_scale == "m")) {
+        shiny::tagList(
+          shiny::helpText(
+            "Migration is specified as m (per-generation rate).",
+            shiny::tags$b("mig0.i_j"), "= fraction of pop i replaced by migrants from pop j per generation.",
+            "For example,", shiny::tags$b("mig0.1_2"), "= fraction of pop 1 that are immigrants from pop 2."
+          ),
+          shiny::tags$div(
+            class = "alert alert-info", style = "margin-top: 10px;",
+            shiny::icon("info-circle"),
+            shiny::tags$b(" Symmetric migration."),
+            " When using per-generation rates, symmetric migration means the same",
+            " fraction of each population is replaced by migrants (m is the same in",
+            " both directions). Use", shiny::tags$code("mig0.i_j = mig0.j_i"),
+            " conditions to enforce symmetry.",
+            shiny::tags$br(), shiny::tags$br(),
+            " The per-generation rate m is independent of population size. PipeMaster",
+            " converts m to the coalescent migration rate internally.",
+            " Typical values are small (e.g., 1e-5 to 1e-3)."
+          )
+        )
+      } else {
+        shiny::tagList(
+          shiny::helpText(
+            "Migration is specified as Nm (number of migrants per generation",
+            " into the receiving population).",
+            " Nm is scaled by the receiving population's current Ne:",
+            " Nm = Ne * m, where m is the per-generation migration fraction.",
+            shiny::tags$br(),
+            shiny::tags$b("mig0.i_j"), "= pop i receives migrants from pop j.",
+            "For example,", shiny::tags$b("mig0.1_2"), "= gene flow into pop 1 from pop 2."
+          ),
+          shiny::tags$div(
+            class = "alert alert-warning", style = "margin-top: 10px;",
+            shiny::icon("exclamation-triangle"),
+            shiny::tags$b(" Ne changes affect migration rates."),
+            " Migration rates (Nm) are scaled by the current Ne of the",
+            " receiving population. Internally, the coalescent simulator stores the",
+            " per-generation rate m = Nm/Ne, which remains fixed even if Ne changes",
+            " over time. This means the effective Nm changes proportionally to any",
+            " Ne change.",
+            shiny::tags$br(), shiny::tags$br(),
+            shiny::tags$b("To maintain constant Nm through time:"),
+            " add an ancestral migration change with the same Nm value at the same",
+            " time as the Ne change. In the Conditions tab, set:",
+            shiny::tags$ul(
+              shiny::tags$li(shiny::tags$code("t.mig1.i_j = t.Ne1.popi"),
+                " (sync migration change time)"),
+              shiny::tags$li(shiny::tags$code("mig1.i_j = mig0.i_j"),
+                " (same Nm value, rescaled by ancestral Ne)")
+            )
+          )
+        )
+      }
     })
 
     # Ancestral Ne at joins table (only shown when sum is OFF)

@@ -347,7 +347,7 @@ sim.scrm.sumstats <- function(model, nsim.blocks, block.size,
     # 1-pop: C output is length nsam-1 but only first floor(nsam/2) bins populated
     sfs_len <- floor(nsam / 2)
     sfs_vec <- sfs_vec[1:sfs_len]
-    names(sfs_vec) <- paste0("sfs_fold_", seq(0, sfs_len - 1))
+    names(sfs_vec) <- paste0("sfs_", seq(0, sfs_len - 1))
   } else {
     # Multi-pop joint SFS: already folded to minor allele in C
     # Use expand.grid naming convention (sfs_0_0, sfs_1_0, ...)
@@ -395,7 +395,7 @@ sim.scrm.sumstats <- function(model, nsim.blocks, block.size,
   # SFS names (folded, matching sim.sumstats() convention)
   if (npop == 1) {
     sfs_len <- floor(nsam / 2)
-    sfs_names <- paste0("sfs_fold_", seq(0, sfs_len - 1))
+    sfs_names <- paste0("sfs_", seq(0, sfs_len - 1))
   } else {
     # Joint SFS: expand.grid naming (sfs_0_0, sfs_1_0, ...)
     idx_grid <- expand.grid(lapply(config, function(n) 0:n))

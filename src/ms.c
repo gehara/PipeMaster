@@ -7673,7 +7673,7 @@ double kurtstat(double sum4, double sum3, double sum2, double ave, double den) {
     double m2 = sum2/den - ave*ave;
     double m4 = sum4/den - 4.0*ave*(sum3/den) + 6.0*ave*ave*(sum2/den) - 3.0*ave*ave*ave*ave;
     if (m2 <= 0.0) return 0.0;
-    return m4 / (m2*m2);
+    return m4 / (m2*m2) - 3.0;  /* excess kurtosis (normal = 0) */
 }
 
  
