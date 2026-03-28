@@ -53,7 +53,8 @@ PipeMaster includes two coalescent simulation engines:
   2010), itself based on Hudson's ms (Hudson 2002). Fast for short loci
   (RAD-seq, 100 bp). Uses `sim.sumstats()`.
 - **scrm** (vendored C++) — a modified version of scrm (Staab et al.
-  2015). Fast for long loci with recombination (WGS, 100 kb). Uses
+  2015), which uses the Sequential Markov Coalescent approximation to
+  efficiently simulate long loci with recombination (WGS, 100 kb). Uses
   `sim.scrm.sumstats()`.
 
 Both engines compute summary statistics and the site frequency spectrum (SFS)
