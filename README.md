@@ -69,12 +69,6 @@ model$labels <- list(
 
 [Main Tutorial (stdpopsim models)](PipeMaster_tutorial.md) - Covers SFS and summary statistics workflows using well-characterized stdpopsim demographic models
 
-[Tutorial em Portugues](PipeMaster_tutorial_PT.md)
-
-[CompPhylo Workshop Tutorial](https://compphylo.github.io/Oslo2019/PM_files/Dermatonotus_example.html)
-
-[Legacy Tutorial (Dermatonotus example)](PipeMaster_tutorial_old.md)
-
 ### Hierarchical codemographic model
 
 PipeMaster can simulate a hierarchical demographic model for comparative analysis of populations/species. The hABC method used in the package was first described in Chan et al 2014 and improved in Gehara et al 2017.
