@@ -6,11 +6,10 @@
 \usage{
 sim.scrm.sumstats(
   model,
-  nsim.blocks,
-  block.size,
+  nsims,
+  batch.size = 32,
   mu.rates,
   rec.rates,
-  use.alpha = FALSE,
   skip.zns = TRUE,
   ncores = 1,
   path = ".",
@@ -23,16 +22,15 @@ sim.scrm.sumstats(
 \arguments{
 \item{model}{A PipeMaster model object (from main.menu or build functions).}
 
-\item{nsim.blocks}{Number of simulation blocks per worker.}
+\item{nsims}{Total number of simulations to run. The actual number may be
+slightly higher due to rounding to batch.size * ncores.}
 
-\item{block.size}{Number of simulations per block.}
+\item{batch.size}{Number of simulations per batch (controls R overhead).
+Default is 32.}
 
 \item{mu.rates}{Mutation rate per base per generation (single numeric value).}
 
 \item{rec.rates}{Recombination rate per base per generation (single numeric value).}
-
-\item{use.alpha}{Logical or vector. If TRUE or c(TRUE, pop1, pop2, ...),
-uses exponential growth for specified populations.}
 
 \item{skip.zns}{Logical. If TRUE (default), skip ZnS computation
 (O(segsites^2), very slow for large loci).}
@@ -64,7 +62,8 @@ All computation stays in C/C++ memory — no R matrix overhead. This is
 ~5x faster than msABC for WGS-scale loci (e.g. 100kb with recombination).
 }
 \details{
-Total simulations = nsim.blocks * block.size * ncores.
+The actual number of simulations is \code{ceiling(nsims / (ncores * batch.size)) * batch.size * ncores},
+which may slightly exceed \code{nsims}.
 
 For WGS-scale simulations (many long loci with recombination), this function
 is significantly faster than \code{sim.sumstats()} because:

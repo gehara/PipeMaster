@@ -285,7 +285,7 @@ observed.sumstats <- function(model, path.to.phylip = NULL, path.to.vcf = NULL,
 
   saved_wd <- getwd()
   setwd(tmpdir)
-  com <- PipeMaster:::msABC.commander(model, use.alpha = FALSE, arg = 1)
+  com <- PipeMaster:::msABC.commander(model, arg = 1)
   command <- paste(com[[1]], "--obs", ms_file)
   if(verbose) cat(" done\n")
 

@@ -6,15 +6,14 @@
 \usage{
 sim.sumstats(
   model,
-  nsim.blocks,
-  block.size = 10,
+  nsims,
+  batch.size = 10,
   path = getwd(),
   output.name,
-  use.alpha = FALSE,
   mu.rates = NULL,
   rec.rates = NULL,
   one.snp = FALSE,
-  folded = FALSE,
+  folded = TRUE,
   method = c("stochastic", "expected"),
   monomorphic = FALSE,
   variable_samples = FALSE,
@@ -25,15 +24,14 @@ sim.sumstats(
 \arguments{
 \item{model}{A model object built by the main.menu.gui() function.}
 
-\item{nsim.blocks}{Number of blocks to simulate. Total simulations = nsim.blocks x block.size (x ncores).}
+\item{nsims}{Total number of simulations to run. The actual number may be
+slightly higher due to rounding to batch.size * ncores.}
 
-\item{block.size}{Number of simulations per block. Default is 10.}
+\item{batch.size}{Number of simulations per batch. Default is 10.}
 
 \item{path}{Path to write the output. Default is working directory.}
 
 \item{output.name}{String. The prefix of the output file names.}
-
-\item{use.alpha}{Logical. If TRUE the most recent population size change will be exponential. Default is FALSE.}
 
 \item{mu.rates}{List. Distribution to sample mutation rates. See \code{sim.sumstat()} for details.}
 
@@ -41,7 +39,7 @@ sim.sumstats(
 
 \item{one.snp}{Logical. If TRUE, one segregating site is randomly sampled per locus for the SFS. Default is FALSE.}
 
-\item{folded}{Logical. If TRUE the SFS will be folded. Default is FALSE.}
+\item{folded}{Logical. If TRUE the SFS will be folded. Default is TRUE.}
 
 \item{method}{Character string: \code{"stochastic"} (default) or \code{"expected"} for SFS computation.}
 

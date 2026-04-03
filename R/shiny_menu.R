@@ -311,6 +311,8 @@ main.menu.gui <- function(input = NULL) {
     model$sum_anc_ne <- rv$sum_anc_ne
     if (!is.null(rv$mig_scale))
       model$mig_scale <- rv$mig_scale
+    model$use.alpha <- if (isTRUE(input$check_use_alpha) && !is.null(input$alpha_pops))
+      c(TRUE, as.integer(input$alpha_pops)) else FALSE
 
     # Labels: model name + population names
     pop_names <- if (!is.null(rv$pop_names)) rv$pop_names else
@@ -433,8 +435,7 @@ main.menu.gui <- function(input = NULL) {
     sample_once <- function() {
       cmd <- tryCatch(
         PipeMaster:::msABC.commander(model,
-          use.alpha = if (!is.null(use_alpha) && use_alpha[1] == TRUE) use_alpha else FALSE,
-          arg = "/tmp/plot/"),
+          use.alpha = use_alpha, arg = "/tmp/plot/"),
         error = function(e) NULL)
       if (is.null(cmd)) return(NULL)
       last_ms_cmd <<- cmd[[1]]
@@ -482,8 +483,7 @@ main.menu.gui <- function(input = NULL) {
       avg_model$conds <- list()
       avg_cmd <- tryCatch(
         PipeMaster:::msABC.commander(avg_model,
-          use.alpha = if (!is.null(use_alpha) && use_alpha[1] == TRUE) use_alpha else FALSE,
-          arg = "/tmp/plot/"),
+          use.alpha = use_alpha, arg = "/tmp/plot/"),
         error = function(e) NULL)
       if (!is.null(avg_cmd)) last_ms_cmd <- avg_cmd[[1]]
     } else {
@@ -1128,6 +1128,10 @@ main.menu.gui <- function(input = NULL) {
       }
 
     }
+
+    # Note: widths not to scale
+    mtext("Population widths not to scale", side = 1, adj = 1,
+          cex = 0.75 * font_scale, col = th$axis, line = -1)
   }
 
   # ===========================================================================
@@ -1875,8 +1879,10 @@ main.menu.gui <- function(input = NULL) {
       if (nrow(en_reg) == 0) return(NULL)
       pops <- unique(en_reg[, 3])
       choices <- setNames(seq_along(pops), paste0("Pop ", pops))
+      ua <- shiny::isolate(rv$use_alpha)
+      sel <- if (is.numeric(ua) && length(ua) > 1) ua[-1] else seq_along(pops)
       shiny::checkboxGroupInput("alpha_pops", "Pops with growth:",
-        choices = choices, selected = seq_along(pops), inline = TRUE)
+        choices = choices, selected = sel, inline = TRUE)
     })
 
     # --- Reactive values (replaces .e environment) ---
@@ -1903,6 +1909,7 @@ main.menu.gui <- function(input = NULL) {
       mig_conds     = NULL,
       model_name    = "",
       pop_names     = NULL,
+      use_alpha     = FALSE,
       template_loaded = FALSE
     )
 
@@ -1925,6 +1932,7 @@ main.menu.gui <- function(input = NULL) {
         rv$I    <- tmpl$I
         rv$sum_anc_ne <- if (!is.null(tmpl$sum_anc_ne)) tmpl$sum_anc_ne else TRUE
         rv$mig_scale  <- if (!is.null(tmpl$mig_scale)) tmpl$mig_scale else "Nm"
+        rv$use_alpha  <- if (!is.null(tmpl$use.alpha)) tmpl$use.alpha else FALSE
 
         # Load labels BEFORE npops (so ui_pop_names reads them on re-render)
         if (!is.null(tmpl$labels)) {
@@ -1997,6 +2005,8 @@ main.menu.gui <- function(input = NULL) {
         shiny::updateCheckboxInput(session, "check_sum_anc_ne", value = rv$sum_anc_ne)
         if (!is.null(rv$mig_scale))
           shiny::updateRadioButtons(session, "mig_scale", selected = rv$mig_scale)
+        if (is.numeric(rv$use_alpha) || isTRUE(rv$use_alpha[1]))
+          shiny::updateCheckboxInput(session, "check_use_alpha", value = TRUE)
 
         # Mark template as loaded — prevents tree validation from overwriting
         rv$template_loaded <- TRUE
@@ -3117,10 +3127,7 @@ main.menu.gui <- function(input = NULL) {
             model$I <- matrix(c("I", paste(rv$npops), as.character(rv$npops), samp_per_pop), nrow = 1)
           }
           cmd <- tryCatch(
-            PipeMaster:::msABC.commander(model,
-              use.alpha = if (isTRUE(input$check_use_alpha) && !is.null(input$alpha_pops))
-                c(TRUE, as.integer(input$alpha_pops)) else FALSE,
-              arg = "/tmp/plot/"),
+            PipeMaster:::msABC.commander(model, arg = "/tmp/plot/"),
             error = function(e) NULL)
           if (!is.null(cmd)) {
             # Format: ms command + sampled parameters + conditions
@@ -3216,7 +3223,7 @@ main.menu.gui <- function(input = NULL) {
         all_samples <- NULL
         for (s in 1:nsamp) {
           cmd <- tryCatch(
-            PipeMaster:::msABC.commander(model, use.alpha = FALSE, arg = "/tmp/prior_plot/"),
+            PipeMaster:::msABC.commander(model, arg = "/tmp/prior_plot/"),
             error = function(e) NULL)
           if (is.null(cmd)) next
           p <- cmd[[2]]

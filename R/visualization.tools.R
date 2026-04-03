@@ -28,7 +28,7 @@ plot.priors <- function(model, nsamples=1000, mu.rates=NULL){
   param = NULL
   pb = txtProgressBar(min = 1, max = nsamples, initial = 1)
   for(j in 1:nsamples){
-    param.samples <- as.numeric(PipeMaster:::msABC.commander(model, use.alpha=F, arg=1)[[2]][2,])
+    param.samples <- as.numeric(PipeMaster:::msABC.commander(model, use.alpha=NULL, arg=1)[[2]][2,])
     if(!(is.null(mu.rates))){
       rates <- do.call(mu.rates[[1]],args=c(1,mu.rates[2:length(mu.rates)]))
       param <- rbind(param,c(param.samples, rates))
@@ -39,9 +39,9 @@ plot.priors <- function(model, nsamples=1000, mu.rates=NULL){
     setTxtProgressBar(pb,j)
   }
   if(!(is.null(mu.rates))){
-    colnames(param) <- c(PipeMaster:::msABC.commander(model, use.alpha=F, arg=1)[[2]][1,],"mu")
+    colnames(param) <- c(PipeMaster:::msABC.commander(model, use.alpha=NULL, arg=1)[[2]][1,],"mu")
   } else {
-    colnames(param) <- c(PipeMaster:::msABC.commander(model, use.alpha=F, arg=1)[[2]][1,],"mean.mu", "sd.mu")
+    colnames(param) <- c(PipeMaster:::msABC.commander(model, use.alpha=NULL, arg=1)[[2]][1,],"mean.mu", "sd.mu")
   }
 
   par(mfrow=c(3,3))

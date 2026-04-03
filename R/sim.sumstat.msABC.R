@@ -4,11 +4,12 @@
 #'              to running \code{sim.sumstat()} and \code{sim.sfs()} separately. The output is
 #'              written to a single file with columns: parameters | summary statistics | SFS bins.
 #' @param model A model object built by the main.menu.gui() function.
-#' @param nsim.blocks Number of blocks to simulate. Total simulations = nsim.blocks x block.size (x ncores).
-#' @param block.size Number of simulations per block. Default is 10.
+#' @param nsims Total number of simulations to run. The actual number may be
+#'   slightly higher due to rounding to batch.size * ncores.
+#' @param batch.size Number of simulations per batch (controls R overhead).
+#'   Default is 10.
 #' @param path Path to write the output. Default is working directory.
 #' @param output.name String. The prefix of the output file names.
-#' @param use.alpha Logical. If TRUE the most recent population size change will be exponential. Default is FALSE.
 #' @param mu.rates List. Distribution to sample mutation rates. See \code{sim.sumstat()} for details.
 #' @param rec.rates List. Distribution to sample recombination rates. See \code{sim.sumstat()} for details.
 #' @param one.snp Logical. If TRUE, one segregating site is randomly sampled per locus for the SFS. Default is FALSE.
@@ -25,16 +26,20 @@
 #'         When \code{variable_samples = TRUE}, only parameters and summary statistics are written (no SFS).
 #' @author Marcelo Gehara
 #' @export
-sim.sumstats <- function(model, nsim.blocks, block.size = 10,
+sim.sumstats <- function(model, nsims, batch.size = 10,
                           path = getwd(), output.name,
-                          use.alpha = FALSE,
                           mu.rates = NULL, rec.rates = NULL,
-                          one.snp = FALSE, folded = FALSE,
+                          one.snp = FALSE, folded = TRUE,
                           method = c("stochastic", "expected"),
                           monomorphic = FALSE,
                           variable_samples = FALSE,
                           append.sims = FALSE, ncores = 1,
                           .parent.pid.file = NULL) {
+
+  if (is.null(model$use.alpha))
+    stop("model$use.alpha is missing. Set it on the model (e.g. model$use.alpha <- FALSE).")
+
+  nsim.blocks <- ceiling(nsims / (ncores * batch.size))
 
   WD <- getwd()
   method <- match.arg(method)
@@ -71,7 +76,7 @@ sim.sumstats <- function(model, nsim.blocks, block.size = 10,
   ############### Header discovery and writing
   if(append.sims == FALSE) {
     # Discover sumstat column names via one test run
-    com <- PipeMaster:::msABC.commander(model, use.alpha = use.alpha, arg = 1)
+    com <- PipeMaster:::msABC.commander(model, arg = 1)
     write.table(locfile, paste(".", 1, "locfile.txt", sep = ""),
                 row.names = FALSE, col.names = TRUE, quote = FALSE, sep = " ")
     x <- strsplit(run.msABC(com[[1]]), "\t")
@@ -125,7 +130,8 @@ sim.sumstats <- function(model, nsim.blocks, block.size = 10,
     worker_pids_env$pids <- integer(0)
     .pm.register.parent(pid_file, worker_pids_env)
 
-    save(model, nsim.blocks, block.size, use.alpha, mu.rates, rec.rates,
+    worker_nsims <- nsim.blocks * batch.size
+    save(model, worker_nsims, batch.size, mu.rates, rec.rates,
          output.name, one.snp, folded, method, monomorphic, variable_samples,
          file = file.path(abs.path, ".PM_worker_params.RData"))
 
@@ -138,8 +144,8 @@ sim.sumstats <- function(model, nsim.blocks, block.size = 10,
       'load(file.path(base_path, ".PM_worker_params.RData"))',
       'worker_dir <- file.path(base_path, paste0(".worker_", worker_id))',
       'dir.create(worker_dir, showWarnings=FALSE)',
-      'sim.sumstats(model=model, nsim.blocks=nsim.blocks, block.size=block.size,',
-      '              path=worker_dir, use.alpha=use.alpha, mu.rates=mu.rates,',
+      'sim.sumstats(model=model, nsims=worker_nsims, batch.size=batch.size,',
+      '              path=worker_dir, mu.rates=mu.rates,',
       '              rec.rates=rec.rates, one.snp=one.snp, folded=folded,',
       '              method=method, monomorphic=monomorphic,',
       '              variable_samples=variable_samples, append.sims=TRUE,',
@@ -160,7 +166,7 @@ sim.sumstats <- function(model, nsim.blocks, block.size = 10,
     }
     cat(paste("PipeMaster:: Launched", ncores, "worker processes"), "\n")
 
-    total_expected <- nsim.blocks * block.size * ncores
+    total_expected <- nsim.blocks * batch.size * ncores
     prev_total_sims <- -1
     prev_done_count <- -1
     while(TRUE) {
@@ -228,12 +234,12 @@ sim.sumstats <- function(model, nsim.blocks, block.size = 10,
 
     sim.combined.func <- function(arg) {
       # Pre-sample all parameters for the block
-      commands <- character(block.size)
-      mu_mat <- matrix(0, nrow = nloci_rows, ncol = block.size)
+      commands <- character(batch.size)
+      mu_mat <- matrix(0, nrow = nloci_rows, ncol = batch.size)
       rec_mat <- NULL
-      par_list <- vector("list", block.size)
+      par_list <- vector("list", batch.size)
 
-      for(i in 1:block.size) {
+      for(i in 1:batch.size) {
         if(is.numeric(mu.rates) && length(mu.rates) == 1) {
           rates <- list(rep(mu.rates, nloci_rows), c(mu.rates, 0))
         } else if(is.list(mu.rates)) {
@@ -247,16 +253,16 @@ sim.sumstats <- function(model, nsim.blocks, block.size = 10,
 
         if(is.numeric(rec.rates) && length(rec.rates) == 1) {
           r.rates <- rep(rec.rates, nloci_rows)
-          if(is.null(rec_mat)) rec_mat <- matrix(0, nrow = nloci_rows, ncol = block.size)
+          if(is.null(rec_mat)) rec_mat <- matrix(0, nrow = nloci_rows, ncol = batch.size)
           rec_mat[, i] <- r.rates
         } else if(is.list(rec.rates)) {
           r.rates <- do.call(rec.rates[[1]], args = as.list(rec.rates[2:length(rec.rates)]))
           r.rates <- rep(r.rates, each = npop_loc)
-          if(is.null(rec_mat)) rec_mat <- matrix(0, nrow = nloci_rows, ncol = block.size)
+          if(is.null(rec_mat)) rec_mat <- matrix(0, nrow = nloci_rows, ncol = batch.size)
           rec_mat[, i] <- r.rates
         }
 
-        com <- msABC.commander(model, use.alpha = use.alpha, arg = arg)
+        com <- msABC.commander(model, arg = arg)
         commands[i] <- com[[1]]
         par_list[[i]] <- c(com[[2]][2, ], rates[[2]])
         names(par_list[[i]]) <- c(com[[2]][1, ], "mean.rate", "sd.rate")
@@ -338,12 +344,12 @@ sim.sumstats <- function(model, nsim.blocks, block.size = 10,
                   append = TRUE, sep = "\t")
 
       end.time <- Sys.time()
-      total.sims <- total.sims + block.size
+      total.sims <- total.sims + batch.size
       cycle.time <- (as.numeric(end.time) - as.numeric(start.time)) / 60 / 60
       total.time <- cycle.time * nsim.blocks
       passed.time <- cycle.time * j
       remaining.time <- round(total.time - passed.time, 3)
-      cat(paste("PipeMaster:: ", total.sims, " (~", round(block.size / cycle.time),
+      cat(paste("PipeMaster:: ", total.sims, " (~", round(batch.size / cycle.time),
                 " sims/h) | ~", remaining.time, " hours remaining", sep = ""), "\n")
     }
     f <- ".1locfile.txt"

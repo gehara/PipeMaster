@@ -5,7 +5,14 @@
 # @return a list with msABC command and sampled parameters.
 # @note This function is used internally for the sim.msABC function. One mey want to run this function to check the msABC string.
 #
-msABC.commander<-function(model,use.alpha=use.alpha,arg){
+msABC.commander<-function(model,use.alpha=NULL,arg){
+
+  # Resolve use.alpha: explicit argument > model field
+  if (is.null(use.alpha)) {
+    if (is.null(model$use.alpha))
+      stop("model$use.alpha is missing. Set it on the model (e.g. model$use.alpha <- FALSE).")
+    use.alpha <- model$use.alpha
+  }
 
   # empty parameter vector
   parameters<-vector()

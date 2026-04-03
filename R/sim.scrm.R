@@ -6,12 +6,12 @@
 #' ~5x faster than msABC for WGS-scale loci (e.g. 100kb with recombination).
 #'
 #' @param model A PipeMaster model object (from main.menu or build functions).
-#' @param nsim.blocks Number of simulation blocks per worker.
-#' @param block.size Number of simulations per block.
+#' @param nsims Total number of simulations to run. The actual number may be
+#'   slightly higher due to rounding to batch.size * ncores.
+#' @param batch.size Number of simulations per batch (controls R overhead).
+#'   Default is 32.
 #' @param mu.rates Mutation rate per base per generation (single numeric value).
 #' @param rec.rates Recombination rate per base per generation (single numeric value).
-#' @param use.alpha Logical or vector. If TRUE or c(TRUE, pop1, pop2, ...),
-#'   uses exponential growth for specified populations.
 #' @param skip.zns Logical. If TRUE (default), skip ZnS computation
 #'   (O(segsites^2), very slow for large loci).
 #' @param ncores Number of parallel worker processes.
@@ -28,7 +28,8 @@
 #'   SIMS_<output.name>.txt in the specified path.
 #'
 #' @details
-#' Total simulations = nsim.blocks * block.size * ncores.
+#' The actual number of simulations is \code{ceiling(nsims / (ncores * batch.size)) * batch.size * ncores},
+#' which may slightly exceed \code{nsims}.
 #'
 #' For WGS-scale simulations (many long loci with recombination), this function
 #' is significantly faster than \code{sim.sumstats()} because:
@@ -45,13 +46,18 @@
 #' (same approach as \code{sim.sumstats()}).
 #'
 #' @export
-sim.scrm.sumstats <- function(model, nsim.blocks, block.size,
+sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
                            mu.rates, rec.rates,
-                           use.alpha = FALSE, skip.zns = TRUE,
+                           skip.zns = TRUE,
                            ncores = 1, path = ".", output.name = "scrm",
                            variable_samples = FALSE,
                            append.sims = FALSE, verbose = TRUE,
                            .parent.pid.file = NULL) {
+
+  if (is.null(model$use.alpha))
+    stop("model$use.alpha is missing. Set it on the model (e.g. model$use.alpha <- FALSE).")
+
+  nsim.blocks <- ceiling(nsims / (ncores * batch.size))
 
   if (!is.numeric(mu.rates) || length(mu.rates) != 1)
     stop("mu.rates must be a single numeric value")
@@ -111,23 +117,24 @@ sim.scrm.sumstats <- function(model, nsim.blocks, block.size,
   abs_path <- normalizePath(path, mustWork = TRUE)
   outfile <- file.path(abs_path, paste0("SIMS_", output.name, ".txt"))
 
-  total_sims <- nsim.blocks * block.size * ncores
+  total_sims <- nsim.blocks * batch.size * ncores
 
   if (verbose) {
+    if (total_sims != nsims)
+      cat(sprintf("PipeMaster:: Requested %d sims, running %d (rounded to batch.size=%d x ncores=%d)\n",
+                  nsims, total_sims, batch.size, ncores))
     if (uniform_len) {
-      cat(sprintf("PipeMaster:: scrm engine: %d sims (%d blocks x %d x %d cores), %d loci x %d bp, %d pops\n",
-                  total_sims, nsim.blocks, block.size, ncores,
-                  nloci, as.integer(unique_lens[1]), npop))
+      cat(sprintf("PipeMaster:: scrm engine: %d sims, %d loci x %d bp, %d pops\n",
+                  total_sims, nloci, as.integer(unique_lens[1]), npop))
     } else {
-      cat(sprintf("PipeMaster:: scrm engine: %d sims (%d blocks x %d x %d cores), %d loci (%d length groups, %d-%d bp), %d pops\n",
-                  total_sims, nsim.blocks, block.size, ncores,
-                  nloci, n_groups, as.integer(min(unique_lens)), as.integer(max(unique_lens)), npop))
+      cat(sprintf("PipeMaster:: scrm engine: %d sims, %d loci (%d length groups, %d-%d bp), %d pops\n",
+                  total_sims, nloci, n_groups, as.integer(min(unique_lens)), as.integer(max(unique_lens)), npop))
     }
   }
 
   # Write header (build column names deterministically, no sim needed)
   if (!append.sims || !file.exists(outfile)) {
-    col_names <- .scrm.col.names(model, npop, config, use.alpha)
+    col_names <- .scrm.col.names(model, npop, config)
     writeLines(paste(col_names, collapse = "\t"), outfile)
   }
 
@@ -147,8 +154,8 @@ sim.scrm.sumstats <- function(model, nsim.blocks, block.size,
     worker_pids_env$pids <- integer(0)
     .pm.register.parent(pid_file, worker_pids_env)
 
-    # Save parameters for workers
-    save(model, nsim.blocks, block.size, use.alpha, skip.zns,
+    worker_nsims <- nsim.blocks * batch.size
+    save(model, worker_nsims, batch.size, skip.zns,
          mu.rates, rec.rates, output.name, variable_samples,
          file = file.path(abs_path, ".PM_scrm_worker_params.RData"))
 
@@ -162,10 +169,10 @@ sim.scrm.sumstats <- function(model, nsim.blocks, block.size,
       'load(file.path(base_path, ".PM_scrm_worker_params.RData"))',
       'worker_dir <- file.path(base_path, paste0(".scrm_worker_", worker_id))',
       'dir.create(worker_dir, showWarnings = FALSE)',
-      'sim.scrm.sumstats(model = model, nsim.blocks = nsim.blocks,',
-      '               block.size = block.size, mu.rates = mu.rates,',
-      '               rec.rates = rec.rates, use.alpha = use.alpha,',
-      '               skip.zns = skip.zns, output.name = output.name,',
+      'sim.scrm.sumstats(model = model, nsims = worker_nsims,',
+      '               batch.size = batch.size, mu.rates = mu.rates,',
+      '               rec.rates = rec.rates, skip.zns = skip.zns,',
+      '               output.name = output.name,',
       '               path = worker_dir, variable_samples = variable_samples,',
       '               ncores = 1, append.sims = TRUE,',
       '               .parent.pid.file = pid_file)',
@@ -184,7 +191,7 @@ sim.scrm.sumstats <- function(model, nsim.blocks, block.size,
     }
     cat(sprintf("PipeMaster:: Launched %d worker processes\n", ncores))
 
-    total_expected <- nsim.blocks * block.size * ncores
+    total_expected <- nsim.blocks * batch.size * ncores
     prev_total_sims <- -1
     prev_done_count <- -1
     while (TRUE) {
@@ -262,20 +269,20 @@ sim.scrm.sumstats <- function(model, nsim.blocks, block.size,
         cat("PipeMaster:: Parent process died, worker exiting.\n")
         return(invisible(NULL))
       }
-      block_results <- vector("list", block.size)
-      for (i in 1:block.size) {
+      block_results <- vector("list", batch.size)
+      for (i in 1:batch.size) {
         block_results[[i]] <- .scrm.run.one(model, base_cmds, config, npop,
-                                            use.alpha, skip.zns, mu.rates)
+                                            skip.zns, mu.rates)
       }
 
       block_mat <- do.call(rbind, block_results)
       write.table(block_mat, file = outfile, append = TRUE, quote = FALSE,
                   row.names = FALSE, col.names = FALSE, sep = "\t")
 
-      total_done <- total_done + block.size
+      total_done <- total_done + batch.size
       if (verbose) {
         elapsed_h <- as.numeric(difftime(Sys.time(), start_time, units = "hours"))
-        nsim_total <- nsim.blocks * block.size
+        nsim_total <- nsim.blocks * batch.size
         rate <- if (elapsed_h > 0.001) round(total_done / elapsed_h) else "..."
         remaining <- if (elapsed_h > 0.001) {
           round((nsim_total - total_done) / (total_done / elapsed_h), 3)
@@ -298,11 +305,11 @@ sim.scrm.sumstats <- function(model, nsim.blocks, block.size,
 # Internal: run one scrm simulation and return named numeric vector
 # base_cmds: character vector of scrm commands (one per length group)
 .scrm.run.one <- function(model, base_cmds, config, npop,
-                          use.alpha, skip.zns, mu.rates) {
+                          skip.zns, mu.rates) {
   nloci <- nrow(model$loci)
 
   # Sample parameters from priors
-  cmd_result <- msABC.commander(model, use.alpha = use.alpha, arg = 1)
+  cmd_result <- msABC.commander(model, arg = 1)
   ms_command <- cmd_result[[1]]
   params <- cmd_result[[2]]
 
@@ -360,7 +367,7 @@ sim.scrm.sumstats <- function(model, nsim.blocks, block.size,
 
 
 # Internal: build column names deterministically (no simulation needed)
-.scrm.col.names <- function(model, npop, config, use.alpha) {
+.scrm.col.names <- function(model, npop, config) {
   # Parameter names from model
   size_pars <- rbind(model$flags$n, model$flags$en$size)
   mig_pars <- rbind(model$flags$m, model$flags$em$size)
