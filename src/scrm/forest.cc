@@ -883,6 +883,14 @@ void Forest::implementCoalescence(const Event &event, TimeIntervalIterator &tii)
   assert( event.node() == active_node(event.active_node_nr()) );
 
   Node* coal_node = event.node();
+
+  // Guard: if all contemporaries in this population coalesced or migrated
+  // between rate calculation and event implementation, the coalescence is
+  // stale. Skip it — the active node will coalesce in a later time interval.
+  if (contemporaries_.size(coal_node->population()) == 0) {
+    return;
+  }
+
   Node* target = contemporaries_.sample(coal_node->population());
 
   dout << "* * * Above node " << target << std::endl;

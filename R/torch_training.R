@@ -33,26 +33,30 @@
 
   dev <- torch::torch_device(device)
 
-  # Detect big.matrix inputs (shared memory, batch-by-batch access)
+  # Data loading strategy:
+  # - big.matrix: materialize from mmap to CPU tensor once (avoids per-batch
+  #   disk I/O), transfer only batches to GPU. Keeps GPU memory low so many
+  #   workers can share GPUs.
+  # - tensor/matrix: move to GPU directly (small datasets, single-worker)
   is_bigmem <- inherits(X_train, "big.matrix")
 
-  if (is_bigmem) {
-    # big.matrix path: only convert validation data to tensors
-    n_train <- nrow(X_train)
-    X_va_t <- torch::torch_tensor(X_val, dtype = torch::torch_float(), device = dev)
-    Y_va_t <- torch::torch_tensor(Y_val, dtype = torch::torch_float(), device = dev)
-  } else {
-    # Standard path: convert all data to tensors
-    .to_tensor <- function(x) {
-      if (inherits(x, "torch_tensor")) return(x$to(dtype = torch::torch_float(), device = dev))
-      torch::torch_tensor(x, dtype = torch::torch_float(), device = dev)
-    }
-    X_tr_t <- .to_tensor(X_train)
-    Y_tr_t <- .to_tensor(Y_train)
-    X_va_t <- .to_tensor(X_val)
-    Y_va_t <- .to_tensor(Y_val)
-    n_train <- X_tr_t$size(1)
+  .to_tensor <- function(x, target_dev) {
+    if (inherits(x, "torch_tensor")) return(x$to(dtype = torch::torch_float(), device = target_dev))
+    if (inherits(x, "big.matrix")) x <- x[,]
+    torch::torch_tensor(x, dtype = torch::torch_float(), device = target_dev)
   }
+
+  if (is_bigmem) {
+    # CPU tensors for training data, GPU for validation (small)
+    X_tr_t <- .to_tensor(X_train, "cpu")
+    Y_tr_t <- .to_tensor(Y_train, "cpu")
+  } else {
+    X_tr_t <- .to_tensor(X_train, dev)
+    Y_tr_t <- .to_tensor(Y_train, dev)
+  }
+  X_va_t <- .to_tensor(X_val, dev)
+  Y_va_t <- .to_tensor(Y_val, dev)
+  n_train <- X_tr_t$size(1)
 
   batch_size <- as.integer(hp$batch_size)
 
@@ -100,13 +104,8 @@
       batch_idx <- perm[start_idx:end_idx]
 
       if (is_bigmem) {
-        # Read batch from mmap, convert to tensor on the fly
-        X_batch <- torch::torch_tensor(
-          X_train[batch_idx, , drop = FALSE],
-          dtype = torch::torch_float(), device = dev)
-        Y_batch <- torch::torch_tensor(
-          Y_train[batch_idx, , drop = FALSE],
-          dtype = torch::torch_float(), device = dev)
+        X_batch <- X_tr_t[batch_idx]$to(device = dev)
+        Y_batch <- Y_tr_t[batch_idx]$to(device = dev)
       } else {
         X_batch <- X_tr_t[batch_idx]
         Y_batch <- Y_tr_t[batch_idx]

@@ -125,9 +125,9 @@ Fourteen free parameters with symmetric migration in per-generation rate (m).
 | Ne0.pop2 | 29,725 | Current CEU Ne |
 | Ne0.pop3 | 54,090 | Current CHB Ne |
 | Ne1.pop1 | 7,300 | Ancestral Ne |
-| Ne1.pop2 | 2,100 | OoA bottleneck Ne |
-| Ne1.pop3 | 510 | Initial CHB Ne |
-| Ne.anc_3_2 | 2,100 | Ne at CEU-CHB merge |
+| Ne1.pop2 | 1,000 | Initial CEU Ne at EU/AS split (N_EU0) |
+| Ne1.pop3 | 510 | Initial CHB Ne at EU/AS split (N_AS0) |
+| Ne.anc_3_2 | 2,100 | OoA bottleneck Ne (between EU/AS split and OoA) |
 | join3_2 | 848 gen | CEU-CHB split time |
 | join2_1 | 5,600 gen | OoA split time |
 | t.Ne1.pop1 | 8,800 gen | YRI Ne change time |
