@@ -618,9 +618,9 @@ int calculations(double* weights, // larger pops have greater weight
 	fixed_dif[i][j] /= (double)segs_ij;
 	private[i][j] /= (double)segs_ij;
       }
-      else if(segs_ij == 0){
-	shared[i][j] =	fixed_dif[i][j] = private[i][j]  = 0./0.;
-      }
+      /* segs_ij == 0: no pairwise informative sites. shared/private/fixed
+       * remain at their calloc'd 0 — semantically correct and safe for the
+       * downstream batch accumulator (previous NaN sentinel polluted it). */
       weighted_pi_ij += weights[i]*weights[j]*pi_ij;
     }//pops_j
   }//pops_i
