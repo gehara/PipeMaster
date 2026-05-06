@@ -28,6 +28,43 @@
 /* Initial line buffer size — grown as needed */
 #define INIT_BUF_SIZE (1 << 20)  /* 1 MB */
 
+/* Provide getline fallback for platforms (e.g., mingw-w64 in Rtools) where it
+ * is not exposed by <stdio.h>. POSIX semantics: grow *lineptr/*n as needed,
+ * return number of bytes read or -1 at EOF/error. */
+#if defined(_WIN32) || defined(__MINGW32__) || defined(__MINGW64__)
+
+#include <stddef.h>
+typedef long ssize_t_compat;
+
+static ssize_t_compat pm_getline(char **lineptr, size_t *n, FILE *fp) {
+    if (lineptr == NULL || n == NULL || fp == NULL) return -1;
+    if (*lineptr == NULL || *n == 0) {
+        *n = 256;
+        *lineptr = (char *)malloc(*n);
+        if (*lineptr == NULL) return -1;
+    }
+    size_t pos = 0;
+    int c;
+    while ((c = fgetc(fp)) != EOF) {
+        if (pos + 1 >= *n) {
+            size_t new_n = *n * 2;
+            char *p = (char *)realloc(*lineptr, new_n);
+            if (p == NULL) return -1;
+            *lineptr = p;
+            *n = new_n;
+        }
+        (*lineptr)[pos++] = (char)c;
+        if (c == '\n') break;
+    }
+    if (pos == 0 && c == EOF) return -1;
+    (*lineptr)[pos] = '\0';
+    return (ssize_t_compat)pos;
+}
+
+#define getline pm_getline
+
+#endif
+
 SEXP read_tsv_call(SEXP filename_sexp, SEXP col_indices_sexp,
                     SEXP skip_sexp, SEXP nrows_sexp) {
 

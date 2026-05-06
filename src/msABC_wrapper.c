@@ -9,11 +9,73 @@
 /* Jump buffer defined in ms.c */
 extern jmp_buf msABC_jmpbuf;
 
-/* ---- Output capture using open_memstream ---- */
+/* ---- Output capture: open_memstream on POSIX, tmpfile() fallback on Windows ----
+ *
+ * mingw-w64 (Rtools) does not provide open_memstream(). On Windows we capture
+ * msABC's stdio output to a tmpfile() and slurp it back on demand. The public
+ * interface (the four functions below) is identical on both platforms.
+ */
 
 static FILE *capture_stream = NULL;
 static char *capture_buf = NULL;
 static size_t capture_len = 0;
+
+#if defined(_WIN32) || defined(__MINGW32__) || defined(__MINGW64__)
+
+void msABC_init_output_stream(void) {
+    if (capture_stream != NULL) {
+        fclose(capture_stream);
+        capture_stream = NULL;
+    }
+    if (capture_buf != NULL) {
+        free(capture_buf);
+        capture_buf = NULL;
+    }
+    capture_len = 0;
+    capture_stream = tmpfile();
+    if (capture_stream == NULL) {
+        Rf_error("msABC: failed to open tmpfile() for output capture");
+    }
+}
+
+FILE *msABC_get_output_stream(void) {
+    if (capture_stream == NULL) {
+        msABC_init_output_stream();
+    }
+    return capture_stream;
+}
+
+char *msABC_get_output_buffer(size_t *len) {
+    if (capture_stream != NULL) {
+        fflush(capture_stream);
+        long pos = ftell(capture_stream);
+        if (pos < 0) pos = 0;
+        if (capture_buf != NULL) { free(capture_buf); capture_buf = NULL; }
+        capture_buf = (char *)malloc((size_t)pos + 1);
+        if (capture_buf == NULL) {
+            capture_len = 0;
+            if (len != NULL) *len = 0;
+            return NULL;
+        }
+        rewind(capture_stream);
+        size_t got = fread(capture_buf, 1, (size_t)pos, capture_stream);
+        capture_buf[got] = '\0';
+        capture_len = got;
+        fseek(capture_stream, 0, SEEK_END);
+    }
+    if (len != NULL) *len = capture_len;
+    return capture_buf;
+}
+
+void msABC_close_output_stream(void) {
+    if (capture_stream != NULL) {
+        fclose(capture_stream); /* tmpfile is auto-deleted on close */
+        capture_stream = NULL;
+    }
+    /* capture_buf is freed by the caller after use */
+}
+
+#else /* POSIX: Linux, macOS */
 
 void msABC_init_output_stream(void) {
     if (capture_stream != NULL) {
@@ -53,6 +115,8 @@ void msABC_close_output_stream(void) {
     }
     /* capture_buf is freed by the caller after use */
 }
+
+#endif
 
 /* ---- Parse command string into argc/argv ---- */
 
