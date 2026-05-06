@@ -8,10 +8,36 @@
 #include <Rinternals.h>
 #endif
 
-         double
-ran1()
+/* mingw-w64 (Rtools) does not ship drand48/seed48. Provide a POSIX-compatible
+ * 48-bit LCG fallback on Windows. Linux/macOS continue to use libc's versions
+ * via <stdlib.h>. */
+#if defined(_WIN32) || defined(__MINGW32__) || defined(__MINGW64__)
+
+#include <stdint.h>
+
+static uint64_t pm_drand48_state = (0x1234ABCDULL << 16) | 0x330EULL;
+
+static double drand48(void) {
+    pm_drand48_state = (0x5DEECE66DULL * pm_drand48_state + 0xBULL)
+                       & ((1ULL << 48) - 1);
+    return (double)pm_drand48_state / (double)(1ULL << 48);
+}
+
+static unsigned short *seed48(unsigned short xseed[3]) {
+    static unsigned short prev[3];
+    prev[0] = (unsigned short)(pm_drand48_state & 0xFFFFULL);
+    prev[1] = (unsigned short)((pm_drand48_state >> 16) & 0xFFFFULL);
+    prev[2] = (unsigned short)((pm_drand48_state >> 32) & 0xFFFFULL);
+    pm_drand48_state = ((uint64_t)xseed[2] << 32) |
+                       ((uint64_t)xseed[1] << 16) |
+                       (uint64_t)xseed[0];
+    return prev;
+}
+
+#endif /* _WIN32 / MinGW fallback */
+
+double ran1(void)
 {
-        double drand48();
         return( drand48() );
 }
 
@@ -37,7 +63,7 @@ void get_seed_r(unsigned short *seedv) {
 
 void seedit( char *flag )
 {
-    unsigned short *seed48(), *pseed;
+    unsigned short *pseed;
 
     if( flag[0] == 's' ) {
         seed48( msABC_seed );
@@ -54,7 +80,7 @@ void seedit( char *flag )
 int
 commandlineseed( char **seeds)
 {
-    unsigned short seedv[3], *seed48();
+    unsigned short seedv[3];
 
     seedv[0] = atoi( seeds[0] );
     seedv[1] = atoi( seeds[1] );
@@ -104,7 +130,7 @@ commandlineseed( char **seeds)
 {
   FILE *pfseed;
   pfseed = fopen("seedms","w");
-	unsigned short seedv[3], *seed48();
+	unsigned short seedv[3];
 
 	seedv[0] = atoi( seeds[0] );
 	seedv[1] = atoi( seeds[1] );
