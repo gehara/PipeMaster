@@ -7263,14 +7263,13 @@ pick2(n,i,j)
 
 /**** ordran.c  ***/
 
-	int
+	void
 ordran(n,pbuf)
 	int n;
 	double pbuf[];
 {
 	ranvec(n,pbuf);
 	order(n,pbuf);
-	return;
 }
 
 
@@ -7312,7 +7311,7 @@ order(n,pbuf)
 }
 
 
-	int
+	void
 ranvec(n,pbuf)
 	int n;
 	double pbuf[];
@@ -7322,8 +7321,6 @@ ranvec(n,pbuf)
 
 	for(i=0; i<n; i++)
 		pbuf[i] = ran1();
-
-	return;
 }
 
 
@@ -7332,7 +7329,7 @@ ranvec(n,pbuf)
 poisso(u)
 	double u;
 {
-	double  cump, ru, ran1(), p, gasdev() ;
+	double  cump, ru, ran1(), p, gasdev(double, double) ;
 	int i=1;
 
 	if( u > 30. ) return( (int)(0.5 + gasdev(u,u)) );
