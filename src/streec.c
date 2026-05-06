@@ -95,7 +95,8 @@ segtre_mig(struct c_params *cp, int *pnsegs )
 	double  ran1(), sum, x, tcoal, ttemp, rft, clefta,  tmin, p  ;
 	double prec, cin,  prect, nnm1, nnm0, mig, ran, coal_prob, prob, rdum , arg ;
 	char c, event ;
-	int re(), xover(), cinr(), cleftr(), eflag, cpop, ic  ;
+	int re(int), xover(int, int, int), cinr(int, int), cleftr(int);
+	int eflag, cpop, ic  ;
 	int nsam, npop, nsites, nintn, *inconfig ;
 	double r,  f, rf,  track_len, *nrec, *npast, *tpast, **migm ;
 	double *size, *alphag, *tlast ;
@@ -470,7 +471,7 @@ cinr( int nsam, int nsites)
 	struct seg *pseg ;
 	int len,  el, lsg, lsgm1,  ic,  is, in, spot, endic ;
 	double ran1();
-	int xover(), ca() ;
+	int xover(int, int, int), ca(int, int, int, int);
 
 
 /* First generate a random x-over spot, then locate it as to chrom and seg. */
