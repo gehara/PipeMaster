@@ -1,6 +1,9 @@
 ^.*\.Rproj$
 ^\.Rproj\.user$
 
+# CI / GitHub configuration
+^\.github$
+
 # Tests (not standard R test framework)
 ^tests/
 ^tests_hABC/
