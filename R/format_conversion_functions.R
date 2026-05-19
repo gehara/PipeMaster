@@ -277,14 +277,22 @@ read.phylip.loci <- function(filepath) {
     i <- i + 1
     locus_idx <- locus_idx + 1
 
-    # Read ntax sequence lines
+    # Read ntax sequence lines.
+    # Detect tab-delimited (long names) vs fixed-width (10-char names),
+    # matching the dual-mode parser in phylip_to_ms_file()
+    # (R/observed.sumstat.ngs.R:122-131).
     names_vec <- character(ntax)
     mat <- matrix("", nrow = ntax, ncol = nchar_seq)
     for(j in 1:ntax) {
-      # Name is first 10 chars (padded), sequence is the rest
       line <- lines[i]
-      name <- trimws(substr(line, 1, 10))
-      seq_str <- gsub("\\s", "", substr(line, 11, nchar(line)))
+      if (grepl("\t", line, fixed = TRUE)) {
+        parts <- strsplit(line, "\t", fixed = TRUE)[[1]]
+        name <- trimws(parts[1])
+        seq_str <- gsub("\\s", "", parts[2])
+      } else {
+        name <- trimws(substr(line, 1, 10))
+        seq_str <- gsub("\\s", "", substr(line, 11, nchar(line)))
+      }
       names_vec[j] <- name
       mat[j, ] <- strsplit(tolower(seq_str), "")[[1]]
       i <- i + 1
@@ -414,5 +422,101 @@ ms.to.DNAbin<-function(ms.output, bp.length){
   class(se)<-"alignment" # this is alignment
   x<-ape::as.DNAbin(se) # convert to DNAbin
   return(x)
+}
+
+#' Convert a pyRAD/ipyrad .alleles file to sequential PHYLIP
+#' @description Converts a pyRAD/ipyrad \code{.alleles} file (per-locus
+#'              sequence blocks separated by \code{//} lines) into a
+#'              multi-locus sequential PHYLIP file that can be loaded
+#'              through the PHYLIP slot of \code{main.menu.gui()} or
+#'              passed to \code{observed.sumstats(path.to.phylip=...)}.
+#'
+#'              Each locus is written as a PHYLIP block: a header
+#'              \code{<ntax> <nchar>} followed by one tab-delimited
+#'              \code{name<TAB>sequence} line per allele. Per-locus
+#'              allele counts may vary across loci (samples absent from a
+#'              locus are simply skipped — the PipeMaster PHYLIP parser
+#'              re-orders by \code{pop.assign} and drops missing samples).
+#'              Gaps (\code{-}) and Ns are preserved; \code{observed.sumstats}
+#'              masks them from SNP calling.
+#'
+#'              The \code{//} separator (and any SNP-annotation suffix it
+#'              carries) is discarded. The \code{.alleles} format encodes
+#'              phased diploid data with sample names ending in \code{_0}
+#'              and \code{_1}; population assignment is per allele, so the
+#'              pop-assign file passed alongside the resulting PHYLIP must
+#'              list both alleles of each individual.
+#'
+#' @param path.to.alleles Path to the input \code{.alleles} file.
+#' @param output Path to the output PHYLIP file.
+#' @param verbose Logical. If TRUE prints a summary (default TRUE).
+#' @return Invisibly returns the number of loci written.
+#' @author Marcelo Gehara
+#' @seealso \code{\link{observed.sumstats}}, \code{\link{one.snp.per.locus}}
+#' @examples
+#' \dontrun{
+#' alleles2phylip(
+#'   path.to.alleles = "tests/empirical_data/subset4_alleles_filtrado.alleles",
+#'   output          = "tests/empirical_data/subset4_alleles_filtrado.phy")
+#' }
+#' @export
+alleles2phylip <- function(path.to.alleles, output, verbose = TRUE) {
+
+  if (!file.exists(path.to.alleles))
+    stop("Missing input: ", path.to.alleles)
+
+  t0 <- proc.time()
+  if (verbose) cat(sprintf("PipeMaster:: alleles2phylip — reading %s\n",
+                            path.to.alleles))
+  lines <- readLines(path.to.alleles, warn = FALSE)
+
+  sep_idx <- grep("^//", lines, perl = TRUE)
+  n_loci  <- length(sep_idx)
+  if (n_loci == 0L)
+    stop("No '//' separators found - is this a pyRAD/ipyrad .alleles file?")
+  if (verbose) cat(sprintf("PipeMaster::   %d lines read, %d loci detected\n",
+                            length(lines), n_loci))
+
+  # Pre-allocate output buffer: one header line per locus + all data lines
+  out_buf <- character((length(lines) - n_loci) + n_loci)
+  out_pos <- 1L
+  prev    <- 0L
+  skipped <- 0L
+
+  for (i in seq_len(n_loci)) {
+    s <- sep_idx[i]
+    block <- lines[(prev + 1L):(s - 1L)]
+    block <- block[nzchar(trimws(block))]
+    if (length(block) == 0L) { prev <- s; skipped <- skipped + 1L; next }
+
+    # Split on the FIRST whitespace run only (name vs sequence)
+    m <- regexpr("[ \t]+", block, perl = TRUE)
+    if (any(m < 1L))
+      stop("Locus ", i, ": malformed line(s) without name/sequence separator.")
+    nm   <- substring(block, 1L, m - 1L)
+    rest <- substring(block, m + attr(m, "match.length"))
+    seqs <- gsub("[ \t]", "", rest, perl = TRUE)
+
+    L <- nchar(seqs[1L])
+    if (any(nchar(seqs) != L))
+      stop(sprintf("Locus %d: unequal sequence lengths (%s)",
+                   i, paste(unique(nchar(seqs)), collapse = ", ")))
+
+    n_seq <- length(seqs)
+    out_buf[out_pos] <- sprintf("%d %d", n_seq, L)
+    out_buf[(out_pos + 1L):(out_pos + n_seq)] <- paste(nm, seqs, sep = "\t")
+    out_pos <- out_pos + n_seq + 1L
+    prev <- s
+  }
+
+  out_buf <- out_buf[seq_len(out_pos - 1L)]
+  if (verbose) cat(sprintf("PipeMaster::   writing %s (%d lines)\n",
+                            output, length(out_buf)))
+  writeLines(out_buf, output)
+
+  written <- n_loci - skipped
+  if (verbose) cat(sprintf("PipeMaster::   %d loci written (%d empty skipped, %.1f sec)\n",
+                            written, skipped, (proc.time() - t0)[3]))
+  invisible(written)
 }
 

@@ -18,7 +18,8 @@ sim.sumstats(
   monomorphic = FALSE,
   variable_samples = FALSE,
   append.sims = FALSE,
-  ncores = 1
+  ncores = 1,
+  .parent.pid.file = NULL
 )
 }
 \arguments{
@@ -27,7 +28,8 @@ sim.sumstats(
 \item{nsims}{Total number of simulations to run. The actual number may be
 slightly higher due to rounding to batch.size * ncores.}
 
-\item{batch.size}{Number of simulations per batch. Default is 10.}
+\item{batch.size}{Number of simulations per batch (controls R overhead).
+Default is 10.}
 
 \item{path}{Path to write the output. Default is working directory.}
 
@@ -39,7 +41,7 @@ slightly higher due to rounding to batch.size * ncores.}
 
 \item{one.snp}{Logical. If TRUE, one segregating site is randomly sampled per locus for the SFS. Default is FALSE.}
 
-\item{folded}{Logical. If TRUE the SFS will be folded. Default is TRUE.}
+\item{folded}{Logical. If TRUE the SFS will be folded. Default is FALSE.}
 
 \item{method}{Character string: \code{"stochastic"} (default) or \code{"expected"} for SFS computation.}
 

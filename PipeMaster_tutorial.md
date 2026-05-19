@@ -390,49 +390,127 @@ tune_result <- load.tune.result("output/vaquita/tune_result")
 
 ## 7. Out-of-Distribution Diagnostics
 
-`OOD.diagnose()` checks whether the observed data is compatible with the
-simulated reference table. This is critical — if the observed data falls
-outside the range of simulations, inference results are unreliable.
+PipeMaster splits OOD checks into two tiers, run at different points in
+the pipeline:
 
-### Without a trained model (stat-level checks only)
+- **`OOD.pretrain()`** — prior-predictive coverage. Run before training:
+  is the observed data reachable under the prior + model? Per-stat
+  support, NN density in PCA space, and (when params are passed) NN
+  density in PLS space.
+- **`OOD.posttrain()`** — model-fit + posterior fidelity. Run after
+  `tune.nn()`: NN-latent density (the nonlinear manifold the trained NN
+  uses for regression) and ensemble disagreement at the observed point.
+
+Forensics for either tier: `OOD.projection.diagnose()` (class-dispatched).
+
+### Pre-training check (no NN required)
 
 ```r
-ood <- OOD.diagnose(
-  trained.nn = NULL,
+pre <- OOD.pretrain(
   observed   = obs_raw,
-  reftable   = reftable[, stat_cols],
+  reftable   = reftable[, c(param_cols, stat_cols)],
   stat.cols  = stat_cols,
+  param.cols = param_cols,    # enables PLS NN density
   plot       = TRUE
 )
-cat(sprintf("Overall: %s\n", ood$overall))
+cat(sprintf("Overall: %s\n", pre$overall))
 ```
 
-Three checks are performed:
-1. **Mahalanobis distance** — is the observed point far from the centroid?
-2. **PCA projection** — does the observed point fall within the PCA cloud?
-3. **Per-stat percentiles** — are individual statistics within range?
+Three checks fire:
 
-### With a trained model (adds model disagreement check)
+1. **Per-stat support** — obs strictly inside / outside each sim range.
+   Outlier fraction drives a tier (pass < 10%, warn 10-25%, fail > 25%).
+2. **NN density in PCA space** (all stats + filtered) — distribution-free
+   leave-one-out NN distance, compared to the empirical sim-to-sim NN null.
+3. **NN density in PLS space** (all + filtered, when `param.cols` passed)
+   — components aligned with parameter signal.
+
+### Post-training check (requires trained NN)
 
 ```r
-ood <- OOD.diagnose(
+post <- OOD.posttrain(
   trained.nn = tune_result,
   observed   = obs_raw,
-  reftable   = reftable[, stat_cols],
-  stat.cols  = stat_cols,
+  reftable   = reftable[, c(param_cols, stat_cols)],
+  pretrain   = pre,           # reuses PCA/PLS context, faster + integrated verdict
   plot       = TRUE
 )
 ```
 
-Check 4 (model disagreement) compares predictions across ensemble models.
-Large disagreement suggests the observed data is in a region where the
-neural network is uncertain.
+Adds:
+
+4. **NN-latent density** — penultimate-layer activations of the
+   top-ranked ensemble model. Catches "curved" out-of-distribution holes
+   that linear PCA/PLS miss.
+5. **Ensemble disagreement** — per-param coefficient of variation across
+   the ensemble at obs, compared to the empirical distribution of per-sim
+   mean CVs. High disagreement = model is extrapolating at obs.
+
+### Drilling into outliers
+
+```r
+# Per-outlier sim-distribution histograms
+OOD.outliers(pre, observed = obs_raw, reftable = reftable,
+             pdf_file = "ood_outliers.pdf")
+
+# Projection forensics (PCA/PLS for pretrain; +NN-latent for posttrain).
+# PLS basis also shows param Y-loadings — which params are predicted by
+# each component, paired with which stats load on the same component.
+OOD.projection.diagnose(pre,  basis = "pls",       pdf_file = "proj_pre.pdf")
+OOD.projection.diagnose(post, basis = "nn_latent", pdf_file = "proj_post.pdf")
+```
+
+### Diagnosing prior bounds
+
+Two complementary helpers; use both.
+
+**Best-fit boundary pressure** — for the simulations that fit obs best
+(rejection-ABC posterior), where do their params cluster within the prior
+range? Mechanically equivalent to running `abc.rejection(pls=TRUE)` and
+checking whether the accepted samples press the prior bounds.
+
+```r
+# Mode A: in-pipeline (uses cached PLS scores, fast)
+bf <- OOD.priors.bestfit(ood_result = pre,
+                         K_frac = 0.025, edge_threshold = 0.05,
+                         basis = "pls",
+                         pdf_file = "ood_priors_bestfit.pdf")
+print(bf$table[bf$table$edge_pressure != "ok", ])
+
+# Mode B: with explicit ABC (full reftable, tunable distance)
+post <- abc.rejection(reftable, obs_raw, param_cols,
+                      tol = 0.01, pls = TRUE, n.pls = 30)
+bf   <- OOD.priors.bestfit(posterior = post, reftable = reftable,
+                            pdf_file = "ood_priors_bestfit.pdf")
+```
+
+Pairs with `OOD.projection.diagnose(basis = "pls")`: the param Y-loadings
+panel says "PLS3 wants Ne0+ and join1−"; `OOD.priors.bestfit` confirms
+whether those params press the upper/lower prior bounds.
+
+**Per-outlier marginal consensus** — alternative to dropping outlier
+stats: keep them and widen the priors. For each outlier stat, finds the
+top-K most-correlated params; translates `(corr sign × outlier direction)`
+into HI/LO votes; aggregates per param.
+
+```r
+op <- OOD.priors.outliers(pre, top_k = 3L, corr_threshold = 0.2,
+                          pdf_file = "ood_priors_outliers.pdf")
+print(op$consensus)             # per-param: n_HI, n_LO, evidence_*, consensus
+print(op$per_outlier)           # supporting evidence
+```
+
+If `OOD.priors.bestfit()` and `OOD.priors.outliers()` agree on a
+param/direction, that's a strong signal to widen. Disagreement is
+informative too — joint best-fit boundary pressure with no
+marginal-outlier consensus suggests the prior is too narrow without any
+single stat calling for it.
 
 ### Using OOD to filter statistics
 
 ```r
-# Drop outlier statistics before inference
-ood_pass <- !ood$percentiles$outlier
+# Drop outlier statistics before training
+ood_pass <- !pre$percentiles$outlier
 stat_cols_filtered <- stat_cols[ood_pass]
 cat(sprintf("Kept %d/%d statistics\n",
             length(stat_cols_filtered), length(stat_cols)))

@@ -10,8 +10,28 @@
 #'   slightly higher due to rounding to batch.size * ncores.
 #' @param batch.size Number of simulations per batch (controls R overhead).
 #'   Default is 32.
-#' @param mu.rates Mutation rate per base per generation (single numeric value).
-#' @param rec.rates Recombination rate per base per generation (single numeric value).
+#' @param mu.rates Mutation rate per base per generation. Either:
+#'   (a) A single numeric value: applied uniformly to all loci, all sims (back-compat default).
+#'   (b) A list with distribution spec for per-locus per-sim sampling. The
+#'       distribution must be \code{"lognormal"} (the only currently supported
+#'       shape); \code{median} is fixed across sims; the dispersion parameter
+#'       \code{sigma_log} can be either FIXED or SAMPLED per sim:
+#'       \itemize{
+#'         \item Fixed:  \code{list(distribution = "lognormal", median = 5.83e-9, sigma_log = 0.3)}
+#'         \item Sampled: \code{list(distribution = "lognormal", median = 5.83e-9, sigma_log_range = c(0.05, 0.5))}
+#'           — per sim, \code{sigma_log ~ Uniform(lo, hi)}; the realized value
+#'             is recorded in the reftable as \code{sigma_log_mu} so it can be
+#'             treated as a learnable nuisance parameter by \code{tune.nn()}.
+#'       }
+#'       Per-locus mu heterogeneity is essentially free (mu only affects
+#'       post-hoc SegSites mutation placement, not the ARG). Output reftable's
+#'       \code{mean.rate}/\code{sd.rate} record the realized per-sim mean/sd
+#'       of the sampled per-locus rates.
+#' @param rec.rates Recombination rate per base per generation. Same shape as
+#'   \code{mu.rates}: scalar OR \code{list(distribution="lognormal", median,
+#'   sigma_log)} for fixed dispersion OR \code{list(..., sigma_log_range =
+#'   c(lo, hi))} for sampled dispersion. Realized \code{sigma_log_rec} is
+#'   recorded in the reftable.
 #' @param skip.zns Logical. If TRUE (default), skip ZnS computation
 #'   (O(segsites^2), very slow for large loci).
 #' @param ncores Number of parallel worker processes.
@@ -59,10 +79,44 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
 
   nsim.blocks <- ceiling(nsims / (ncores * batch.size))
 
-  if (!is.numeric(mu.rates) || length(mu.rates) != 1)
-    stop("mu.rates must be a single numeric value")
-  if (!is.numeric(rec.rates) || length(rec.rates) != 1)
-    stop("rec.rates must be a single numeric value")
+  # Internal helper: validate a rates spec (scalar OR distribution list with
+  # either fixed `sigma_log` or sampled `sigma_log_range = c(lo, hi)` prior).
+  .validate_rate_spec <- function(spec, name) {
+    if (!is.list(spec) || is.null(spec$distribution)) {
+      if (!is.numeric(spec) || length(spec) != 1)
+        stop(sprintf("%s must be a single numeric value OR a list with ",
+                     "$distribution + $median + (sigma_log XOR sigma_log_range)", name))
+      return(invisible(NULL))
+    }
+    if (!(spec$distribution %in% c("lognormal")))
+      stop(sprintf("%s$distribution: only 'lognormal' is currently supported", name))
+    if (is.null(spec$median) || !is.numeric(spec$median) ||
+        length(spec$median) != 1 || spec$median <= 0)
+      stop(sprintf("%s$median must be a positive numeric scalar", name))
+    # Use exact name match — R's $ does partial-prefix matching, which would
+    # treat sigma_log as matching sigma_log_range.
+    has_fixed <- "sigma_log"       %in% names(spec)
+    has_range <- "sigma_log_range" %in% names(spec)
+    if (!has_fixed && !has_range)
+      stop(sprintf("%s list must specify sigma_log (fixed) OR sigma_log_range (sampled)", name))
+    if (has_fixed && has_range)
+      stop(sprintf("%s: provide sigma_log OR sigma_log_range, not both", name))
+    if (has_fixed) {
+      v <- spec[["sigma_log"]]
+      if (!is.numeric(v) || length(v) != 1 || v < 0)
+        stop(sprintf("%s$sigma_log must be a non-negative numeric scalar", name))
+    } else {
+      r <- spec[["sigma_log_range"]]
+      if (!is.numeric(r) || length(r) != 2 || r[1] < 0 || r[2] < r[1])
+        stop(sprintf("%s$sigma_log_range must be c(lo, hi) with 0 <= lo <= hi", name))
+    }
+    invisible(NULL)
+  }
+  .validate_rate_spec(mu.rates,  "mu.rates")
+  .validate_rate_spec(rec.rates, "rec.rates")
+
+  mu_is_distribution  <- is.list(mu.rates)  && !is.null(mu.rates$distribution)
+  rec_is_distribution <- is.list(rec.rates) && !is.null(rec.rates$distribution)
 
   npop <- as.integer(model$I[1, 3])
   pop_cols <- 4:(3 + npop)
@@ -92,6 +146,17 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
   Ne0 <- 100000
   ms_scalar <- 4 * Ne0
 
+  # Per-locus rec rate path needs a "placeholder" rho in the args
+  # because scrm's parser requires -r to be valid syntactically.
+  # The C side overrides per-locus via Model::setRecombinationRate
+  # before each tree build, so the placeholder value is unused.
+  rec_scalar_for_args <- if (rec_is_distribution) rec.rates$median
+                         else                     rec.rates
+  # Same idea for mu: -t needs a scalar placeholder; per-locus override
+  # happens on the C side via Model::setMutationRate before each locus.
+  mu_scalar_for_args  <- if (mu_is_distribution)  mu.rates$median
+                         else                     mu.rates
+
   # Build per-group scrm commands (one group per unique locus length)
   # For uniform lengths, this is just one group
   unique_lens <- sort(unique(locus_lengths))
@@ -101,8 +166,8 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
   base_cmds <- character(n_groups)
   for (g in seq_along(unique_lens)) {
     gl <- unique_lens[g]
-    theta_g <- ms_scalar * mu.rates * gl
-    rho_g <- ms_scalar * rec.rates * gl
+    theta_g <- ms_scalar * mu_scalar_for_args * gl
+    rho_g <- ms_scalar * rec_scalar_for_args * gl
     cmd <- sprintf("%d %d -t %g -r %g %d",
                    nsam, group_nloci[g], theta_g, rho_g, as.integer(gl))
     if (npop > 1) {
@@ -272,7 +337,7 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
       block_results <- vector("list", batch.size)
       for (i in 1:batch.size) {
         block_results[[i]] <- .scrm.run.one(model, base_cmds, config, npop,
-                                            skip.zns, mu.rates)
+                                            skip.zns, mu.rates, rec.rates)
       }
 
       block_mat <- do.call(rbind, block_results)
@@ -304,8 +369,9 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
 
 # Internal: run one scrm simulation and return named numeric vector
 # base_cmds: character vector of scrm commands (one per length group)
+# rec.rates: scalar (back-compat) or list(distribution, median, sigma_log)
 .scrm.run.one <- function(model, base_cmds, config, npop,
-                          skip.zns, mu.rates) {
+                          skip.zns, mu.rates, rec.rates = NULL) {
   nloci <- nrow(model$loci)
 
   # Sample parameters from priors
@@ -328,14 +394,79 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
   # Build full scrm commands (one per length group, same demog flags)
   scrm_cmds <- paste(base_cmds, demog_part)
 
+  # Per-locus rate sampling (A.2 heterogeneity).
+  #
+  # The per-locus rates are i.i.d. lognormal draws. The C side reads the
+  # vector in length-group order, but since the draws are exchangeable
+  # there is no per-group structure to preserve — a single rlnorm(nloci,
+  # ...) call produces a statistically equivalent vector.
+  #
+  # sigma_log may be FIXED (spec$sigma_log) or SAMPLED per sim from a
+  # uniform prior (spec$sigma_log_range = c(lo, hi)). The realized
+  # sigma_log is recorded in the reftable as sigma_log_mu / sigma_log_rec
+  # so tune.nn() can treat it as a regression target if desired.
+  .draw_sigma_log <- function(spec) {
+    # Use exact name lookup — avoid R's $ prefix matching.
+    if ("sigma_log_range" %in% names(spec)) {
+      r <- spec[["sigma_log_range"]]
+      runif(1, r[1], r[2])
+    } else {
+      spec[["sigma_log"]]
+    }
+  }
+
+  rec_per_locus    <- NULL
+  sigma_log_rec_used <- NA_real_
+  mean_rec_rate <- if (is.list(rec.rates)) rec.rates$median else
+                   if (is.numeric(rec.rates)) rec.rates else NA_real_
+  sd_rec_rate <- 0
+  if (is.list(rec.rates) && !is.null(rec.rates$distribution)) {
+    sigma_log_rec_used <- .draw_sigma_log(rec.rates)
+    rec_per_locus <- rlnorm(nloci, meanlog = log(rec.rates$median),
+                                   sdlog   = sigma_log_rec_used)
+    mean_rec_rate <- mean(rec_per_locus)
+    sd_rec_rate   <- stats::sd(rec_per_locus)
+  }
+
+  # Same pattern for mu. Even cheaper because mu does NOT affect the ARG
+  # (only post-hoc SegSites mutation placement) — per-locus override is
+  # essentially free.
+  mu_per_locus     <- NULL
+  sigma_log_mu_used <- NA_real_
+  mean_mu_rate <- if (is.list(mu.rates)) mu.rates$median else
+                  if (is.numeric(mu.rates)) mu.rates else NA_real_
+  sd_mu_rate <- 0
+  if (is.list(mu.rates) && !is.null(mu.rates$distribution)) {
+    sigma_log_mu_used <- .draw_sigma_log(mu.rates)
+    mu_per_locus <- rlnorm(nloci, meanlog = log(mu.rates$median),
+                                  sdlog   = sigma_log_mu_used)
+    mean_mu_rate <- mean(mu_per_locus)
+    sd_mu_rate   <- stats::sd(mu_per_locus)
+  }
+
+  # scrm has a hardcoded default_pop_size_ = 10000 (src/scrm/model.h:76).
+  # When scrm parses -t theta and -r rho (theta/rho built by PipeMaster with
+  # Ne0 = 100000), it divides by 4*default_pop_size_ -- so internally scrm
+  # stores mu and rec scaled by Ne0_PM / Ne0_scrm = 100000/10000 = 10. All
+  # quantities (Ne, times, mu, rec) get the same 10x rescaling, leaving
+  # theta and t/Ne preserved; the simulation is consistent.
+  # Per-locus overrides via setMutationRate / setRecombinationRate bypass
+  # that scaling, so we apply it here before passing to C. Skipping this
+  # would make per-locus rates effectively 10x lower than nominal.
+  scrm_ne_scaling <- 100000 / 10000   # PipeMaster Ne0 / scrm default_pop_size_
+  rec_per_locus_c <- if (!is.null(rec_per_locus)) rec_per_locus * scrm_ne_scaling else NULL
+  mu_per_locus_c  <- if (!is.null(mu_per_locus))  mu_per_locus  * scrm_ne_scaling else NULL
+
   if (length(scrm_cmds) == 1L) {
     # Uniform length: use original single-command call
     result <- .Call("scrm_stats_call", scrm_cmds, config, as.integer(npop),
-                    as.logical(skip.zns), PACKAGE = "PipeMaster")
+                    as.logical(skip.zns), rec_per_locus_c, mu_per_locus_c,
+                    PACKAGE = "PipeMaster")
   } else {
     # Variable lengths: use multi-command call with shared accumulators
     result <- .Call("scrm_stats_multi_call", scrm_cmds, config, as.integer(npop),
                     as.logical(skip.zns), as.integer(nloci),
+                    rec_per_locus_c, mu_per_locus_c,
                     PACKAGE = "PipeMaster")
   }
 
@@ -343,8 +474,18 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
   par_vec <- as.numeric(params[2, ])
   names(par_vec) <- params[1, ]
 
-  # Add mu rate info
-  par_vec <- c(par_vec, mean.rate = mu.rates, sd.rate = 0)
+  # Add mu and rec rate info (mean.rate / sd.rate reflect the realized
+  # per-sim mean and sd of the per-locus rates). sigma_log_mu / sigma_log_rec
+  # record the drawn distribution-shape parameter when sigma_log_range is
+  # used (NA when fixed sigma_log or scalar). When sigma_log_range is set,
+  # these become learnable nuisance parameters (e.g. tune.nn() target).
+  par_vec <- c(par_vec,
+               mean.rate     = mean_mu_rate,
+               sd.rate       = sd_mu_rate,
+               sigma_log_mu  = sigma_log_mu_used,
+               mean.rec.rate = mean_rec_rate,
+               sd.rec.rate   = sd_rec_rate,
+               sigma_log_rec = sigma_log_rec_used)
 
   # Fold and name the SFS entries
   # C code already folds per-site to minor allele; trim to correct length
@@ -375,7 +516,9 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
 
   par_names <- c(size_pars[, 1], time_pars[, 1])
   if (!is.null(mig_pars)) par_names <- c(par_names, mig_pars[, 1])
-  par_names <- c(par_names, "mean.rate", "sd.rate")
+  par_names <- c(par_names,
+                 "mean.rate", "sd.rate", "sigma_log_mu",
+                 "mean.rec.rate", "sd.rec.rate", "sigma_log_rec")
 
   # Stat names: by-stat-type layout matching scrm_stats.cpp make_stat_names()
   nsam <- sum(config)

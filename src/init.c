@@ -23,10 +23,14 @@ extern SEXP obs_sfs_vcf_call(SEXP vcf_path, SEXP sample_pop_map,
 
 /* Declared in scrm_stats.cpp */
 extern SEXP scrm_stats_call(SEXP args_sexp, SEXP config_sexp,
-                             SEXP npop_sexp, SEXP skip_zns_sexp);
+                             SEXP npop_sexp, SEXP skip_zns_sexp,
+                             SEXP rec_rates_sexp,
+                             SEXP mu_rates_sexp);
 extern SEXP scrm_stats_multi_call(SEXP args_vec_sexp, SEXP config_sexp,
                                    SEXP npop_sexp, SEXP skip_zns_sexp,
-                                   SEXP total_nloci_sexp);
+                                   SEXP total_nloci_sexp,
+                                   SEXP rec_rates_sexp,
+                                   SEXP mu_rates_sexp);
 
 /* Declared in compute_sumstats.c */
 extern SEXP compute_sumstats_call(SEXP hapmat_sexp, SEXP config_sexp, SEXP npop_sexp);
@@ -55,8 +59,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"vcf_to_ms_call",       (DL_FUNC) &vcf_to_ms_call,       5},
     {"vcf_one_snp_call",     (DL_FUNC) &vcf_one_snp_call,     2},
     {"phylip_one_snp_call",  (DL_FUNC) &phylip_one_snp_call,  2},
-    {"scrm_stats_call",             (DL_FUNC) &scrm_stats_call,             4},
-    {"scrm_stats_multi_call",       (DL_FUNC) &scrm_stats_multi_call,       5},
+    {"scrm_stats_call",             (DL_FUNC) &scrm_stats_call,             6},
+    {"scrm_stats_multi_call",       (DL_FUNC) &scrm_stats_multi_call,       7},
     {"compute_sumstats_call",       (DL_FUNC) &compute_sumstats_call,       3},
     {"compute_sumstats_batch_call", (DL_FUNC) &compute_sumstats_batch_call, 4},
     {"read_tsv_call",               (DL_FUNC) &read_tsv_call,               4},

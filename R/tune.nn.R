@@ -1516,11 +1516,19 @@ save.tune.result <- function(tune.result, path) {
     if (!is.null(models) && length(models) > 0L) {
       models_dir <- file.path(path, "models")
       dir.create(models_dir, showWarnings = FALSE, recursive = TRUE)
-      for (i in seq_along(models))
+      for (i in seq_along(models)) {
+        # Use per-model HP when available (top-K ensemble members may have
+        # different architectures via Hyperband search). Falls back to
+        # best_hp for older in-memory results without models_hp.
+        model_hp <- if (!is.null(tune.result$models_hp) &&
+                        i <= length(tune.result$models_hp))
+          tune.result$models_hp[[i]] else hp
         .torch.save.model(models[[i]],
                           file.path(models_dir, sprintf("model_%03d.pt", i)),
-                          tp, hp, n_features = n_feat, n_bins = n_bins,
+                          tp, model_hp,
+                          n_features = n_feat, n_bins = n_bins,
                           sfs_dims = sfs_dims, n_targets = n_targ)
+      }
     }
   } else {
     # Keras: save models as TF SavedModel
@@ -2120,6 +2128,42 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     X_obs <- array(obs_z, dim = c(1L, sfs.dims[1], sfs.dims[2], 1L))
   }
   X_obs
+}
+
+# ============================================================================
+# Internal: batch version of .prep.observed() for an N x p sim matrix
+#
+# Applies the same type-specific augmentation + z-scoring as .prep.observed(),
+# vectorized over rows. Returns a matrix (sumstat) or 3D/4D array (sfs1d/sfs2d)
+# shaped as the trained model expects. Non-finite values are set to 0.
+# ============================================================================
+
+.prep.sims <- function(S_sim, data, type, sfs.dims) {
+  feat_mu <- data$feat_mu
+  feat_sd <- data$feat_sd
+
+  if (type == "sumstat") {
+    sim_aug <- cbind(S_sim, log1p(abs(S_sim)))
+    if (ncol(sim_aug) != length(feat_mu))
+      stop(sprintf("Dimension mismatch: sims have %d features (augmented) but model expects %d.",
+                   ncol(sim_aug), length(feat_mu)))
+    X <- sweep(sweep(sim_aug, 2, feat_mu, "-"), 2, feat_sd, "/")
+    X[!is.finite(X)] <- 0
+    return(X)
+  }
+
+  if (type == "sfs1d") {
+    sim_log <- log1p(S_sim)
+    X <- sweep(sweep(sim_log, 2, feat_mu, "-"), 2, feat_sd, "/")
+    X[!is.finite(X)] <- 0
+    return(array(X, dim = c(nrow(S_sim), ncol(S_sim), 1L)))
+  }
+
+  # sfs2d
+  sim_log <- log1p(S_sim)
+  X <- sweep(sweep(sim_log, 2, feat_mu, "-"), 2, feat_sd, "/")
+  X[!is.finite(X)] <- 0
+  array(X, dim = c(nrow(S_sim), sfs.dims[1], sfs.dims[2], 1L))
 }
 
 # ============================================================================
@@ -3156,6 +3200,7 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
       all_results     = hb$all_results,
       best_model      = best_model,
       models          = list(best_model),
+      models_hp       = list(hb$best_hp),
       models_val_loss = retrain$val_loss,
       models_metrics  = list(metrics),
       data            = data,
@@ -3336,6 +3381,11 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   keep <- !vapply(models, is.null, logical(1))
   models <- models[keep]
   models_val_loss <- models_val_loss[keep]
+  # Per-model HP: each parallel search produces its own architecture via
+  # Hyperband, so top-K models can have different unit counts / block counts.
+  # .torch.save.tune.result() needs these to reconstruct the correct shapes
+  # on reload — otherwise state_dict load fails with tensor-size mismatch.
+  models_hp <- lapply(search_entries[keep], `[[`, "hp")
 
   if (length(models) == 0L)
     stop("All top-K models failed to load. Check worker logs in ", work_dir)
@@ -3371,6 +3421,7 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     all_results     = combined_results,
     best_model      = models[[1L]],
     models          = models,
+    models_hp       = models_hp,
     models_val_loss = models_val_loss,
     models_metrics  = models_metrics,
     data            = data,
@@ -3385,7 +3436,7 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 # Unified model predict dispatcher
 #
 # Detects keras vs torch models and dispatches to the right predict function.
-# Used by nn.predict(), OOD.diagnose(), .ensemble.predict(), etc.
+# Used by nn.predict(), OOD.posttrain(), .ensemble.predict(), etc.
 # ============================================================================
 
 #' @keywords internal
@@ -3408,4 +3459,299 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   # Detect from model type
   if (inherits(tune.result$best_model, "nn_module")) return("torch")
   "keras"
+}
+
+
+# ============================================================================
+# Sensitivity / Inverse Jacobian for tune.nn (regression NN: stats -> params)
+#
+# Mirror of .torch.compute.jacobian() in torch_emulator.R, which is for the
+# forward emulator (params -> stats). Here the chain rule runs the other way:
+#
+#   x_raw ── augment ──> x_aug = [x_raw, log1p|x_raw|]
+#         ── z-score ──> x_z   = (x_aug - feat_mu) / feat_sd
+#         ── NN ────────> y_z
+#         ── un-z + exp> y_orig = exp(y_z * target_sd + target_mu)
+#
+# d y_orig_j / d x_raw_i =
+#   y_orig_j * target_sd_j *
+#   [ J_z[j, i_raw] / feat_sd_raw[i]
+#   + J_z[j, i_log] * sign(x_raw_i)/(1 + |x_raw_i|) / feat_sd_log[i] ]
+# ============================================================================
+
+#' @keywords internal
+.torch.compute.jacobian.inverse <- function(model, data, observed_raw,
+                                            device = "cpu") {
+  dev <- torch::torch_device(device)
+  feat_mu <- data$feat_mu;    feat_sd <- data$feat_sd
+  target_mu <- data$target_mu; target_sd <- data$target_sd
+
+  n_stats <- length(observed_raw)
+  obs_aug <- c(observed_raw, log1p(abs(observed_raw)))
+  obs_z   <- (obs_aug - feat_mu) / feat_sd
+
+  x <- torch::torch_tensor(matrix(obs_z, nrow = 1L),
+                           dtype = torch::torch_float(),
+                           device = dev, requires_grad = TRUE)
+  model$eval()
+  pred_z <- model(x)
+  n_targets <- pred_z$size(2)
+  n_aug     <- length(obs_z)
+
+  # Per-target backward via autograd_grad (same pattern as forward jacobian)
+  J_z <- matrix(0, n_targets, n_aug)
+  for (j in seq_len(n_targets)) {
+    grad_out <- torch::torch_zeros_like(pred_z)
+    grad_out[1, j] <- 1.0
+    g <- torch::autograd_grad(outputs = pred_z, inputs = x,
+                              grad_outputs = grad_out,
+                              retain_graph = TRUE, create_graph = FALSE)[[1]]
+    J_z[j, ] <- as.numeric(g$cpu())
+  }
+
+  pred_z_np <- as.numeric(as.matrix(pred_z$detach()$cpu()))
+  pred_log  <- pred_z_np * target_sd + target_mu
+  pred_orig <- exp(pred_log)
+
+  # Decompose into raw and log-augmented partial derivatives
+  J_raw <- J_z[, seq_len(n_stats), drop = FALSE]
+  J_log <- J_z[, n_stats + seq_len(n_stats), drop = FALSE]
+
+  feat_sd_raw <- feat_sd[seq_len(n_stats)]
+  feat_sd_log <- feat_sd[n_stats + seq_len(n_stats)]
+
+  # Chain rule for log1p(|x|): derivative is sign(x)/(1+|x|); 0 at x=0
+  log_chain <- sign(observed_raw) / (1 + abs(observed_raw))
+  log_chain[!is.finite(log_chain)] <- 0
+
+  # dY_z / dx_raw_i
+  J_z_x <- sweep(J_raw, 2, 1 / feat_sd_raw, "*") +
+           sweep(J_log, 2, log_chain / feat_sd_log, "*")
+
+  # Output chain: dY_orig / dY_z = pred_orig * target_sd
+  out_scale <- pred_orig * target_sd
+  J_orig <- sweep(J_z_x, 1, out_scale, "*")
+
+  # Elasticity (dimensionless): E[j,i] = (x_raw_i / Y_j) * J_orig[j,i]
+  obs_safe <- ifelse(abs(observed_raw) < 1e-12, 1e-12, observed_raw)
+  ratio    <- outer(1 / pred_orig, obs_safe)
+  E_orig   <- J_orig * ratio
+
+  rownames(J_orig) <- rownames(E_orig) <- names(target_mu)
+  colnames(J_orig) <- colnames(E_orig) <- data$stat_cols
+
+  list(jacobian = J_orig, elasticity = E_orig, predictions = pred_orig)
+}
+
+
+#' Sensitivity Analysis for `tune.nn()` (Inverse Jacobian)
+#'
+#' Computes \eqn{J[j, i] = d\theta_j / dS_i} of the trained NN at one or more
+#' observed datasets — i.e., how each parameter prediction responds to each
+#' summary statistic. Mirror of \code{emulator.sensitivity()}, which computes
+#' the opposite direction \eqn{dS_k / d\theta_j} for the forward emulator.
+#'
+#' Two outputs:
+#' \itemize{
+#'   \item \strong{Jacobian}: in original parameter and statistic units.
+#'         Useful when stats and params share interpretable scales.
+#'   \item \strong{Elasticity}: dimensionless,
+#'         \eqn{E[j, i] = (S_i / \theta_j) \cdot J[j, i]} — comparable across
+#'         stats with very different magnitudes.
+#' }
+#'
+#' Ensemble averaging follows the conventions of \code{nn.predict()}:
+#' weights are inverse validation loss (default) or uniform.
+#'
+#' @param tune.result list — output from \code{tune.nn()}.
+#' @param observed numeric vector or 1-row data.frame — observed summary stats.
+#' @param ensemble_weights character — \code{"inv_val_loss"} (default) weights
+#'   each ensemble member by the inverse of its validation loss; \code{"uniform"}
+#'   gives equal weight.
+#' @param aggregate character — \code{"mean"} (default), \code{"median"}, or
+#'   \code{"none"} (return per-model array).
+#' @param device character — \code{"cpu"} or \code{"cuda"} (default chooses cuda
+#'   when available).
+#' @param verbose logical — print progress (default TRUE).
+#'
+#' @return A list of class \code{"tune_nn_sensitivity"} with:
+#' \describe{
+#'   \item{jacobian}{matrix (n_params x n_stats) when aggregated, or array
+#'     (n_params x n_stats x K) when \code{aggregate = "none"}}
+#'   \item{elasticity}{same shape as \code{jacobian}, dimensionless}
+#'   \item{predictions}{ensemble parameter predictions at obs}
+#'   \item{stat_cols, param_cols, observed, ensemble_weights, aggregate}{}
+#' }
+#'
+#' @seealso \code{\link{emulator.sensitivity}} for the forward direction.
+#' @export
+tune.nn.sensitivity <- function(tune.result, observed,
+                                ensemble_weights = c("inv_val_loss", "uniform"),
+                                aggregate = c("mean", "median", "none"),
+                                device = NULL, verbose = TRUE) {
+  ensemble_weights <- match.arg(ensemble_weights)
+  aggregate <- match.arg(aggregate)
+
+  backend <- .detect.backend(tune.result)
+  if (backend != "torch")
+    stop("tune.nn.sensitivity currently supports torch backend only.")
+
+  data <- tune.result$data
+  stat_cols <- data$stat_cols
+  if (is.data.frame(observed) || is.matrix(observed)) {
+    obs_raw <- as.numeric(observed[1, stat_cols])
+  } else if (!is.null(names(observed))) {
+    obs_raw <- as.numeric(observed[stat_cols])
+  } else {
+    obs_raw <- as.numeric(observed)
+    if (length(obs_raw) != length(stat_cols))
+      stop(sprintf("observed has %d entries but tune.nn used %d stats",
+                   length(obs_raw), length(stat_cols)))
+  }
+  if (any(!is.finite(obs_raw)))
+    stop("observed contains non-finite values for the trained stat columns.")
+
+  models <- tune.result$models %||% list(tune.result$best_model)
+  K <- length(models)
+  if (K == 0L) stop("tune.result has no models")
+
+  val_loss <- tune.result$models_val_loss
+  if (ensemble_weights == "inv_val_loss" && !is.null(val_loss) &&
+      all(is.finite(val_loss)) && length(val_loss) == K) {
+    w <- (1 / val_loss) / sum(1 / val_loss)
+  } else {
+    w <- rep(1 / K, K)
+  }
+
+  # Detect the actual device the loaded models live on; fall back to cpu.
+  if (is.null(device)) {
+    device <- tryCatch({
+      d <- models[[1]]$parameters[[1]]$device
+      if (grepl("cuda", as.character(d), fixed = TRUE)) "cuda" else "cpu"
+    }, error = function(e) "cpu")
+  }
+  # Move models to the requested device if needed
+  for (k in seq_len(K)) models[[k]]$to(device = torch::torch_device(device))
+
+  if (verbose)
+    cat(sprintf("PipeMaster:: tune.nn.sensitivity — %d ensemble models, weights=%s, aggregate=%s, device=%s\n",
+                K, ensemble_weights, aggregate, device))
+
+  J_list <- vector("list", K); E_list <- vector("list", K)
+  P_list <- vector("list", K)
+  for (k in seq_len(K)) {
+    res <- .torch.compute.jacobian.inverse(models[[k]], data, obs_raw,
+                                            device = device)
+    J_list[[k]] <- res$jacobian
+    E_list[[k]] <- res$elasticity
+    P_list[[k]] <- res$predictions
+  }
+
+  if (aggregate == "none") {
+    J_out <- simplify2array(J_list)
+    E_out <- simplify2array(E_list)
+    P_out <- do.call(rbind, P_list)
+  } else {
+    P_mat <- do.call(rbind, P_list)
+    if (aggregate == "median") {
+      J_out <- apply(simplify2array(J_list), c(1, 2), median)
+      E_out <- apply(simplify2array(E_list), c(1, 2), median)
+      P_out <- apply(P_mat, 2, median)
+    } else {
+      J_out <- Reduce("+", Map("*", J_list, w))
+      E_out <- Reduce("+", Map("*", E_list, w))
+      P_out <- as.numeric(crossprod(w, P_mat))
+    }
+    rownames(J_out) <- rownames(E_out) <- names(data$target_mu)
+    colnames(J_out) <- colnames(E_out) <- stat_cols
+    names(P_out)    <- names(data$target_mu)
+  }
+
+  result <- list(jacobian = J_out, elasticity = E_out,
+                 predictions = P_out,
+                 stat_cols = stat_cols,
+                 param_cols = names(data$target_mu),
+                 observed = obs_raw,
+                 ensemble_weights = w,
+                 aggregate = aggregate)
+  class(result) <- "tune_nn_sensitivity"
+
+  if (verbose && aggregate != "none") {
+    cat(sprintf("PipeMaster:: |dtheta/dS| range: [%.4g, %.4g]\n",
+                min(abs(result$jacobian)), max(abs(result$jacobian))))
+    cat(sprintf("PipeMaster:: |elasticity| range: [%.4g, %.4g]\n",
+                min(abs(result$elasticity)), max(abs(result$elasticity))))
+  }
+  result
+}
+
+# Local "or-else" helper; tune.nn.R doesn't define this elsewhere
+`%||%` <- function(a, b) if (is.null(a)) b else a
+
+
+#' @export
+print.tune_nn_sensitivity <- function(x, top = 10L, ...) {
+  K <- length(x$param_cols)
+  cat(sprintf("tune.nn.sensitivity — %d params, %d stats, aggregate=%s\n",
+              K, length(x$stat_cols), x$aggregate))
+  if (x$aggregate == "none") {
+    cat("Per-model Jacobians stored in $jacobian (3D array). ",
+        "Use aggregate='mean' for ensemble summary.\n", sep = "")
+    return(invisible(x))
+  }
+  J <- x$jacobian; E <- x$elasticity
+  for (j in seq_len(K)) {
+    ord <- order(-abs(J[j, ]))[seq_len(min(top, ncol(J)))]
+    cat(sprintf("\n%s — top %d stats:\n", x$param_cols[j], length(ord)))
+    for (i in ord)
+      cat(sprintf("  %-30s J=%+11.4g  E=%+8.4f\n",
+                  x$stat_cols[i], J[j, i], E[j, i]))
+  }
+  invisible(x)
+}
+
+
+#' @export
+summary.tune_nn_sensitivity <- function(object, top = 5L, ...) {
+  if (object$aggregate == "none") {
+    cat("Use aggregate='mean'/'median' for summary.\n"); return(invisible(NULL))
+  }
+  J <- object$jacobian; E <- object$elasticity
+  out_list <- list()
+  for (j in seq_along(object$param_cols)) {
+    ord <- order(-abs(J[j, ]))[seq_len(min(top, ncol(J)))]
+    out_list[[object$param_cols[j]]] <- data.frame(
+      stat       = object$stat_cols[ord],
+      jacobian   = J[j, ord],
+      elasticity = E[j, ord],
+      stringsAsFactors = FALSE
+    )
+  }
+  print(out_list)
+  invisible(out_list)
+}
+
+
+#' @export
+plot.tune_nn_sensitivity <- function(x, top = 8L,
+                                     use = c("jacobian", "elasticity"), ...) {
+  use <- match.arg(use)
+  if (x$aggregate == "none")
+    stop("aggregate must be mean/median for plotting.")
+  M <- if (use == "elasticity") x$elasticity else x$jacobian
+  K <- length(x$param_cols)
+  old_par <- par(no.readonly = TRUE); on.exit(par(old_par))
+  par(mfrow = c(K, 1), mar = c(3, 9, 2, 1))
+  for (j in seq_len(K)) {
+    ord  <- order(-abs(M[j, ]))[seq_len(min(top, ncol(M)))]
+    vals <- M[j, ord]
+    cols <- ifelse(vals > 0, "#1f77b4", "#d62728")
+    barplot(rev(vals), names.arg = rev(x$stat_cols[ord]),
+            horiz = TRUE, las = 1, col = rev(cols),
+            main = sprintf("%s - top %d stats by |%s|",
+                           x$param_cols[j], length(ord), use),
+            xlab = sprintf("%s (signed)", use), cex.names = 0.8)
+    abline(v = 0, col = "grey50")
+  }
+  invisible(NULL)
 }

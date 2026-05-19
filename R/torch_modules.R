@@ -411,6 +411,60 @@
 }
 
 # ============================================================================
+# Penultimate-layer extraction: forward pass that returns the activations
+# fed into `output_layer`, instead of the final predictions.
+#
+# Implementation: temporarily swap `model$output_layer` with `nn_identity()`,
+# run forward in eval mode with no_grad, restore on exit. Works for all three
+# PipeMaster architectures (ResNet, CNN1D, CNN2D) since they all expose
+# `self$output_layer` as the last linear head.
+#
+# Batched over `batch_size` so large reftables (N > 10K, wide stat vectors)
+# don't blow GPU memory.
+# ============================================================================
+
+#' @keywords internal
+.torch.penultimate <- function(model, X, batch_size = 4096L, device = NULL) {
+  if (is.null(model$output_layer))
+    stop(".torch.penultimate: model has no $output_layer; cannot extract penultimate.")
+
+  orig_output <- model$output_layer
+  model$output_layer <- torch::nn_identity()
+  on.exit(model$output_layer <- orig_output, add = TRUE)
+
+  was_training <- model$training
+  model$eval()
+  on.exit(if (was_training) model$train(), add = TRUE)
+
+  if (is.null(device))
+    device <- model$parameters[[1]]$device
+
+  n <- if (is.array(X)) dim(X)[1] else nrow(X)
+  batch_size <- as.integer(max(1L, batch_size))
+
+  out_chunks <- vector("list", ceiling(n / batch_size))
+  ci <- 0L
+  torch::with_no_grad({
+    for (start in seq(1L, n, by = batch_size)) {
+      end <- min(start + batch_size - 1L, n)
+      idx <- start:end
+      Xb <- switch(as.character(length(dim(X))),
+        "2" = X[idx, , drop = FALSE],
+        "3" = X[idx, , , drop = FALSE],
+        "4" = X[idx, , , , drop = FALSE],
+        stop(".torch.penultimate: unsupported X rank ", length(dim(X)))
+      )
+      Xt <- torch::torch_tensor(Xb, dtype = torch::torch_float(), device = device)
+      z <- model(Xt)
+      ci <- ci + 1L
+      out_chunks[[ci]] <- as.matrix(z$cpu())
+    }
+  })
+
+  do.call(rbind, out_chunks)
+}
+
+# ============================================================================
 # Huber loss function (matches keras loss_huber with configurable delta)
 #
 # R torch's nnf_smooth_l1_loss has no delta parameter, so we implement it

@@ -20,7 +20,7 @@ tune.nn(
   gpu.threshold = 4L,
   greedy = TRUE,
   top_k = 1L,
-  backend = c("auto", "torch", "keras"),
+  backend = c("torch", "keras", "auto"),
   seed = 42,
   verbose = TRUE
 )
@@ -81,10 +81,10 @@ models (by validation loss) are retained. At prediction time,
 \code{nn.predict()} uses a proximity-weighted ensemble of these models for
 more stable point estimates. Capped at \code{n_searches}.}
 
-\item{backend}{character — \code{"auto"} (default), \code{"torch"}, or
-\code{"keras"}. \code{"auto"} uses torch if available, else keras.
-Torch is a pure R backend (no Python). Keras requires TensorFlow via
-reticulate but may train faster due to XLA compilation.}
+\item{backend}{character — \code{"torch"} (default), \code{"keras"}, or
+\code{"auto"}. Torch is a pure R backend (no Python dependency).
+Keras requires TensorFlow via reticulate. \code{"auto"} uses torch
+if available, else keras.}
 
 \item{seed}{integer — random seed (default 42).}
 

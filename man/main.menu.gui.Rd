@@ -19,6 +19,6 @@ Launches a Shiny web app for building demographic models.
 \examples{
 \dontrun{
 my.model <- main.menu.gui()
-sim.sumstat(my.model)
+sim.sumstats(my.model, nsim.blocks = 10, block.size = 10, output.name = "test")
 }
 }

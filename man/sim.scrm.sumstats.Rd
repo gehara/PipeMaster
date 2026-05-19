@@ -16,7 +16,8 @@ sim.scrm.sumstats(
   output.name = "scrm",
   variable_samples = FALSE,
   append.sims = FALSE,
-  verbose = TRUE
+  verbose = TRUE,
+  .parent.pid.file = NULL
 )
 }
 \arguments{

@@ -85,3 +85,13 @@ model_plot.pdf
 pipemaster_sticker_backup.svg
 SESSION_STATE.md
 PipeMaster.Rproj
+
+# Claude Code session data (never commit)
+.claude/
+
+# Misc local junk
+Pasted image.png
+Rplots.pdf
+Rplots*.pdf
+nohup.out
+*.bak

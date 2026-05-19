@@ -12,7 +12,7 @@ PipeMaster is an R package for building demographic models and simulating data u
 - **Shiny GUI** (`main.menu.gui()`) for interactive model building and visualization
 - **Neural network SML** (`tune.nn()`, `nn.predict()`) with keras and torch backends
 - Approximate Bayesian computation (`abc.rejection()`) for parameter estimation
-- **Out-of-distribution diagnostics** (`OOD.diagnose()`) for model validation
+- **Out-of-distribution diagnostics** — `OOD.pretrain()` (prior-predictive coverage) and `OOD.posttrain()` (NN-latent density + ensemble disagreement)
 
 ## Breaking Changes
 

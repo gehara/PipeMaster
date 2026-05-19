@@ -107,6 +107,7 @@ pls.fit <- function(stats, params, n.comp = 20L, scale = TRUE, max.rows = 10000L
   W <- matrix(0, nrow = ncol(X), ncol = n.comp)  # weights
   P <- matrix(0, nrow = ncol(X), ncol = n.comp)  # X loadings
   T_mat <- matrix(0, nrow = n_fit, ncol = n.comp)  # X scores
+  C <- matrix(0, nrow = q, ncol = n.comp)  # Y loadings (per-component, per-param)
   total_var <- sum(X^2)
 
   for (a in seq_len(n.comp)) {
@@ -139,6 +140,7 @@ pls.fit <- function(stats, params, n.comp = 20L, scale = TRUE, max.rows = 10000L
     W[, a] <- w
     P[, a] <- p_load
     T_mat[, a] <- t_new
+    C[, a] <- as.numeric(cc)
 
     # Deflate X and Y
     X <- X - t_new %*% t(p_load)
@@ -158,13 +160,25 @@ pls.fit <- function(stats, params, n.comp = 20L, scale = TRUE, max.rows = 10000L
   var_comp <- colSums(T_mat^2)
   var_explained <- var_comp / total_var
 
+  # Y-loadings per component, with param-name rownames so callers can map
+  # each PLS component back to the params it predicts. In normalized
+  # (NIPALS-internal) units — sign and relative magnitude across params at
+  # a given component are interpretable; absolute scale is not.
+  Y_names <- colnames(params)
+  if (is.null(Y_names)) Y_names <- paste0("Y", seq_len(q))
+  rownames(C) <- Y_names
+  colnames(C) <- paste0("PLS", seq_len(n.comp))
+
   result <- list(
-    projection   = R_full,
-    center       = col_means,
-    scale        = col_sds,
-    n.comp       = n.comp,
-    scores       = T_mat,
-    var.explained = var_explained
+    projection    = R_full,
+    center        = col_means,
+    scale         = col_sds,
+    n.comp        = n.comp,
+    scores        = T_mat,
+    var.explained = var_explained,
+    Y_loadings    = C,
+    Y_names       = Y_names,
+    Y_means       = Y_means
   )
   class(result) <- "pls.fit"
 

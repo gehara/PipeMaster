@@ -351,7 +351,9 @@ static SEXP make_stat_names(int npop) {
  * Main .Call entry point
  * ================================================================ */
 extern "C" SEXP scrm_stats_call(SEXP args_sexp, SEXP config_sexp,
-                                  SEXP npop_sexp, SEXP skip_zns_sexp) {
+                                  SEXP npop_sexp, SEXP skip_zns_sexp,
+                                  SEXP rec_rates_sexp,
+                                  SEXP mu_rates_sexp) {
 
     if (!isString(args_sexp) || Rf_length(args_sexp) != 1)
         Rf_error("scrm_stats: 'args' must be a single character string");
@@ -367,12 +369,43 @@ extern "C" SEXP scrm_stats_call(SEXP args_sexp, SEXP config_sexp,
     int nsam = 0;
     for (int i = 0; i < npop; i++) nsam += config[i];
 
+    /* Optional per-locus recombination rates (per bp per generation).
+     * NULL -> use rate baked into args.
+     * Numeric vector of length nloci -> override per locus. */
+    bool use_per_locus_rates = !isNull(rec_rates_sexp);
+    double *per_locus_rates = NULL;
+    if (use_per_locus_rates) {
+        if (!isReal(rec_rates_sexp))
+            Rf_error("scrm_stats: 'rec_rates' must be numeric or NULL");
+        per_locus_rates = REAL(rec_rates_sexp);
+    }
+
+    /* Optional per-locus mutation rates (per bp per generation).
+     * NULL -> use rate baked into args (via -t).
+     * Numeric vector of length nloci -> override per locus. mu is post-hoc
+     * to the ARG (only used by SegSites to place mutations on the built
+     * genealogy), so per-locus override is O(1) and does not affect cost. */
+    bool use_per_locus_mu = !isNull(mu_rates_sexp);
+    double *per_locus_mu = NULL;
+    if (use_per_locus_mu) {
+        if (!isReal(mu_rates_sexp))
+            Rf_error("scrm_stats: 'mu_rates' must be numeric or NULL");
+        per_locus_mu = REAL(mu_rates_sexp);
+    }
+
     /* Parse scrm arguments */
     std::string args_str(args_cstr);
     Param param(args_str);
     Model model = param.parse();
 
     int nloci = (int)model.loci_number();
+
+    if (use_per_locus_rates && Rf_length(rec_rates_sexp) != nloci)
+        Rf_error("scrm_stats: 'rec_rates' length (%d) != nloci (%d)",
+                 Rf_length(rec_rates_sexp), nloci);
+    if (use_per_locus_mu && Rf_length(mu_rates_sexp) != nloci)
+        Rf_error("scrm_stats: 'mu_rates' length (%d) != nloci (%d)",
+                 Rf_length(mu_rates_sexp), nloci);
 
     /* Set up RNG using R's random number generator */
     std::shared_ptr<FastFunc> ff = std::make_shared<FastFunc>();
@@ -404,6 +437,24 @@ extern "C" SEXP scrm_stats_call(SEXP args_sexp, SEXP config_sexp,
 
     /* Main loop over loci */
     for (int loc = 0; loc < nloci; loc++) {
+
+        /* Per-locus rate override (if supplied): change the model's rec
+         * rate before building this locus's tree. setRecombinationRate
+         * with per_locus=false, scaled=false treats the value as per bp
+         * per generation. */
+        if (use_per_locus_rates) {
+            model.setRecombinationRate(per_locus_rates[loc],
+                                        false, false, 0.0);
+        }
+        /* Per-locus mutation rate override (if supplied): mu does not
+         * affect the ARG; SegSites reads model.mutation_rate() to place
+         * mutations on the already-built genealogy. So this is O(1) and
+         * adds negligible cost. setMutationRate(per_locus=false,
+         * scaled=false) stores the value as per bp per generation. */
+        if (use_per_locus_mu) {
+            model.setMutationRate(per_locus_mu[loc],
+                                   false, false, 0.0);
+        }
 
         /* Build tree using scrm's SMC' algorithm */
         forest.buildInitialTree();
@@ -531,7 +582,9 @@ extern "C" SEXP scrm_stats_call(SEXP args_sexp, SEXP config_sexp,
  * ================================================================ */
 extern "C" SEXP scrm_stats_multi_call(SEXP args_vec_sexp, SEXP config_sexp,
                                        SEXP npop_sexp, SEXP skip_zns_sexp,
-                                       SEXP total_nloci_sexp) {
+                                       SEXP total_nloci_sexp,
+                                       SEXP rec_rates_sexp,
+                                       SEXP mu_rates_sexp) {
 
     if (!isString(args_vec_sexp))
         Rf_error("scrm_stats_multi: 'args_vec' must be a character vector");
@@ -547,6 +600,39 @@ extern "C" SEXP scrm_stats_multi_call(SEXP args_vec_sexp, SEXP config_sexp,
 
     int nsam = 0;
     for (int i = 0; i < npop; i++) nsam += config[i];
+
+    /* Optional per-locus recombination rates (per bp per generation).
+     * NULL -> use rate baked into args.
+     * Numeric vector of length total_nloci -> override per locus.
+     * Order must align with the order of groups in args_vec then loci
+     * within each group. */
+    bool use_per_locus_rates = !isNull(rec_rates_sexp);
+    double *per_locus_rates = NULL;
+    if (use_per_locus_rates) {
+        if (!isReal(rec_rates_sexp))
+            Rf_error("scrm_stats_multi: 'rec_rates' must be numeric or NULL");
+        if (Rf_length(rec_rates_sexp) != total_nloci)
+            Rf_error("scrm_stats_multi: 'rec_rates' length (%d) != total_nloci (%d)",
+                     Rf_length(rec_rates_sexp), total_nloci);
+        per_locus_rates = REAL(rec_rates_sexp);
+    }
+
+    /* Optional per-locus mutation rates (per bp per generation).
+     * NULL -> use rate baked into args (via -t).
+     * Numeric vector of length total_nloci -> override per locus. Same
+     * group/locus order as rec_rates. mu is post-hoc to the ARG (only
+     * affects SegSites mutation placement), so per-locus override is
+     * O(1) and does not affect simulation cost. */
+    bool use_per_locus_mu = !isNull(mu_rates_sexp);
+    double *per_locus_mu = NULL;
+    if (use_per_locus_mu) {
+        if (!isReal(mu_rates_sexp))
+            Rf_error("scrm_stats_multi: 'mu_rates' must be numeric or NULL");
+        if (Rf_length(mu_rates_sexp) != total_nloci)
+            Rf_error("scrm_stats_multi: 'mu_rates' length (%d) != total_nloci (%d)",
+                     Rf_length(mu_rates_sexp), total_nloci);
+        per_locus_mu = REAL(mu_rates_sexp);
+    }
 
     /* Allocate shared accumulators */
     int nstats = nstat_total(npop);
@@ -569,6 +655,10 @@ extern "C" SEXP scrm_stats_multi_call(SEXP args_vec_sexp, SEXP config_sexp,
     /* Get RNG state from R */
     GetRNGstate();
 
+    /* Running index across all loci in all groups, used to look up
+     * the per-locus rec rate in the supplied vector. */
+    int global_loc_idx = 0;
+
     /* Loop over length groups */
     for (int g = 0; g < n_groups; g++) {
 
@@ -584,6 +674,21 @@ extern "C" SEXP scrm_stats_multi_call(SEXP args_vec_sexp, SEXP config_sexp,
         Forest forest(&model, &rrg);
 
         for (int loc = 0; loc < group_nloci; loc++) {
+
+            /* Per-locus rate override (if supplied) */
+            if (use_per_locus_rates) {
+                model.setRecombinationRate(
+                    per_locus_rates[global_loc_idx],
+                    false, false, 0.0);
+            }
+            /* Per-locus mutation rate override (if supplied). Cheap:
+             * mu only affects SegSites mutation placement, not the ARG. */
+            if (use_per_locus_mu) {
+                model.setMutationRate(
+                    per_locus_mu[global_loc_idx],
+                    false, false, 0.0);
+            }
+            global_loc_idx++;
 
             forest.buildInitialTree();
             while (forest.next_base() < model.loci_length()) {

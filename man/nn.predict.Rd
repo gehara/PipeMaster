@@ -11,16 +11,11 @@ nn.predict(
   param.cols = NULL,
   type = NULL,
   sfs.dims = NULL,
-  method = c("conformal", "bootstrap", "mc_dropout", "point"),
-  n_boot = 20,
-  n_ensemble = 1,
-  cal.frac = 0.1,
-  n_mc = 1000L,
-  mc_dropout_rate = NULL,
-  max_epochs = 1000,
-  cores = 1,
-  gpus = 0,
-  greedy = TRUE,
+  method = c("point", "bootstrap", "ABC_NN_regression"),
+  n_boot = 1000L,
+  tolerance = 0.01,
+  pls = FALSE,
+  n.pls = 20L,
   seed = 42,
   verbose = TRUE
 )
@@ -31,46 +26,53 @@ nn.predict(
 \item{observed}{named numeric vector or 1-row data.frame of observed summary
 statistics (or SFS bins).}
 
-\item{reftable}{data.frame — original reference table (needed for bootstrap
-retraining and conformal calibration).}
+\item{reftable}{data.frame — original reference table (required for
+\code{"bootstrap"} and \code{"ABC_NN_regression"} methods).}
 
-\item{param.cols}{character vector — parameter column names.}
+\item{param.cols}{character vector — parameter column names (required when
+reftable is provided).}
 
 \item{type}{character — architecture type: \code{"sumstat"}, \code{"sfs1d"},
 or \code{"sfs2d"}. If NULL, uses the type stored in tune.result.}
 
 \item{sfs.dims}{integer vector — for 2D CNN only. If NULL, uses tune.result.}
 
-\item{method}{character — one or more of \code{"conformal"}, \code{"bootstrap"},
-\code{"mc_dropout"}, \code{"point"}.
-Use \code{"point"} alone for a fast point estimate with no retraining or
-resampling (\code{reftable} and \code{param.cols} are not required).}
+\item{method}{character — one or more of:
+\describe{
+  \item{\code{"point"}}{Fast point estimate. No retraining or resampling.
+    \code{reftable} and \code{param.cols} not required.}
+  \item{\code{"bootstrap"}}{Locally-weighted residual bootstrap. Captures
+    prediction uncertainty due to simulator stochasticity and emulator
+    imprecision. Computes residuals (true - predicted) on validation data,
+    weights them by proximity of their summary statistics to observed data
+    via an Epanechnikov kernel, and samples \code{n_boot} residuals to add
+    to the point estimate. Fast (single forward pass, no retraining).
+    Note: this is NOT a Bayesian posterior — it is a frequentist prediction
+    interval centered on the point estimate.}
+  \item{\code{"ABC_NN_regression"}}{ABC with neural network regression
+    adjustment (Beaumont et al. 2002). Produces a proper Bayesian posterior
+    that incorporates both prior uncertainty and simulator stochasticity.
+    Accepts reftable points within \code{tolerance} of the observed data
+    (by Euclidean distance in standardized stat space), then adjusts
+    accepted parameter values using the NN as a local regression correction:
+    \eqn{\theta_{adj} = \theta_i - (g(S_i) - g(S_{obs}))}, where \eqn{g}
+    is the trained neural network. Fast (single forward pass, no retraining).}
+}}
 
-\item{n_boot}{integer — number of bootstrap replicates (default 20).}
+\item{n_boot}{integer — number of residual bootstrap samples (default 1000).}
 
-\item{n_ensemble}{integer — number of ensemble models for conformal (default 1).}
+\item{tolerance}{numeric — ABC acceptance tolerance as a quantile of pairwise
+distances (default 0.01, i.e. closest 1\% of reftable). Only used for
+\code{"ABC_NN_regression"}.}
 
-\item{cal.frac}{numeric — fraction of reftable used as calibration set (default 0.1).}
+\item{pls}{logical — project summary statistics into PLS space before
+computing distances for \code{"bootstrap"} and \code{"ABC_NN_regression"}
+(default FALSE). Recommended when the number of statistics exceeds ~30.
+The NN prediction still uses the full feature space; only the distance
+computation (acceptance/kernel weighting) uses the PLS projection.}
 
-\item{n_mc}{integer — number of MC dropout forward passes (default 1000).
-Only used when \code{method} includes \code{"mc_dropout"}.}
-
-\item{mc_dropout_rate}{numeric — dropout rate for MC dropout (default NULL =
-use tuned rate). When set (e.g. 0.1), the model is retrained with this
-dropout rate before running forward passes. Useful when the tuned dropout
-is too low to produce meaningful posterior spread.}
-
-\item{max_epochs}{integer — max training epochs for conformal/bootstrap
-models (default 1000).}
-
-\item{cores}{integer — number of parallel Rscript workers (default 1).}
-
-\item{gpus}{integer — number of GPUs for parallel workers (default 0 = CPU-only).
-When \code{gpus > 0}, workers are assigned GPUs round-robin via
-\code{CUDA_VISIBLE_DEVICES}. Each worker sets
-\code{TF_FORCE_GPU_ALLOW_GROWTH=true} so multiple workers sharing a GPU
-don't OOM. \code{cores} and \code{gpus} are independent — \code{cores}
-controls max concurrent workers, \code{gpus} controls GPU assignment.}
+\item{n.pls}{integer — number of PLS components (default 20). Should be
+at least equal to the number of free parameters.}
 
 \item{seed}{integer — random seed (default 42).}
 
@@ -81,19 +83,29 @@ An object of class \code{"posterior"} (a list) with:
 \describe{
   \item{point_estimate}{named numeric vector — inverse-transformed point
     prediction from best model}
-  \item{conformal}{matrix of posterior samples (n_samples x n_params), or NULL}
-  \item{bootstrap}{matrix of posterior samples (n_boot x n_params), or NULL}
-  \item{mc_dropout}{matrix of posterior samples (n_mc x n_params), or NULL}
+  \item{bootstrap}{matrix of bootstrap samples (n_boot x n_params), or NULL.
+    Locally-weighted residual bootstrap — prediction intervals, not a
+    Bayesian posterior.}
+  \item{abc}{matrix of regression-adjusted ABC posterior samples
+    (n_accepted x n_params), or NULL. Proper Bayesian posterior.}
+  \item{prior}{matrix of prior samples from reftable, or NULL}
   \item{param_names}{character vector of parameter column names}
 }
-Use \code{summary()} to get a table of median, mean, and quantiles.
+Use \code{summary()} for posterior quantiles, \code{plot()} for density
+curves, \code{density()} for density objects.
 }
 \description{
 Estimates posterior distributions for observed data using a trained neural
 network from \code{tune.nn()}, with multiple methods for uncertainty
-quantification: conformal prediction, bootstrap, and MC dropout.
-When the tune result contains multiple models (from
-\code{top_k > 1}), the point estimate is computed as a proximity-weighted
-ensemble average, where each model is weighted by how well it predicts
-validation samples near the observed data point.
+quantification.
+}
+\details{
+When the tune result contains multiple models (from \code{top_k > 1}), the
+point estimate is computed as a proximity-weighted ensemble average, where
+each model is weighted by how well it predicts validation samples near the
+observed data point.
+}
+\references{
+Beaumont, M. A., Zhang, W., & Balding, D. J. (2002). Approximate Bayesian
+computation in population genetics. Genetics, 162(4), 2025-2035.
 }

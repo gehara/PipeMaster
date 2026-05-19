@@ -10,6 +10,8 @@ abc.rejection(
   param.cols,
   tol = 0.01,
   distance = c("sd", "mad", "mahalanobis"),
+  pls = FALSE,
+  n.pls = 20L,
   prior = NULL,
   verbose = TRUE
 )
@@ -29,6 +31,13 @@ statistics.}
 
 \item{distance}{character — distance metric: \code{"sd"} (default),
 \code{"mad"}, or \code{"mahalanobis"}.}
+
+\item{pls}{logical — if TRUE, project summary statistics into PLS
+component space before computing distances (default FALSE).
+Recommended when the number of statistics is large (>100).}
+
+\item{n.pls}{integer — number of PLS components to retain (default 20).
+Ignored if \code{pls = FALSE}.}
 
 \item{prior}{data.frame or NULL — prior samples for plotting (optional).}
 
