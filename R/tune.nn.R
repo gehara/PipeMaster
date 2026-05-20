@@ -2023,7 +2023,9 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
   sample_methods <- intersect(methods, all_methods)
 
-  ncol <- min(n_params, 5)
+  # Near-square panel grid — avoids tall/slim panels when n_params is small.
+  # (Old behaviour: ncol = min(n_params, 5), producing 1xN or 2xN strips.)
+  ncol <- max(1L, ceiling(sqrt(n_params)))
   nrow <- ceiling(n_params / ncol)
   par(mfrow = c(nrow, ncol))
   for (j in seq_len(n_params)) {
