@@ -174,7 +174,7 @@ static void process_locus(SegSites *ss, int nsam, int nsegsites,
             if (p_segs > 0) tajD(&pop_tajd[p], p_segs, n_pop, pop_tw[p], pop_pi[p], pop_hn, pop_sqhn);
             if (!skip_zns && p_segs > 1) {
                 set_ders(pop_ders, list, nsam, nsegsites, samples_b[p], samples_e[p]);
-                ZnS(&pop_zns[p], list, nsam, nsegsites, 0, pop_almap, pop_ders, pop_missing);
+                ZnS(&pop_zns[p], list, n_pop, nsegsites, 0, pop_almap, pop_ders, pop_missing);
             }
             dvstat(list, nsam, nsegsites, samples_b[p], samples_e[p], &pop_nhap[p], &pop_hd[p]);
         }

@@ -213,7 +213,7 @@ static void compute_locus_stats(char **list, int nsam, int nsegsites,
             theta_pi(&pop_pi_a[p], pop_almap, n_pop, nsegsites, pop_missing);
             theta_w(&pop_tw[p], pop_almap, n_pop, nsegsites, pop_hn, pop_missing);
             if (p_segs > 0) tajD(&pop_tajd[p], p_segs, n_pop, pop_tw[p], pop_pi_a[p], pop_hn, pop_sqhn);
-            if (!skip_zns && p_segs > 1) ZnS(&pop_zns_a[p], list, nsam, nsegsites, 0, pop_almap, pop_ders, pop_missing);
+            if (!skip_zns && p_segs > 1) ZnS(&pop_zns_a[p], list, n_pop, nsegsites, 0, pop_almap, pop_ders, pop_missing);
             dvstat(list, nsam, nsegsites, samples_b[p], samples_e[p], &pop_nhap[p], &pop_hd[p]);
         }
     }
