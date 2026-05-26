@@ -258,7 +258,12 @@ static void compute_locus_stats(char **list, int nsam, int nsegsites,
                 out[si++] = shared_mat[i][j];
                 out[si++] = private_mat[i][j];
                 out[si++] = fixed_mat[i][j];
-                out[si++] = Fst_HBK(piS, piT);
+                double piT_ij = 0., piS_ij = 0., piB_ij = 0., piD_ij = 0.;
+                pairwiseFstcalculations(i, j, weights, list, config, npop,
+                                        nsegsites, nsam,
+                                        &piT_ij, &piS_ij, &piB_ij, &piD_ij);
+                double fst_ij = Fst_HBK(piS_ij, piT_ij);
+                out[si++] = isnan(fst_ij) ? 0. : fst_ij;
             }
         }
 

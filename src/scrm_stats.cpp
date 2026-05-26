@@ -60,6 +60,10 @@ extern "C" {
                      double* piT, double* piS, double* piB, double* piD,
                      double** shared, double** private_alleles, double** fixed_dif,
                      int derived);
+    int pairwiseFstcalculations(int popi, int popj, double* weights,
+                                char** list, int* config, int npop,
+                                int segsites, int n,
+                                double* piT, double* piS, double* piB, double* piD);
     double Fst_HBK(double piS, double piT);
 }
 
@@ -216,7 +220,12 @@ static void process_locus(SegSites *ss, int nsam, int nsegsites,
                 stat_out[si++] = shared_mat[i][j];
                 stat_out[si++] = private_mat[i][j];
                 stat_out[si++] = fixed_mat[i][j];
-                stat_out[si++] = Fst_HBK(piS, piT);
+                double piT_ij = 0., piS_ij = 0., piB_ij = 0., piD_ij = 0.;
+                pairwiseFstcalculations(i, j, weights, list, config, npop,
+                                        nsegsites, nsam,
+                                        &piT_ij, &piS_ij, &piB_ij, &piD_ij);
+                double fst_ij = Fst_HBK(piS_ij, piT_ij);
+                stat_out[si++] = std::isnan(fst_ij) ? 0. : fst_ij;
             }
         }
 

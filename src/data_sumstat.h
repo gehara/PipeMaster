@@ -29,11 +29,23 @@ int calculations(double* weights,
 		 double* piS,
 		 double* piB,
 		 double* piD,
-		 
+
 		 double** shared, // the fraction of share polymorphisms
 		 double** private,
 		 double** fixed_dif,
 		 int derived); // the fraction of private polymorphisms
+
+int pairwiseFstcalculations(int popi, int popj,
+			    double* weights,
+			    char** list,
+			    int* config,
+			    int npop,
+			    int segsites,
+			    int n,
+			    double* piT,
+			    double* piS,
+			    double* piB,
+			    double* piD);
 
 double Fst_HSM(double piD, 
 	       double piS);
