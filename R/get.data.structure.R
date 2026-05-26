@@ -29,7 +29,7 @@ get.data.structure <- function(model, path.to.phylip = NULL,
 
   pop.assign <- data.frame(pop.assign)
   pops <- pop.assign
-  pops <- pops[with(pops, order(pops[,2])), ]
+  pops <- pops[order(pops[, 2]), ]
   n_pops <- unique(pops[,2])
 
   # all samples per pop in different files

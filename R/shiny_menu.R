@@ -2885,6 +2885,11 @@ main.menu.gui <- function(input = NULL) {
     shiny::observeEvent(input$btn_load_data, {
       ftype <- input$select_file_type
 
+      progress <- shiny::Progress$new(session, min = 0, max = 1)
+      on.exit(progress$close(), add = TRUE)
+      progress$set(value = 0.05, message = "Loading data structure",
+                   detail = "Reading population assignment")
+
       # Read pop.assign
       pa_file <- input$file_pop_assign
       if (is.null(pa_file)) {
@@ -2893,13 +2898,21 @@ main.menu.gui <- function(input = NULL) {
         return()
       }
       pop_assign <- tryCatch(
-        utils::read.table(pa_file$datapath, header = FALSE, sep = "",
+        utils::read.table(pa_file$datapath, header = TRUE, sep = "",
                           stringsAsFactors = FALSE),
         error = function(e) NULL)
       if (is.null(pop_assign) || ncol(pop_assign) < 2) {
         output$data_load_status <- shiny::renderUI(
           shiny::tags$span(style = "color: red;",
-            "Could not read pop.assign file. Expected 2 columns: sample_name, population_number."))
+            "Could not read pop.assign file. Expected 2 columns with header: sample, pops."))
+        return()
+      }
+      pop_assign[[1]] <- trimws(pop_assign[[1]])
+      pop_assign[[2]] <- suppressWarnings(as.integer(trimws(as.character(pop_assign[[2]]))))
+      if (any(is.na(pop_assign[[2]]))) {
+        output$data_load_status <- shiny::renderUI(
+          shiny::tags$span(style = "color: red;",
+            "Second column of pop.assign must be integer population numbers."))
         return()
       }
 
@@ -2919,6 +2932,8 @@ main.menu.gui <- function(input = NULL) {
               shiny::tags$span(style = "color: red;", "Please upload a PHYLIP file."))
             return()
           }
+          progress$set(value = 0.3,
+            detail = "Parsing PHYLIP file (may take 1-2 min for large files)")
           tmp_model <- get.data.structure(tmp_model,
             path.to.phylip = phy_file$datapath,
             pop.assign = pop_assign, verbose = FALSE)
@@ -2937,11 +2952,14 @@ main.menu.gui <- function(input = NULL) {
           }
           chrom_sizes <- utils::read.table(cs_file$datapath, header = FALSE, sep = "",
                                             stringsAsFactors = FALSE)
+          progress$set(value = 0.3,
+            detail = "Parsing VCF (may take a while for large files)")
           tmp_model <- get.data.structure(tmp_model,
             path.to.vcf = vcf_file$datapath,
             pop.assign = pop_assign, chrom.sizes = chrom_sizes, verbose = FALSE)
         }
 
+        progress$set(value = 0.95, detail = "Updating model")
         # Update rv with loaded data
         rv$loci <- revert_dist(tmp_model$loci)
         rv$I <- tmp_model$I
@@ -2950,6 +2968,7 @@ main.menu.gui <- function(input = NULL) {
         npop <- as.integer(tmp_model$I[1, 3])
         pop_sizes <- paste(tmp_model$I[1, 4:(3 + npop)], collapse = "/")
 
+        progress$set(value = 1.0, detail = "Done")
         output$data_load_status <- shiny::renderUI(
           shiny::tags$span(style = "color: green; font-weight: bold;",
             sprintf("Loaded %d loci, %s haploid samples per pop.", nloci, pop_sizes)))
