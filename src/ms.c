@@ -2004,10 +2004,14 @@ int msABC_main(int argc, char** argv){
 		  for(ipop=0; ipop<fst_pops-1; ipop++){
 		    /* pp20100425 if there is no sample take care of the denominator */
 		    for(jpop=ipop+1; jpop<fst_pops; jpop++){
+		      /* Assign pop1/pop2 unconditionally so the else branch
+		         below (which decrements weights when configs <= MINSEQ)
+		         doesn't read uninitialized/stale indices. Without this,
+		         msABC segfaults on the first iteration whenever any pop
+		         has <= MINSEQ samples in a locfile run. */
+		      pop1=Fst_pops[ ipop ];
+		      pop2=Fst_pops[ jpop ];
 		      if( (pars.cp.config)[ipop] > MINSEQ && (pars.cp.config)[jpop] > MINSEQ ){
-			pop1=Fst_pops[ ipop ];
-			pop2=Fst_pops[ jpop ];
-			
 			pairwiseFstcalculations(
 						pop1, pop2,
 						weights,
