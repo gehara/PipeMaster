@@ -232,6 +232,25 @@ observed.sumstats <- function(model, path.to.phylip = NULL, path.to.vcf = NULL,
   npop <- as.numeric(model$I[1, 3])
   pop_cols <- 4:(3 + npop)
   pop_sizes_mat <- matrix(as.numeric(model$I[, pop_cols]), ncol = npop)
+
+  # Validate full population representation per locus
+  zero_rep_mask <- apply(pop_sizes_mat, 1, function(x) any(x == 0))
+  n_no_rep <- sum(zero_rep_mask)
+  if (n_no_rep > 0) {
+    bad_per_pop <- vapply(seq_len(ncol(pop_sizes_mat)),
+                          function(p) sum(pop_sizes_mat[, p] == 0), integer(1))
+    affected <- which(bad_per_pop > 0)
+    msg <- sprintf("%d of %d loci have no representation in at least one population:\n",
+                   n_no_rep, nrow(pop_sizes_mat))
+    for (p in affected) {
+      msg <- paste0(msg, sprintf("    pop %d: %d loci with 0 samples\n", p, bad_per_pop[p]))
+    }
+    msg <- paste0(msg,
+                  "  Remove these loci, drop the affected population(s), or add more samples\n",
+                  "  before running observed.sumstats().")
+    stop(msg, call. = FALSE)
+  }
+
   uniform_samples <- nrow(unique(pop_sizes_mat)) == 1
 
   if (!uniform_samples && !variable_samples)
