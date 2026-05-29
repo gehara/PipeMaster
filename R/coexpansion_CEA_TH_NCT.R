@@ -16,7 +16,7 @@
 #' See references for more details. Use the sim.coexp2 function to simulate the partitioned time model.
 #' @references Gehara M., Garda A.A., Werneck F.P. et al. (2017) Estimating synchronous demographic changes across populations using hABC and its application for a herpetological community from northeastern Brazil. Molecular Ecology, 26, 4756–4771.
 #' @references Chan Y.L., Schanzenbach D., & Hickerson M.J. (2014) Detecting concerted demographic response across community assemblages using hierarchical approximate Bayesian computation. Molecular Biology and Evolution, 31, 2501–2515.
-#' @export
+#' @noRd
 sim.coexp<-function(nsims,
                     var.zeta,
                     coexp.prior,

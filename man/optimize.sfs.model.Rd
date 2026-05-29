@@ -4,7 +4,7 @@
 \alias{optimize.sfs.model}
 \title{Optimize a model for SFS simulation by downsampling to uniform sample sizes}
 \usage{
-optimize.sfs.model(model, target = NULL)
+optimize.sfs.model(model, target = NULL, min_per_pop = 2L)
 }
 \arguments{
 \item{model}{A model object built by the main.menu.gui() function.}
@@ -12,6 +12,11 @@ optimize.sfs.model(model, target = NULL)
 \item{target}{Optional numeric vector of per-population target sample sizes.
 Length must equal the number of populations. If NULL (default), the optimal
 targets are found automatically.}
+
+\item{min_per_pop}{Minimum sample size required per population (default 2).
+Populations need at least 2 samples for within-pop statistics (pi, Tajima's
+D, Fst) to be defined. Set to a smaller value only if you know what you are
+doing; setting to 0 allows the optimizer to drop populations entirely.}
 }
 \value{
 A modified model object with uniform sample sizes across all loci,

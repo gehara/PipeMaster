@@ -232,30 +232,21 @@ fasta.snp.2ms<-function(path.to.fasta,fasta.files,write.file=T,pop.assign){
   return(ms.out)
 }
 
-#' Converts ms output to DNAbin file
-#' @description This function will take a ms-like output and convert it to DNAbin format.
-#' @param ms.output A list of strings representing a ms output.
-#' @param bp.length The number of base pairs used to calculate theta for the ms simulation.
-#' @return a DNAbin object
-#' @note This function is used internally by all the main functions used to simulate coexpantion models.
-#' One can read in an ms output with readLines().
+#' Read a multi-locus sequential PHYLIP file into per-locus character matrices
+#'
+#' @description Reads a multi-locus sequential PHYLIP file and returns the loci
+#'   as a list of character matrices (samples x sites), equivalent to
+#'   \code{ape::read.dna(format = "fasta")} followed by \code{as.character()}.
+#'   Each locus block starts with a \code{ntax nchar} header line. Tab-delimited
+#'   sample names (needed for sample IDs longer than the standard 10 characters)
+#'   are supported.
+#'
+#' @param filepath Path to the sequential PHYLIP file.
+#' @return A list of character matrices, one per locus. Row names are sample
+#'   names; columns are individual nucleotide positions (lowercase).
 #' @author Marcelo Gehara
-#' @examples # theta = 4Ne x mi x bp
-#' Ne = 100000 # effective pop size
-#' mi = 1e-8  # per base pair per generation mutation rate
-#' bp = 1000  # number of base pairs
-#' theta<-4*Ne*mi*bp
-#' x<-ms(nsam=10, nrep=1, opts = paste("-t",theta))
-#' y<-ms.to.DNAbin(x,bp=1000)
-#' nuc.div(y)
+#' @seealso \code{\link{alleles2phylip}}, \code{\link{observed.sumstats}}
 #' @export
-# internal function
-# @description Reads a multi-locus sequential PHYLIP file and returns loci as
-#   character matrices (samples x sites), equivalent to read.dna(format="fasta")
-#   followed by as.character(). Each locus block starts with " ntax nchar" header.
-# @param filepath Path to the sequential PHYLIP file.
-# @return A list of character matrices, one per locus. Row names are sample names,
-#   columns are individual nucleotide positions (lowercase).
 read.phylip.loci <- function(filepath) {
   lines <- readLines(filepath)
   n_lines <- length(lines)
@@ -397,6 +388,23 @@ mat.snp.2ms <- function(fas, pop.assign) {
   return(ms.out)
 }
 
+#' Converts ms output to DNAbin file
+#' @description This function will take a ms-like output and convert it to DNAbin format.
+#' @param ms.output A list of strings representing a ms output.
+#' @param bp.length The number of base pairs used to calculate theta for the ms simulation.
+#' @return a DNAbin object
+#' @note This function is used internally by all the main functions used to simulate coexpantion models.
+#' One can read in an ms output with readLines().
+#' @author Marcelo Gehara
+#' @examples # theta = 4Ne x mi x bp
+#' Ne = 100000 # effective pop size
+#' mi = 1e-8  # per base pair per generation mutation rate
+#' bp = 1000  # number of base pairs
+#' theta<-4*Ne*mi*bp
+#' x<-ms(nsam=10, nrep=1, opts = paste("-t",theta))
+#' y<-ms.to.DNAbin(x,bp=1000)
+#' nuc.div(y)
+#' @noRd
 ms.to.DNAbin<-function(ms.output, bp.length){
   ss<-as.numeric(strsplit(ms.output[3]," ")[[1]][2]) # get seg sites
 

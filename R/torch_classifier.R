@@ -484,7 +484,6 @@
 #'   excess searches run on CPU. Ignored when `gpus = 0`.
 #' @param greedy Logical — thread allocation policy across concurrent workers
 #'   (default TRUE). Passed through to `.compute.threads.per.worker()`.
-#' @param backend Backend selector. Currently torch only (keras path TODO).
 #' @param seed Random seed.
 #' @param verbose Print progress.
 #'
@@ -501,16 +500,11 @@ tune.nn.classify <- function(reftable, model_col,
                              val.frac = 0.1,
                              n_searches = 1L, cores = 1L, gpus = 0L,
                              gpu.threshold = 4L, greedy = TRUE,
-                             backend = c("torch", "keras"),
                              seed = 42, verbose = TRUE) {
-
-  backend <- match.arg(backend)
-  if (backend == "keras")
-    stop("tune.nn.classify keras backend not yet implemented; use backend='torch'.")
 
   if (!requireNamespace("torch", quietly = TRUE) ||
       !torch::torch_is_installed())
-    stop("torch backend requested but torch is not installed.\n",
+    stop("tune.nn.classify() requires the 'torch' R package.\n",
          "Install with: install.packages('torch'); torch::install_torch()")
 
   n_searches   <- as.integer(n_searches)

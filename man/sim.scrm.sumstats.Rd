@@ -29,9 +29,29 @@ slightly higher due to rounding to batch.size * ncores.}
 \item{batch.size}{Number of simulations per batch (controls R overhead).
 Default is 32.}
 
-\item{mu.rates}{Mutation rate per base per generation (single numeric value).}
+\item{mu.rates}{Mutation rate per base per generation. Either:
+(a) A single numeric value: applied uniformly to all loci, all sims (back-compat default).
+(b) A list with distribution spec for per-locus per-sim sampling. The
+    distribution must be \code{"lognormal"} (the only currently supported
+    shape); \code{median} is fixed across sims; the dispersion parameter
+    \code{sigma_log} can be either FIXED or SAMPLED per sim:
+    \itemize{
+      \item Fixed:  \code{list(distribution = "lognormal", median = 5.83e-9, sigma_log = 0.3)}
+      \item Sampled: \code{list(distribution = "lognormal", median = 5.83e-9, sigma_log_range = c(0.05, 0.5))}
+        — per sim, \code{sigma_log ~ Uniform(lo, hi)}; the realized value
+          is recorded in the reftable as \code{sigma_log_mu} so it can be
+          treated as a learnable nuisance parameter by \code{tune.nn()}.
+    }
+    Per-locus mu heterogeneity is essentially free (mu only affects
+    post-hoc SegSites mutation placement, not the ARG). Output reftable's
+    \code{mean.rate}/\code{sd.rate} record the realized per-sim mean/sd
+    of the sampled per-locus rates.}
 
-\item{rec.rates}{Recombination rate per base per generation (single numeric value).}
+\item{rec.rates}{Recombination rate per base per generation. Same shape as
+\code{mu.rates}: scalar OR \code{list(distribution="lognormal", median,
+sigma_log)} for fixed dispersion OR \code{list(..., sigma_log_range =
+c(lo, hi))} for sampled dispersion. Realized \code{sigma_log_rec} is
+recorded in the reftable.}
 
 \item{skip.zns}{Logical. If TRUE (default), skip ZnS computation
 (O(segsites^2), very slow for large loci).}

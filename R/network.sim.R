@@ -123,7 +123,7 @@ taxons.to.numbers<-function(tree,namelist=F){
 #' @description Get information of tip names, associated numbers and node heights.
 #' @param tree The bifurcating tree topology in newick format.
 #' @return A list containing the tip names, the newick tree with numbers and a matrix with the node heights.
-#' @export
+#' @noRd
 get.tree.info<-function(tree){
 
   tree.b<-getrid(tree)
@@ -172,7 +172,7 @@ get.tree.info<-function(tree){
 #' @param gen.time Generation time in years.
 #' @param time.modif A time modifier to alter the age of the nodes in the newick tree. This is a uniform prior for node heights and it is provided as a multiplyer. A vector of two numbers, min and max, need to be specified. For instace, if you like to simulate node heights that are min 1/2 the heights of the input tree and max 2x the heights of the input tree you should use: c(0.5,2)
 #' @param time.scalar multiplier to scale the three heights in the newick tree to years. For instance, if the node heights in the input tree are in Mya, the time.scalar should be 1000000. If time is in years, the time.scalar should be 1.
-#' @export
+#' @noRd
 sim.sp.tree<-function(tree,
                       Ne.prior,
                       bifurcating=T,
@@ -378,7 +378,7 @@ sim.sp.tree<-function(tree,
 #' @param tree The species tree topology in newick format.
 #' @param path path to the directory containing fasta files to be included in the calculation.
 #' @return Pairwise distances between tips of species tree.
-#' @export
+#' @noRd
 observed.pw.distances<-function(tree, path){
   tree<-get.tree.info(tree)
   setwd(path)

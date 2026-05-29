@@ -24,7 +24,7 @@
 #' hm   <- hModel(Ne, NeA, Time, gp, coexp.prior=c(10000,500000), mu.rates=mu)
 #' sim.coexp.ngs(hm, nsims=100)
 #' }
-#' @export
+#' @noRd
 hModel <- function(Ne.prior, NeA.prior, time.prior, gene.prior,
                    coexp.prior, var.zeta = "FREE", th = 0,
                    mu.rates, alpha = FALSE, phylip_paths = NULL) {
@@ -105,7 +105,7 @@ hModel <- function(Ne.prior, NeA.prior, time.prior, gene.prior,
 #' Print method for hModel objects
 #' @param x An hModel object.
 #' @param ... Additional arguments (ignored).
-#' @export
+#' @noRd
 print.hModel <- function(x, ...) {
   cat("Hierarchical codemographic model (hModel)\n")
   cat("==========================================\n\n")
@@ -135,7 +135,7 @@ print.hModel <- function(x, ...) {
 #' hm <- h.menu.gui()
 #' sim.coexp.ngs(hm, nsims = 100)
 #' }
-#' @export
+#' @noRd
 h.menu.gui <- function(input = NULL) {
 
   # Save the template before Shiny shadows 'input'

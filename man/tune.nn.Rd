@@ -20,22 +20,22 @@ tune.nn(
   gpu.threshold = 4L,
   greedy = TRUE,
   top_k = 1L,
-  backend = c("torch", "keras", "auto"),
   seed = 42,
   verbose = TRUE
 )
 }
 \arguments{
-\item{reftable}{data.frame — output of \code{sim.sumstat()} or \code{sim.sfs()}
-containing both parameter columns and statistic columns.}
+\item{reftable}{data.frame — output of \code{sim.sumstats()} or
+\code{sim.scrm.sumstats()} containing both parameter and statistic columns.}
 
 \item{param.cols}{character vector — names of parameter columns (targets to predict).}
 
 \item{type}{character — architecture type: \code{"sumstat"} (ResNet),
-\code{"sfs1d"} (1D CNN), or \code{"sfs2d"} (2D CNN).}
+\code{"sfs1d"} (1D CNN), \code{"sfs2d"} (2D CNN), or \code{"emulator"}
+(forward-direction ResNet).}
 
-\item{sfs.dims}{integer vector — for \code{type = "sfs2d"} only: \code{c(dim1, dim2)}
-of the joint SFS matrix.}
+\item{sfs.dims}{integer vector — for \code{type = "sfs2d"} only:
+\code{c(dim1, dim2)} of the joint SFS matrix.}
 
 \item{max_epochs}{integer — maximum epochs for Hyperband (default 500).}
 
@@ -44,47 +44,42 @@ of the joint SFS matrix.}
 \item{search_space}{named list — overrides default HP ranges. NULL uses
 architecture-specific defaults.}
 
-\item{exclude.cols}{character vector — additional column names to exclude from
-features (e.g., other parameter columns not in \code{param.cols}). Required
-when estimating a single parameter from a reftable that contains multiple
-parameter columns, to prevent other parameters from leaking into the feature
-set. Default NULL (only \code{param.cols} and nuisance columns are excluded).}
+\item{exclude.cols}{character vector — additional column names to exclude
+from features (e.g., other parameter columns not in \code{param.cols}).
+Required when estimating a single parameter from a reftable that contains
+multiple parameter columns, to prevent other parameters from leaking into
+the feature set. Default NULL.}
 
 \item{val.frac}{numeric — validation fraction (default 0.1).}
 
 \item{n_searches}{integer — number of independent Hyperband searches to run
 (default 1). Each search explores a different population of random HP
-configurations (unique seed). Higher values increase the chance of finding a
-good architecture. With \code{cores > 1}, searches run in parallel via
-separate Rscript workers. With \code{cores = 1}, searches run sequentially
-in the main process.}
+configurations. Higher values improve the chance of finding a good
+architecture. With \code{cores > 1}, searches run in parallel via
+separate Rscript workers; otherwise sequentially.}
 
 \item{cores}{integer — maximum number of concurrent search workers
-(default 1, sequential). Each worker spawns a separate R process with its
-own TensorFlow runtime and a full copy of the training data, so RAM usage
-scales linearly (~1.5-2 GB per worker). Ignored when \code{n_searches = 1}.}
+(default 1). Ignored when \code{n_searches = 1}. When \pkg{bigmemory} is
+available, training data is shared across workers via mmap-backed
+matrices (~3 GB resident per worker); otherwise each worker loads a
+full copy.}
 
 \item{gpus}{integer — number of GPUs to distribute searches across
 (default 0, CPU-only). Searches are assigned to GPUs round-robin, up to
-\code{gpu.threshold} per GPU. Remaining searches run CPU-only. When
-\code{n_searches = 1}, the single search uses all available GPUs directly.}
+\code{gpu.threshold} per GPU; remaining searches run CPU-only. When
+\code{n_searches = 1}, CUDA is used directly if available.}
 
 \item{gpu.threshold}{integer — maximum searches per GPU (default 4).
-Total GPU searches = \code{min(n_searches, gpu.threshold * gpus)}. Excess
-searches run on CPU. Example: \code{n_searches=10, gpus=1, gpu.threshold=4}
-assigns 4 searches to the GPU and 6 to CPU. Too many searches per GPU may
-cause GPU out-of-memory errors. Ignored when \code{gpus = 0}.}
+Total GPU searches = \code{min(n_searches, gpu.threshold * gpus)};
+excess run on CPU. Ignored when \code{gpus = 0}.}
+
+\item{greedy}{logical — thread-allocation policy across concurrent workers
+(default TRUE).}
 
 \item{top_k}{integer — number of top models to keep from parallel searches
 (default 1). When \code{top_k > 1} and \code{n_searches > 1}, the best K
-models (by validation loss) are retained. At prediction time,
-\code{nn.predict()} uses a proximity-weighted ensemble of these models for
-more stable point estimates. Capped at \code{n_searches}.}
-
-\item{backend}{character — \code{"torch"} (default), \code{"keras"}, or
-\code{"auto"}. Torch is a pure R backend (no Python dependency).
-Keras requires TensorFlow via reticulate. \code{"auto"} uses torch
-if available, else keras.}
+models (by validation loss) are retained; \code{nn.predict()} then uses
+a proximity-weighted ensemble.}
 
 \item{seed}{integer — random seed (default 42).}
 
@@ -96,18 +91,20 @@ A list with:
   \item{best_hp}{named list of best hyperparameters}
   \item{best_val_loss}{best validation loss achieved}
   \item{all_results}{data.frame of all evaluated configs (hp_string, val_loss, bracket, round)}
-  \item{best_model}{trained model (keras or torch, depending on backend)}
-  \item{models}{list of top-K models, sorted by val_loss (length 1 when \code{top_k = 1})}
-  \item{models_val_loss}{numeric vector of validation losses for each model in \code{models}}
-  \item{models_metrics}{list of per-model metrics (each element: \code{list(r2, mpe)} with named vectors in original parameter scale)}
-  \item{backend}{character — \code{"torch"} or \code{"keras"}}
+  \item{best_model}{trained torch \code{nn_module}}
+  \item{models}{list of top-K trained models, sorted by val_loss}
+  \item{models_hp}{list of per-model hyperparameter sets}
+  \item{models_val_loss}{numeric vector of validation losses per kept model}
+  \item{models_metrics}{list of per-model metrics (each: \code{list(r2, mpe)})}
+  \item{data}{prepared training data (scaling parameters, splits)}
+  \item{type, sfs.dims, exclude.cols}{passthrough metadata}
+  \item{backend}{always \code{"torch"}}
 }
 }
 \description{
 Pure R implementation of the Hyperband algorithm for tuning neural
-networks used in demographic parameter estimation.
-Supports ResNet (summary statistics), 1D CNN (single-pop SFS), and
-2D CNN (joint SFS) architectures. Two backends available:
-\code{"torch"} (pure R, no Python dependency) and \code{"keras"}
-(TensorFlow via reticulate, faster XLA-compiled training).
+networks used in demographic parameter estimation. Built on the
+\pkg{torch} backend (no Python dependency). Supports ResNet
+(summary statistics), 1D CNN (single-population SFS), and 2D CNN
+(joint SFS) architectures.
 }

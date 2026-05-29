@@ -7,7 +7,7 @@
 #' my.model<-main.menu()
 #' sim.sumstat(my.model)
 #
-#' @export
+#' @noRd
 main.menu<-function(input = NULL, ms.string = NULL){
 
   .Deprecated("main.menu.gui", msg = "main.menu() is deprecated. Use main.menu.gui() instead.")

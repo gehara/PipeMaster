@@ -1,8 +1,8 @@
 # ============================================================================
 # Torch Neural Network Modules for PipeMaster
 #
-# Pure R torch implementations of the keras architectures used in tune.nn()
-# and train.emulator(). Eliminates the Python/TensorFlow/keras dependency.
+# Pure R torch implementations of the architectures used by tune.nn() and the
+# emulator pipeline.
 #
 # Modules:
 #   .MCDropout         — always-on dropout (for MC dropout inference)
@@ -14,8 +14,8 @@
 #   .PipeMasterCNN2D   — full 2D CNN for joint SFS
 #
 # Builders:
-#   .build.nn.torch()  — unified dispatcher (replaces .build.nn())
-#   .torch.predict()   — forward pass wrapper (replaces predict(keras_model, ...))
+#   .build.nn.torch()  — unified architecture dispatcher
+#   .torch.predict()   — forward-pass wrapper, returns R matrix
 #
 # ============================================================================
 
@@ -359,7 +359,7 @@
 )
 
 # ============================================================================
-# Unified builder: replaces .build.nn() for torch backend
+# Unified architecture builder: dispatches on `type` to the right module.
 # ============================================================================
 
 #' @keywords internal
@@ -386,9 +386,7 @@
 }
 
 # ============================================================================
-# Torch-native predict: replaces predict(keras_model, X, verbose = 0L)
-#
-# Returns an R matrix (same as keras predict).
+# Torch forward-pass wrapper. Returns an R matrix.
 # ============================================================================
 
 #' @keywords internal
@@ -465,7 +463,7 @@
 }
 
 # ============================================================================
-# Huber loss function (matches keras loss_huber with configurable delta)
+# Huber loss with configurable delta.
 #
 # R torch's nnf_smooth_l1_loss has no delta parameter, so we implement it
 # directly:  L = 0.5*(x/d)^2  if |x| < d,  |x| - 0.5*d  otherwise

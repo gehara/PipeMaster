@@ -2,18 +2,15 @@
 # Torch Training Infrastructure for PipeMaster
 #
 # Custom training loop, Hyperband, save/load — all in pure R torch.
-# Replaces keras::fit(), keras callback system, and TF model serialization.
 #
 # Functions:
 #   .torch.train.model()  — custom training loop (early stopping, LR scheduler)
-#   .torch.hyperband()    — Hyperband HP search (torch backend)
+#   .torch.hyperband()    — Hyperband HP search
 #   .torch.compute.model.metrics() — R² and MPE on validation set
 # ============================================================================
 
 # ============================================================================
-# Custom training loop
-#
-# Replaces keras::fit() with:
+# Custom training loop:
 #   - Mini-batch SGD via torch::dataloader()
 #   - Early stopping with restore_best_weights
 #   - ReduceLROnPlateau
@@ -70,9 +67,9 @@
     function(pred, target) .torch.huber.loss(pred, target, delta = huber_delta)
   }
 
-  # Optimizer with L2 regularization (weight_decay)
-  # Keras regularizer_l2(l) adds l*sum(w^2) to loss -> gradient = 2*l*w
-  # Torch weight_decay adds wd*w to gradient directly -> use 2*l2_reg to match keras
+  # Optimizer with L2 regularization (weight_decay).
+  # Conventional L2 regularizer_l2(l) adds l*sum(w^2) to loss → gradient adds 2*l*w.
+  # Torch's weight_decay adds wd*w to gradient directly, so pass 2*l2_reg.
   l2_reg <- if (!is.null(hp$l2_reg)) hp$l2_reg else 0
   optimizer <- torch::optim_adam(model$parameters, lr = hp$learning_rate,
                                 weight_decay = 2 * l2_reg)
@@ -151,10 +148,9 @@
 }
 
 # ============================================================================
-# Hyperband algorithm (torch backend)
+# Hyperband algorithm
 #
-# Drop-in replacement for .hyperband() that uses torch models instead of keras.
-# Same interface: search_space, data, type, sfs.dims, max_epochs, eta, seed.
+# Inputs: search_space, data, type, sfs.dims, max_epochs, eta, seed.
 # ============================================================================
 
 #' @keywords internal
@@ -595,9 +591,8 @@
 }
 
 # ============================================================================
-# Write standalone model-builder script for parallel workers (torch backend)
-#
-# Replaces .write.builder.script() — used by conformal/bootstrap workers.
+# Write standalone model-builder script for parallel workers.
+# Used by conformal/bootstrap workers.
 # ============================================================================
 
 #' @keywords internal

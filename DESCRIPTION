@@ -1,8 +1,8 @@
 Package: PipeMaster
 Type: Package
-Title: Building and Simulating Coalescent models.
-Version: 0.3.0
-Date: 2026-02-15
+Title: Coalescent Simulation and Demographic Inference with ABC and Neural Networks
+Version: 2.0.0
+Date: 2026-05-27
 Authors@R: c(person("Marcelo", "Gehara", email = "marcelo.gehara@gmail.com", role = c("aut", "cre")),
              person("Guilherme","Mazzocchini", role="aut"),
              person("Frank","Burbrink", role="aut"))
@@ -18,17 +18,29 @@ Imports: ape,
 Depends: ape,
           e1071,
           msm
-Suggests: keras,
-          tensorflow,
-          reticulate,
-          lhs,
+Suggests: lhs,
           bigmemory,
           RANN
-Description: PipeMaster helps you build and simulate coalescent models within R. One can use the interactive menu to build a colescent model that can be further simulated. It can also simulate simutaineous expansion for single locus data across multiple species. It can output summary statistics and coalescent trees. It will output hyper summary statistics in the case of coexpansion models. It can also calculate the same summary stats from your own data. It uses a built-in ms/msABC C implementation for coalescent simulation and summary statistic computation.
+Description: Build demographic models, simulate genetic data under the
+    coalescent, and infer demographic parameters with approximate Bayesian
+    computation (ABC) or neural-network-based supervised machine learning
+    (SML). Models are constructed through a Shiny graphical interface and
+    simulated with a native C/C++ engine that combines the msABC simulator
+    for RADseq-scale data and the vendored scrm SMC-prime simulator for
+    whole-genome-scale data. Summary statistics and the joint site
+    frequency spectrum are computed in C without intermediate R matrices,
+    yielding reference tables compatible with the included ABC rejection
+    sampler and with torch-backed neural-network regression and
+    classification (model selection). A two-tier out-of-distribution
+    diagnostic system flags both prior-predictive coverage failures and
+    post-training extrapolation, with integrated-gradient feature
+    attribution for classifier-rejected observations. A pre-inference
+    diagnostic identifies non-modelled signals (background selection,
+    recombination-rate heterogeneity) in empirical whole-genome data.
 License: GPL (>= 2)
 URL: http://www.marcelogehara.org/
 BugReports: https://github.com/gehara/PipeMaster
 LazyData: TRUE
 NeedsCompilation: yes
-RoxygenNote: 7.3.2
 Encoding: UTF-8
+Config/roxygen2/version: 8.0.0

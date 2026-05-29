@@ -1,57 +1,52 @@
 #' Hyperband Tuner for Neural Network Architectures
 #'
 #' Pure R implementation of the Hyperband algorithm for tuning neural
-#' networks used in demographic parameter estimation.
-#' Supports ResNet (summary statistics), 1D CNN (single-pop SFS), and
-#' 2D CNN (joint SFS) architectures. Two backends available:
-#' \code{"torch"} (pure R, no Python dependency) and \code{"keras"}
-#' (TensorFlow via reticulate, faster XLA-compiled training).
+#' networks used in demographic parameter estimation. Built on the
+#' \pkg{torch} backend (no Python dependency). Supports ResNet
+#' (summary statistics), 1D CNN (single-population SFS), and 2D CNN
+#' (joint SFS) architectures.
 #'
-#' @param reftable data.frame — output of \code{sim.sumstat()} or \code{sim.sfs()}
-#'   containing both parameter columns and statistic columns.
+#' @param reftable data.frame — output of \code{sim.sumstats()} or
+#'   \code{sim.scrm.sumstats()} containing both parameter and statistic columns.
 #' @param param.cols character vector — names of parameter columns (targets to predict).
 #' @param type character — architecture type: \code{"sumstat"} (ResNet),
-#'   \code{"sfs1d"} (1D CNN), or \code{"sfs2d"} (2D CNN).
-#' @param sfs.dims integer vector — for \code{type = "sfs2d"} only: \code{c(dim1, dim2)}
-#'   of the joint SFS matrix.
+#'   \code{"sfs1d"} (1D CNN), \code{"sfs2d"} (2D CNN), or \code{"emulator"}
+#'   (forward-direction ResNet).
+#' @param sfs.dims integer vector — for \code{type = "sfs2d"} only:
+#'   \code{c(dim1, dim2)} of the joint SFS matrix.
 #' @param max_epochs integer — maximum epochs for Hyperband (default 500).
 #' @param eta numeric — Hyperband halving factor (default 3).
 #' @param search_space named list — overrides default HP ranges. NULL uses
 #'   architecture-specific defaults.
-#' @param exclude.cols character vector — additional column names to exclude from
-#'   features (e.g., other parameter columns not in \code{param.cols}). Required
-#'   when estimating a single parameter from a reftable that contains multiple
-#'   parameter columns, to prevent other parameters from leaking into the feature
-#'   set. Default NULL (only \code{param.cols} and nuisance columns are excluded).
+#' @param exclude.cols character vector — additional column names to exclude
+#'   from features (e.g., other parameter columns not in \code{param.cols}).
+#'   Required when estimating a single parameter from a reftable that contains
+#'   multiple parameter columns, to prevent other parameters from leaking into
+#'   the feature set. Default NULL.
 #' @param val.frac numeric — validation fraction (default 0.1).
 #' @param n_searches integer — number of independent Hyperband searches to run
 #'   (default 1). Each search explores a different population of random HP
-#'   configurations (unique seed). Higher values increase the chance of finding a
-#'   good architecture. With \code{cores > 1}, searches run in parallel via
-#'   separate Rscript workers. With \code{cores = 1}, searches run sequentially
-#'   in the main process.
+#'   configurations. Higher values improve the chance of finding a good
+#'   architecture. With \code{cores > 1}, searches run in parallel via
+#'   separate Rscript workers; otherwise sequentially.
 #' @param cores integer — maximum number of concurrent search workers
-#'   (default 1, sequential). Each worker spawns a separate R process with its
-#'   own TensorFlow runtime and a full copy of the training data, so RAM usage
-#'   scales linearly (~1.5-2 GB per worker). Ignored when \code{n_searches = 1}.
+#'   (default 1). Ignored when \code{n_searches = 1}. When \pkg{bigmemory} is
+#'   available, training data is shared across workers via mmap-backed
+#'   matrices (~3 GB resident per worker); otherwise each worker loads a
+#'   full copy.
 #' @param gpus integer — number of GPUs to distribute searches across
 #'   (default 0, CPU-only). Searches are assigned to GPUs round-robin, up to
-#'   \code{gpu.threshold} per GPU. Remaining searches run CPU-only. When
-#'   \code{n_searches = 1}, the single search uses all available GPUs directly.
+#'   \code{gpu.threshold} per GPU; remaining searches run CPU-only. When
+#'   \code{n_searches = 1}, CUDA is used directly if available.
 #' @param gpu.threshold integer — maximum searches per GPU (default 4).
-#'   Total GPU searches = \code{min(n_searches, gpu.threshold * gpus)}. Excess
-#'   searches run on CPU. Example: \code{n_searches=10, gpus=1, gpu.threshold=4}
-#'   assigns 4 searches to the GPU and 6 to CPU. Too many searches per GPU may
-#'   cause GPU out-of-memory errors. Ignored when \code{gpus = 0}.
+#'   Total GPU searches = \code{min(n_searches, gpu.threshold * gpus)};
+#'   excess run on CPU. Ignored when \code{gpus = 0}.
+#' @param greedy logical — thread-allocation policy across concurrent workers
+#'   (default TRUE).
 #' @param top_k integer — number of top models to keep from parallel searches
 #'   (default 1). When \code{top_k > 1} and \code{n_searches > 1}, the best K
-#'   models (by validation loss) are retained. At prediction time,
-#'   \code{nn.predict()} uses a proximity-weighted ensemble of these models for
-#'   more stable point estimates. Capped at \code{n_searches}.
-#' @param backend character — \code{"torch"} (default), \code{"keras"}, or
-#'   \code{"auto"}. Torch is a pure R backend (no Python dependency).
-#'   Keras requires TensorFlow via reticulate. \code{"auto"} uses torch
-#'   if available, else keras.
+#'   models (by validation loss) are retained; \code{nn.predict()} then uses
+#'   a proximity-weighted ensemble.
 #' @param seed integer — random seed (default 42).
 #' @param verbose logical — print progress (default TRUE).
 #'
@@ -60,11 +55,14 @@
 #'   \item{best_hp}{named list of best hyperparameters}
 #'   \item{best_val_loss}{best validation loss achieved}
 #'   \item{all_results}{data.frame of all evaluated configs (hp_string, val_loss, bracket, round)}
-#'   \item{best_model}{trained model (keras or torch, depending on backend)}
-#'   \item{models}{list of top-K models, sorted by val_loss (length 1 when \code{top_k = 1})}
-#'   \item{models_val_loss}{numeric vector of validation losses for each model in \code{models}}
-#'   \item{models_metrics}{list of per-model metrics (each element: \code{list(r2, mpe)} with named vectors in original parameter scale)}
-#'   \item{backend}{character — \code{"torch"} or \code{"keras"}}
+#'   \item{best_model}{trained torch \code{nn_module}}
+#'   \item{models}{list of top-K trained models, sorted by val_loss}
+#'   \item{models_hp}{list of per-model hyperparameter sets}
+#'   \item{models_val_loss}{numeric vector of validation losses per kept model}
+#'   \item{models_metrics}{list of per-model metrics (each: \code{list(r2, mpe)})}
+#'   \item{data}{prepared training data (scaling parameters, splits)}
+#'   \item{type, sfs.dims, exclude.cols}{passthrough metadata}
+#'   \item{backend}{always \code{"torch"}}
 #' }
 #'
 #' @export
@@ -78,224 +76,19 @@ tune.nn <- function(reftable, param.cols,
                     n_searches = 1L, cores = 1L, gpus = 0L,
                     gpu.threshold = 4L, greedy = TRUE,
                     top_k = 1L,
-                    backend = c("torch", "keras", "auto"),
                     seed = 42, verbose = TRUE) {
 
-  # --- Resolve backend ---
-  backend <- match.arg(backend)
-  if (backend == "auto") {
-    backend <- if (requireNamespace("torch", quietly = TRUE) &&
-                   torch::torch_is_installed()) "torch" else "keras"
-  }
-  if (verbose) cat(sprintf("PipeMaster:: tune.nn backend: %s\n", backend))
-
-  # --- Dispatch to torch backend ---
-  if (backend == "torch") {
-    res <- .tune.nn.torch(reftable = reftable, param.cols = param.cols,
-                          type = type, sfs.dims = sfs.dims,
-                          max_epochs = max_epochs, eta = eta,
-                          search_space = search_space,
-                          exclude.cols = exclude.cols,
-                          val.frac = val.frac,
-                          n_searches = n_searches, cores = cores,
-                          gpus = gpus, gpu.threshold = gpu.threshold,
-                          greedy = greedy,
-                          top_k = top_k,
-                          seed = seed, verbose = verbose)
-    return(res)
-  }
-
-  # --- Keras dependency check ---
-  if (!requireNamespace("keras", quietly = TRUE) ||
-      !requireNamespace("tensorflow", quietly = TRUE))
-    stop("tune.nn(backend='keras') requires the 'keras' and 'tensorflow' R packages.\n",
-         "Install with: install.packages(c('keras', 'tensorflow'))\n",
-         "Then run: keras::install_keras()")
-
-  # --- Validate top_k ---
-  top_k <- as.integer(top_k)
-  if (top_k < 1L) stop("top_k must be >= 1")
-  if (n_searches > 1L && top_k > n_searches)
-    top_k <- n_searches
-
-  n_concurrent <- min(as.integer(cores), as.integer(n_searches))
-
-  # --- Memory guard ---
-  if (n_concurrent > 1L) {
-    avail_gb <- tryCatch({
-      mem_info <- system("free -b 2>/dev/null", intern = TRUE)
-      if (length(mem_info) >= 2) {
-        fields <- as.numeric(strsplit(trimws(mem_info[2]), "\\s+")[[1]])
-        fields[7] / 1e9
-      } else NA_real_
-    }, error = function(e) NA_real_)
-
-    if (!is.na(avail_gb)) {
-      est_per_worker <- 1.5
-      est_total <- n_concurrent * est_per_worker
-      if (est_total > avail_gb * 0.85) {
-        warning(sprintf(
-          paste0("cores=%d concurrent searches may exceed available RAM ",
-                 "(%.1f GB free, ~%.0f GB estimated). ",
-                 "Each search loads TensorFlow + a full data copy (~1.5 GB). ",
-                 "Reduce cores or n_searches if you experience memory issues."),
-          n_concurrent, avail_gb, est_total), call. = FALSE)
-      }
-    }
-  }
-
-  # --- GPU OOM warning ---
-  if (gpus > 0L && n_searches > 1L) {
-    n_gpu_searches <- min(n_searches, gpu.threshold * gpus)
-    per_gpu <- ceiling(n_gpu_searches / gpus)
-    if (per_gpu > 2L) {
-      warning(sprintf(
-        paste0("gpu.threshold=%d with %d GPU(s) puts up to %d searches per GPU. ",
-               "This may cause GPU out-of-memory. Reduce gpu.threshold ",
-               "if you experience OOM errors."),
-        gpu.threshold, gpus, per_gpu), call. = FALSE)
-    }
-  }
-
-  # --- GPU memory growth (single-search mode only) ---
-  if (n_searches <= 1L) {
-    tryCatch({
-      tf_gpus <- tensorflow::tf$config$list_physical_devices("GPU")
-      for (gpu in tf_gpus)
-        tensorflow::tf$config$experimental$set_memory_growth(gpu, TRUE)
-    }, error = function(e) NULL)
-  }
-
-  type <- match.arg(type)
-
-  if (type == "sfs2d" && (is.null(sfs.dims) || length(sfs.dims) != 2))
-    stop("sfs.dims must be c(dim1, dim2) for type='sfs2d'")
-
-  # --- Search space ---
-  ss <- if (is.null(search_space)) .default.search.space(type) else search_space
-
-  # --- Prepare data ---
-  if (verbose) cat(sprintf("PipeMaster:: tune.nn \u2014 Hyperband (%s)\n",
-                           switch(type, sumstat = "ResNet", sfs1d = "1D CNN",
-                                  sfs2d = "2D CNN", emulator = "Emulator ResNet")))
-
-  data <- .prep.data(reftable, param.cols, type, sfs.dims, exclude.cols, val.frac, seed)
-
-  n_feat <- if (type %in% c("sumstat", "emulator")) ncol(data$X_train) else data$n_features
-  n_targ <- ncol(data$Y_train)
-
-  if (verbose) cat(sprintf("PipeMaster:: %d features, %d targets | %d train, %d val\n",
-                           n_feat, n_targ, nrow(data$X_train), nrow(data$X_val)))
-
-  # --- Run Hyperband ---
-  if (n_searches > 1L) {
-    result <- .parallel.hyperband.search(
-      data = data, search_space = ss, type = type, sfs.dims = sfs.dims,
-      max_epochs = max_epochs, eta = eta,
-      n_searches = n_searches, cores = cores, gpus = gpus,
-      gpu.threshold = gpu.threshold, greedy = greedy, top_k = top_k,
-      seed = seed, verbose = verbose)
-
-    return(list(
-      best_hp         = result$best_hp,
-      best_val_loss   = result$best_val_loss,
-      all_results     = result$all_results,
-      best_model      = result$best_model,
-      models          = result$models,
-      models_val_loss = result$models_val_loss,
-      models_metrics  = result$models_metrics,
-      data            = data,
-      type            = type,
-      sfs.dims        = sfs.dims,
-      exclude.cols    = exclude.cols,
-      backend         = "keras"
-    ))
-  }
-
-  # --- Single search (sequential path) ---
-  hb <- .hyperband(
-    search_space = ss,
-    data         = data,
-    type         = type,
-    sfs.dims     = sfs.dims,
-    max_epochs   = max_epochs,
-    eta          = eta,
-    seed         = seed,
-    verbose      = verbose
-  )
-
-  # --- Retrain best config (warm-start from saved weights) ---
-  if (verbose)
-    cat(sprintf("\nPipeMaster:: Best config: %s\n", .hp.to.string(hb$best_hp, type)))
-
-  tensorflow::tf$random$set_seed(as.integer(seed))
-  best_model <- .build.nn(hb$best_hp, data, type, sfs.dims)
-
-  # Load weights from best Hyperband model
-  weights_loaded <- tryCatch({
-    keras::load_model_weights_tf(best_model, file.path(hb$best_weights_path, "ckpt"))
-    TRUE
-  }, error = function(e) {
-    if (verbose) cat("PipeMaster:: [warn] Could not load saved weights, training from scratch\n")
-    FALSE
-  })
-
-  # Continue training if there are remaining epochs
-  start_epoch <- if (weights_loaded) as.integer(hb$best_epochs) else 0L
-  final_val_loss <- hb$best_val_loss
-
-  if (start_epoch < as.integer(max_epochs)) {
-    if (verbose)
-      cat(sprintf("PipeMaster:: Retraining best for %d epochs (warm-start from epoch %d)...\n",
-                  max_epochs, start_epoch))
-
-    bs <- as.integer(hb$best_hp$batch_size)
-    retrain_history <- best_model |> keras::fit(
-      x = data$X_train, y = data$Y_train,
-      validation_data = list(data$X_val, data$Y_val),
-      epochs        = as.integer(max_epochs),
-      initial_epoch = as.integer(start_epoch),
-      batch_size    = bs,
-      callbacks  = list(
-        keras::callback_early_stopping(monitor = "val_loss", patience = 30L,
-                                       restore_best_weights = TRUE),
-        keras::callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 15L,
-                                             factor = 0.5, min_lr = 1e-6, verbose = 0L)
-      ),
-      verbose = 0L
-    )
-
-    retrain_vl <- retrain_history$metrics$val_loss
-    if (is.null(retrain_vl)) retrain_vl <- retrain_history$history$val_loss
-    retrain_vl <- unlist(retrain_vl)
-    if (length(retrain_vl) > 0 && any(is.finite(retrain_vl)))
-      final_val_loss <- min(final_val_loss, min(retrain_vl[is.finite(retrain_vl)]))
-  } else {
-    if (verbose) cat("PipeMaster:: Best model already trained to max_epochs, skipping retrain\n")
-  }
-
-  # Clean up temp weights
-  unlink(hb$best_weights_path, recursive = TRUE)
-  if (verbose) cat(sprintf("PipeMaster:: Final val_loss: %.6f\n", final_val_loss))
-
-  # Compute R² and MPE
-  models_metrics <- list(.compute.model.metrics(best_model, data, type))
-  if (verbose) .print.model.metrics(models_metrics, final_val_loss, verbose)
-
-  list(
-    best_hp         = hb$best_hp,
-    best_val_loss   = final_val_loss,
-    all_results     = hb$all_results,
-    best_model      = best_model,
-    models          = list(best_model),
-    models_val_loss = final_val_loss,
-    models_metrics  = models_metrics,
-    data            = data,
-    type            = type,
-    sfs.dims        = sfs.dims,
-    exclude.cols    = exclude.cols,
-    backend         = "keras"
-  )
+  .tune.nn.torch(reftable = reftable, param.cols = param.cols,
+                 type = type, sfs.dims = sfs.dims,
+                 max_epochs = max_epochs, eta = eta,
+                 search_space = search_space,
+                 exclude.cols = exclude.cols,
+                 val.frac = val.frac,
+                 n_searches = n_searches, cores = cores,
+                 gpus = gpus, gpu.threshold = gpu.threshold,
+                 greedy = greedy,
+                 top_k = top_k,
+                 seed = seed, verbose = verbose)
 }
 
 # ============================================================================
@@ -389,206 +182,6 @@ tune.nn <- function(reftable, param.cols,
             hp$n_dense, hp$dense_units, hp$dropout, hp$l2_reg,
             hp$learning_rate, hp$batch_size, hp$loss)
   }
-}
-
-# ============================================================================
-# Internal: build and compile a keras model from an HP config
-# ============================================================================
-
-.build.nn <- function(hp, data, type, sfs.dims) {
-  switch(type,
-    sumstat  = .build.resnet(hp, data),
-    sfs1d    = .build.cnn1d(hp, data),
-    sfs2d    = .build.cnn2d(hp, data, sfs.dims),
-    emulator = .build.resnet(hp, data)
-  )
-}
-
-# --- ResNet for summary statistics ---
-.build.resnet <- function(hp, data) {
-  n_features <- ncol(data$X_train)
-  n_targets  <- ncol(data$Y_train)
-
-  l2 <- keras::regularizer_l2(hp$l2_reg)
-
-  .drop <- function(x, rate) keras::layer_dropout(x, rate = rate)
-
-  # Residual block helper
-  res_block <- function(x, units) {
-    skip <- x
-    x <- x |>
-      keras::layer_dense(units = as.integer(units), activation = "relu",
-                         kernel_regularizer = l2) |>
-      keras::layer_batch_normalization() |>
-      keras::layer_dense(units = as.integer(units), activation = "linear",
-                         kernel_regularizer = l2) |>
-      keras::layer_batch_normalization()
-    x <- keras::layer_add(list(x, skip))
-    x <- keras::layer_activation(x, activation = "relu")
-    x
-  }
-
-  inp <- keras::layer_input(shape = n_features)
-
-  # First dense + residual group
-  x <- inp |>
-    keras::layer_dense(units = as.integer(hp$units_1), activation = "relu",
-                       kernel_regularizer = l2) |>
-    keras::layer_batch_normalization()
-  for (i in seq_len(hp$n_resblocks_1))
-    x <- res_block(x, hp$units_1)
-
-  # Middle transition + optional dropout
-  x <- x |>
-    keras::layer_dense(units = as.integer(hp$units_2), activation = "relu",
-                       kernel_regularizer = l2) |>
-    keras::layer_batch_normalization()
-  if (isTRUE(hp$use_dropout) && hp$dropout > 0)
-    x <- .drop(x, hp$dropout)
-
-  # Second residual group
-  if (hp$n_resblocks_2 > 0)
-    for (i in seq_len(hp$n_resblocks_2))
-      x <- res_block(x, hp$units_2)
-
-  # Final dense + optional dropout
-  x <- x |>
-    keras::layer_dense(units = as.integer(hp$units_3), activation = "relu",
-                       kernel_regularizer = l2) |>
-    keras::layer_batch_normalization()
-  if (isTRUE(hp$use_dropout) && hp$dropout > 0)
-    x <- .drop(x, hp$dropout)
-
-  out <- x |> keras::layer_dense(units = n_targets, activation = "linear")
-
-  model <- keras::keras_model(inp, out)
-  model |> keras::compile(
-    loss      = keras::loss_huber(delta = hp$huber_delta),
-    optimizer = keras::optimizer_adam(learning_rate = hp$learning_rate)
-  )
-  model
-}
-
-# --- 1D CNN for single-population SFS ---
-.build.cnn1d <- function(hp, data) {
-  n_bins    <- data$n_bins
-  n_targets <- ncol(data$Y_train)
-
-  l2 <- keras::regularizer_l2(hp$l2_reg)
-
-  .drop <- function(x, rate) keras::layer_dropout(x, rate = rate)
-
-  input <- keras::layer_input(shape = c(n_bins, 1L))
-  x <- input
-
-  for (b in seq_len(hp$n_blocks)) {
-    filters <- as.integer(hp$base_filters * (2 ^ min(b - 1, 2)))
-    ks <- as.integer(max(3L, hp$kernel_start - (b - 1) * 2))
-
-    x <- x |>
-      keras::layer_conv_1d(filters = filters, kernel_size = ks,
-                           padding = "same", kernel_regularizer = l2) |>
-      keras::layer_batch_normalization() |>
-      keras::layer_activation("relu")
-
-    if (isTRUE(hp$use_residual) && b > 1 && b < hp$n_blocks) {
-      skip <- x
-      x <- x |>
-        keras::layer_conv_1d(filters = filters, kernel_size = ks,
-                             padding = "same", kernel_regularizer = l2) |>
-        keras::layer_batch_normalization() |>
-        keras::layer_activation("relu") |>
-        keras::layer_conv_1d(filters = filters, kernel_size = ks,
-                             padding = "same", kernel_regularizer = l2) |>
-        keras::layer_batch_normalization()
-      x <- keras::layer_add(list(x, skip)) |> keras::layer_activation("relu")
-    }
-  }
-
-  x <- x |> keras::layer_global_average_pooling_1d()
-
-  for (d in seq_len(hp$n_dense)) {
-    units <- as.integer(hp$dense_units / (2 ^ (d - 1)))
-    x <- x |>
-      keras::layer_dense(units = units, activation = "relu",
-                         kernel_regularizer = l2) |>
-      keras::layer_batch_normalization() |>
-      .drop(hp$dropout)
-  }
-
-  output <- x |> keras::layer_dense(units = n_targets, activation = "linear")
-  model <- keras::keras_model(input, output)
-
-  loss_fn <- if (identical(hp$loss, "huber")) keras::loss_huber(delta = 1.0) else "mse"
-  model |> keras::compile(
-    loss      = loss_fn,
-    optimizer = keras::optimizer_adam(learning_rate = hp$learning_rate),
-    metrics   = list("mae")
-  )
-  model
-}
-
-# --- 2D CNN for joint SFS ---
-.build.cnn2d <- function(hp, data, sfs.dims) {
-  dim1 <- sfs.dims[1]; dim2 <- sfs.dims[2]
-  n_targets <- ncol(data$Y_train)
-
-  l2 <- keras::regularizer_l2(hp$l2_reg)
-
-  .drop <- function(x, rate) keras::layer_dropout(x, rate = rate)
-
-  input <- keras::layer_input(shape = c(dim1, dim2, 1L))
-  x <- input
-
-  for (b in seq_len(hp$n_blocks)) {
-    filters <- as.integer(hp$base_filters * (2 ^ min(b - 1, 2)))
-    ks <- as.integer(max(3L, hp$kernel_start - (b - 1) * 2))
-
-    x <- x |>
-      keras::layer_conv_2d(filters = filters, kernel_size = c(ks, ks),
-                           padding = "same", kernel_regularizer = l2) |>
-      keras::layer_batch_normalization() |>
-      keras::layer_activation("relu")
-
-    # Max pooling on first and middle blocks
-    if (b == 1 || b == (hp$n_blocks %/% 2 + 1))
-      x <- keras::layer_max_pooling_2d(x, pool_size = c(2L, 2L))
-
-    if (isTRUE(hp$use_residual) && b > 1 && b < hp$n_blocks) {
-      skip <- x
-      x <- x |>
-        keras::layer_conv_2d(filters = filters, kernel_size = c(ks, ks),
-                             padding = "same", kernel_regularizer = l2) |>
-        keras::layer_batch_normalization() |>
-        keras::layer_activation("relu") |>
-        keras::layer_conv_2d(filters = filters, kernel_size = c(ks, ks),
-                             padding = "same", kernel_regularizer = l2) |>
-        keras::layer_batch_normalization()
-      x <- keras::layer_add(list(x, skip)) |> keras::layer_activation("relu")
-    }
-  }
-
-  x <- x |> keras::layer_global_average_pooling_2d()
-
-  for (d in seq_len(hp$n_dense)) {
-    units <- as.integer(hp$dense_units / (2 ^ (d - 1)))
-    x <- x |>
-      keras::layer_dense(units = units, activation = "relu",
-                         kernel_regularizer = l2) |>
-      keras::layer_batch_normalization() |>
-      .drop(hp$dropout)
-  }
-
-  output <- x |> keras::layer_dense(units = n_targets, activation = "linear")
-  model <- keras::keras_model(input, output)
-
-  loss_fn <- if (identical(hp$loss, "huber")) keras::loss_huber(delta = 1.0) else "mse"
-  model |> keras::compile(
-    loss      = loss_fn,
-    optimizer = keras::optimizer_adam(learning_rate = hp$learning_rate),
-    metrics   = list("mae")
-  )
-  model
 }
 
 # ============================================================================
@@ -749,247 +342,6 @@ tune.nn <- function(reftable, param.cols,
 }
 
 # ============================================================================
-# Internal: Hyperband algorithm
-# ============================================================================
-
-.hyperband <- function(search_space, data, type, sfs.dims,
-                       max_epochs, eta, seed, verbose) {
-
-  s_max <- min(floor(log(max_epochs) / log(eta)), 3L)  # cap at 3 (max 27 configs/bracket)
-
-  if (verbose) cat(sprintf("PipeMaster:: max_epochs=%d, eta=%d, s_max=%d, %d brackets\n\n",
-                           max_epochs, eta, s_max, s_max + 1))
-
-  all_results <- data.frame(
-    hp_string = character(), val_loss = numeric(),
-    bracket = integer(), round = integer(),
-    stringsAsFactors = FALSE
-  )
-  global_best_loss   <- Inf
-  global_best_hp     <- NULL
-  global_best_epochs <- 0L
-  best_weights_path  <- tempfile("hb_best_weights_")
-
-  # Precompute total Hyperband budget (config-epochs) for ETA estimation
-  total_budget <- 0
-  for (ss in s_max:0) {
-    nn <- ceiling((s_max + 1) / (ss + 1)) * as.integer(eta^ss)
-    rr <- max_epochs / eta^ss
-    for (ii in 0:ss) {
-      r_ii   <- round(rr * eta^ii)
-      prev_r <- if (ii > 0) round(rr * eta^(ii - 1)) else 0L
-      n_ii   <- max(1L, floor(nn / eta^ii))
-      total_budget <- total_budget + n_ii * (r_ii - prev_r)
-    }
-  }
-  consumed_budget <- 0
-  global_t0 <- proc.time()[3]
-
-  for (s in s_max:0) {
-    bracket_t0 <- proc.time()[3]
-    n <- ceiling((s_max + 1) / (s + 1)) * as.integer(eta^s)
-    r <- max_epochs / eta^s
-
-    if (verbose) cat(sprintf("  Bracket %d | %d configs \u00d7 %d epochs\n",
-                             s, n, round(r)))
-
-    # Sample configs
-    set.seed(seed + s)
-    configs <- lapply(seq_len(n), function(i) .sample.config(search_space))
-
-    # Track how many epochs each model has been trained
-    prev_epochs <- rep(0L, n)
-    # Temp dir for per-config weight files (avoids GPU OOM from keeping all models)
-    weight_dir <- tempfile("hb_weights_")
-    dir.create(weight_dir, recursive = TRUE)
-
-    for (i in 0:s) {
-      r_i <- round(r * eta^i)
-      n_i <- max(1, floor(n / eta^i))
-      n_keep <- max(1, ceiling(n_i / eta))
-
-      val_losses <- rep(Inf, length(configs))
-      cfg_times  <- rep(NA_real_, length(configs))
-
-      for (j in seq_along(configs)) {
-        tryCatch({
-          cfg_t0 <- proc.time()[3]
-          tensorflow::tf$random$set_seed(as.integer(seed + s + j))
-          model <- .build.nn(configs[[j]], data, type, sfs.dims)
-
-          # Load saved weights from previous round (if any)
-          wpath <- file.path(weight_dir, sprintf("cfg_%d", j))
-          wfile <- file.path(wpath, "ckpt")
-          if (prev_epochs[j] > 0 && dir.exists(wpath)) {
-            keras::load_model_weights_tf(model, wfile)
-          }
-
-          history <- model |> keras::fit(
-            x = data$X_train, y = data$Y_train,
-            validation_data = list(data$X_val, data$Y_val),
-            epochs        = as.integer(r_i),
-            initial_epoch = as.integer(prev_epochs[j]),
-            batch_size    = as.integer(configs[[j]]$batch_size),
-            callbacks     = list(
-              keras::callback_early_stopping(monitor = "val_loss",
-                                             patience = 10L,
-                                             restore_best_weights = TRUE),
-              keras::callback_reduce_lr_on_plateau(monitor = "val_loss",
-                                                    patience = 5L,
-                                                    factor = 0.5,
-                                                    min_lr = 1e-6,
-                                                    verbose = 0L)
-            ),
-            verbose = 0L
-          )
-          vl <- history$metrics$val_loss
-          if (is.null(vl)) vl <- history$history$val_loss
-          val_losses[j] <- min(unlist(vl))
-          cfg_times[j]  <- proc.time()[3] - cfg_t0
-
-          # Save weights for this config (overwrite previous round's)
-          dir.create(wpath, recursive = TRUE, showWarnings = FALSE)
-          keras::save_model_weights_tf(model, wfile)
-
-          # Update global best
-          if (val_losses[j] < global_best_loss) {
-            global_best_loss   <- val_losses[j]
-            global_best_hp     <- configs[[j]]
-            global_best_epochs <- as.integer(r_i)
-            tryCatch({
-              dir.create(best_weights_path, recursive = TRUE, showWarnings = FALSE)
-              keras::save_model_weights_tf(model, file.path(best_weights_path, "ckpt"))
-            },
-              error = function(e) NULL
-            )
-            if (verbose) cat(sprintf("    \u2605 new best: val_loss=%.4f (bracket %d, round %d)\n",
-                                      val_losses[j], s, i))
-          }
-
-          # Free GPU memory immediately
-          rm(model); gc()
-          tryCatch(keras::k_clear_session(), error = function(e) NULL)
-
-        }, error = function(e) {
-          if (verbose) cat(sprintf("    [warn] config %d error: %s\n",
-                                   j, conditionMessage(e)))
-          val_losses[j] <<- Inf
-          tryCatch({ rm(model); gc(); keras::k_clear_session() },
-                   error = function(e2) NULL)
-        })
-        consumed_budget <- consumed_budget + (r_i - prev_epochs[j])
-      }
-
-      # Log per-config val_loss and timing
-      if (verbose) {
-        items <- character(length(configs))
-        for (k in seq_along(configs)) {
-          vl_str <- if (is.finite(val_losses[k])) sprintf("%.4f", val_losses[k]) else "  NA "
-          t_str  <- if (!is.na(cfg_times[k])) sprintf("%.1fs", cfg_times[k]) else "?"
-          items[k] <- sprintf("cfg %d: %s (%s)", k, vl_str, t_str)
-        }
-        for (start in seq(1, length(items), by = 4)) {
-          end <- min(start + 3, length(items))
-          cat("    ", paste(items[start:end], collapse = "   "), "\n")
-        }
-      }
-
-      prev_epochs[seq_along(configs)] <- r_i
-
-      # Record results
-      for (j in seq_along(configs)) {
-        if (is.finite(val_losses[j])) {
-          all_results <- rbind(all_results, data.frame(
-            hp_string = .hp.to.string(configs[[j]], type),
-            val_loss  = val_losses[j],
-            bracket   = s,
-            round     = i,
-            stringsAsFactors = FALSE
-          ))
-        }
-      }
-
-      best_round_loss <- min(val_losses[is.finite(val_losses)])
-      if (verbose)
-        cat(sprintf("    Round %d: %d configs, %d ep \u2192 best val_loss=%.4f",
-                    i, length(configs), r_i, best_round_loss))
-
-      # Prune: keep top n_keep
-      if (i < s) {
-        ranking <- order(val_losses)
-        keep <- ranking[1:min(n_keep, length(ranking))]
-
-        if (verbose) cat(sprintf(" | pruning to %d\n", length(keep)))
-
-        if (verbose && length(configs) > 1) {
-          sorted_losses <- val_losses[ranking]
-          kept_str <- paste(sprintf("%.4f", sorted_losses[seq_len(length(keep))]),
-                            collapse = " ")
-          if (length(ranking) > length(keep)) {
-            pruned_str <- paste(sprintf("%.4f",
-                                sorted_losses[(length(keep) + 1):length(ranking)]),
-                                collapse = " ")
-            cat(sprintf("    Ranking: %s | %s\n", kept_str, pruned_str))
-            pad <- nchar(sprintf("    Ranking: %s ", kept_str))
-            cat(sprintf("%s^-- cutoff (top %d kept)\n", strrep(" ", pad), length(keep)))
-          }
-        }
-
-        # Remove weight files for discarded configs
-        discard <- setdiff(seq_along(configs), keep)
-        for (d in discard) {
-          wpath <- file.path(weight_dir, sprintf("cfg_%d", d))
-          unlink(wpath, recursive = TRUE)
-        }
-
-        # Renumber surviving configs/weights 1..n_keep
-        new_configs     <- configs[keep]
-        new_prev_epochs <- prev_epochs[keep]
-        for (k in seq_along(keep)) {
-          old_path <- file.path(weight_dir, sprintf("cfg_%d", keep[k]))
-          new_path <- file.path(weight_dir, sprintf("cfg_new_%d", k))
-          if (dir.exists(old_path)) file.rename(old_path, new_path)
-        }
-        for (k in seq_along(keep)) {
-          old_path <- file.path(weight_dir, sprintf("cfg_new_%d", k))
-          new_path <- file.path(weight_dir, sprintf("cfg_%d", k))
-          if (dir.exists(old_path)) file.rename(old_path, new_path)
-        }
-        configs     <- new_configs
-        prev_epochs <- new_prev_epochs
-      } else {
-        if (verbose) cat("\n")
-      }
-    }
-
-    # Clean up bracket weight files
-    unlink(weight_dir, recursive = TRUE)
-
-    if (verbose) {
-      bracket_elapsed <- (proc.time()[3] - bracket_t0) / 60
-      global_elapsed  <- (proc.time()[3] - global_t0) / 60
-      if (consumed_budget > 0 && consumed_budget < total_budget) {
-        eta_min <- global_elapsed * (total_budget - consumed_budget) / consumed_budget
-        cat(sprintf("    Bracket %d done in %.1f min | elapsed %.1f min, ~%.0f min remaining\n\n",
-                    s, bracket_elapsed, global_elapsed, eta_min))
-      } else {
-        cat(sprintf("    Bracket %d done in %.1f min | elapsed %.1f min\n\n",
-                    s, bracket_elapsed, global_elapsed))
-      }
-    }
-  }
-
-  list(
-    best_hp           = global_best_hp,
-    best_val_loss     = global_best_loss,
-    best_epochs       = global_best_epochs,
-    best_weights_path = best_weights_path,
-    all_results       = all_results
-  )
-}
-
-
-# ============================================================================
 # Internal: generate diverse (eta, max_epochs) configs for parallel searches
 # ============================================================================
 
@@ -1022,471 +374,15 @@ tune.nn <- function(reftable, param.cols,
 }
 
 # ============================================================================
-# Internal: orchestrate K independent serial Hyperband searches in parallel
-# ============================================================================
-
-.parallel.hyperband.search <- function(data, search_space, type, sfs.dims,
-                                        max_epochs, eta,
-                                        n_searches, cores, gpus,
-                                        gpu.threshold, greedy, top_k, seed, verbose) {
-
-  n_concurrent <- min(as.integer(cores), as.integer(n_searches))
-
-  # Build per-search (eta, max_epochs) configs
-  if (length(max_epochs) == 1L && length(eta) == 1L) {
-    cfgs <- .generate.search.configs(n_searches, max_epochs, eta)
-  } else {
-    cfgs <- data.frame(
-      eta        = rep_len(as.integer(eta), n_searches),
-      max_epochs = rep_len(as.integer(max_epochs), n_searches)
-    )
-  }
-  search_max_epochs <- cfgs$max_epochs   # integer vector, length n_searches
-  search_eta        <- cfgs$eta          # integer vector, length n_searches
-
-  if (verbose) {
-    cat(sprintf("PipeMaster:: Launching %d searches (%d concurrent)\n",
-                n_searches, n_concurrent))
-    for (k in seq_len(n_searches))
-      cat(sprintf("  Search %d: eta=%d, max_epochs=%d\n",
-                  k, search_eta[k], search_max_epochs[k]))
-  }
-
-  # ==========================================================================
-  # Sequential mode (cores = 1): run searches in main process
-  # ==========================================================================
-  if (n_concurrent <= 1L) {
-    all_search_results <- list()
-    # Ranked list of top-K: each entry = list(val_loss, hp, model_dir)
-    topk_entries <- list()
-
-    for (k in seq_len(n_searches)) {
-      search_seed <- seed + (k - 1L) * 10000L
-      if (verbose)
-        cat(sprintf("\n=== Search %d/%d (seed=%d) ===\n", k, n_searches, search_seed))
-
-      hb <- .hyperband(search_space = search_space, data = data,
-                       type = type, sfs.dims = sfs.dims,
-                       max_epochs = search_max_epochs[k], eta = search_eta[k],
-                       seed = search_seed, verbose = verbose)
-
-      # Retrain best config from this search
-      tensorflow::tf$random$set_seed(as.integer(search_seed))
-      model <- .build.nn(hb$best_hp, data, type, sfs.dims)
-
-      weights_loaded <- tryCatch({
-        keras::load_model_weights_tf(model, file.path(hb$best_weights_path, "ckpt"))
-        TRUE
-      }, error = function(e) FALSE)
-
-      start_epoch <- if (weights_loaded) as.integer(hb$best_epochs) else 0L
-      final_vl <- hb$best_val_loss
-
-      if (start_epoch < search_max_epochs[k]) {
-        if (verbose)
-          cat(sprintf("PipeMaster:: Retraining search %d best for %d epochs (warm-start from %d)...\n",
-                      k, search_max_epochs[k], start_epoch))
-
-        retrain_history <- model |> keras::fit(
-          x = data$X_train, y = data$Y_train,
-          validation_data = list(data$X_val, data$Y_val),
-          epochs        = as.integer(search_max_epochs[k]),
-          initial_epoch = as.integer(start_epoch),
-          batch_size    = as.integer(hb$best_hp$batch_size),
-          callbacks     = list(
-            keras::callback_early_stopping(monitor = "val_loss", patience = 30L,
-                                           restore_best_weights = TRUE),
-            keras::callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 15L,
-                                                 factor = 0.5, min_lr = 1e-6, verbose = 0L)
-          ),
-          verbose = 0L
-        )
-
-        retrain_vl <- retrain_history$metrics$val_loss
-        if (is.null(retrain_vl)) retrain_vl <- retrain_history$history$val_loss
-        retrain_vl <- unlist(retrain_vl)
-        if (length(retrain_vl) > 0 && any(is.finite(retrain_vl)))
-          final_vl <- min(final_vl, min(retrain_vl[is.finite(retrain_vl)]))
-      }
-
-      if (verbose)
-        cat(sprintf("PipeMaster:: Search %d final val_loss: %.6f\n", k, final_vl))
-
-      search_res <- hb$all_results
-      search_res$search <- k
-      all_search_results[[k]] <- search_res
-
-      # Save model to temp dir and insert into ranked top-K list
-      model_dir <- tempfile(sprintf("topk_model_%d_", k))
-      keras::save_model_tf(model, model_dir)
-
-      topk_entries[[length(topk_entries) + 1L]] <- list(
-        val_loss  = final_vl,
-        hp        = hb$best_hp,
-        model_dir = model_dir
-      )
-
-      # Sort by val_loss and prune to top_k
-      if (length(topk_entries) > top_k) {
-        vl_vec <- vapply(topk_entries, `[[`, numeric(1), "val_loss")
-        ord <- order(vl_vec)
-        # Remove worst entry (last after sorting)
-        worst_idx <- ord[length(ord)]
-        unlink(topk_entries[[worst_idx]]$model_dir, recursive = TRUE)
-        topk_entries <- topk_entries[ord[seq_len(top_k)]]
-      }
-
-      # Clean up
-      unlink(hb$best_weights_path, recursive = TRUE)
-      rm(model); gc()
-      tryCatch(keras::k_clear_session(), error = function(e) NULL)
-    }
-
-    # Sort final entries by val_loss
-    vl_vec <- vapply(topk_entries, `[[`, numeric(1), "val_loss")
-    topk_entries <- topk_entries[order(vl_vec)]
-
-    # Load all top-K models from disk
-    models <- lapply(topk_entries, function(entry) {
-      tryCatch(
-        keras::load_model_tf(entry$model_dir),
-        error = function(e) {
-          warning("Could not reload model (val_loss=",
-                  sprintf("%.6f", entry$val_loss), "): ",
-                  conditionMessage(e), call. = FALSE)
-          NULL
-        }
-      )
-    })
-    models_val_loss <- vapply(topk_entries, `[[`, numeric(1), "val_loss")
-
-    # Clean up temp dirs
-    for (entry in topk_entries) unlink(entry$model_dir, recursive = TRUE)
-
-    # Remove NULLs from failed loads
-    keep <- !vapply(models, is.null, logical(1))
-    models <- models[keep]
-    models_val_loss <- models_val_loss[keep]
-
-    if (length(models) == 0L)
-      stop("All models failed to reload from disk")
-
-    combined_results <- do.call(rbind, all_search_results)
-    best_hp <- topk_entries[[1L]]$hp
-
-    # Compute R² and MPE for each model
-    models_metrics <- lapply(models, .compute.model.metrics, data = data, type = type)
-
-    if (verbose) {
-      cat(sprintf("\nPipeMaster:: Best across %d searches: val_loss=%.6f\n",
-                  n_searches, models_val_loss[1L]))
-      cat(sprintf("PipeMaster:: Kept top %d models (val_loss: %s)\n",
-                  length(models),
-                  paste(sprintf("%.6f", models_val_loss), collapse = ", ")))
-      cat(sprintf("PipeMaster:: Best config: %s\n", .hp.to.string(best_hp, type)))
-      .print.model.metrics(models_metrics, models_val_loss, verbose)
-    }
-
-    return(list(
-      best_hp         = best_hp,
-      best_val_loss   = models_val_loss[1L],
-      all_results     = combined_results,
-      best_model      = models[[1L]],
-      models          = models,
-      models_val_loss = models_val_loss,
-      models_metrics  = models_metrics
-    ))
-  }
-
-  # ==========================================================================
-  # Parallel mode: launch Rscript workers
-  # ==========================================================================
-  work_dir <- tempfile("hb_search_")
-  dir.create(work_dir, recursive = TRUE)
-  results_dir <- file.path(work_dir, "results")
-  dir.create(results_dir)
-
-  # Save shared data for workers
-  X_train    <- data$X_train
-  X_val      <- data$X_val
-  Y_train    <- data$Y_train
-  Y_val      <- data$Y_val
-  n_features <- if (type %in% c("sumstat", "emulator")) ncol(data$X_train) else data$n_features
-  n_bins     <- data$n_bins
-
-  search_seeds        <- seed + (seq_len(n_searches) - 1L) * 10000L
-  saved_lib_paths     <- .libPaths()
-  threads_per_worker  <- .compute.threads.per.worker(n_concurrent, greedy)
-  search_space_saved  <- search_space
-
-  # Detect if PipeMaster was loaded via devtools::load_all()
-  pkg_source_dir <- ""
-  if ("devtools_shims" %in% search()) {
-    pkg_path <- find.package("PipeMaster", quiet = TRUE)
-    if (file.exists(file.path(pkg_path, "DESCRIPTION"))) pkg_source_dir <- pkg_path
-  }
-
-  save(X_train, X_val, Y_train, Y_val,
-       type, sfs.dims, n_features, n_bins,
-       search_seeds, saved_lib_paths, threads_per_worker,
-       search_max_epochs, search_eta, search_space_saved,
-       pkg_source_dir,
-       file = file.path(work_dir, "shared_search.RData"))
-
-  # Write worker script
-  .write.search.worker.script(file.path(work_dir, "_search_worker.R"))
-
-  # Build task list with per-task GPU assignment
-  n_gpu_searches <- if (gpus > 0L) min(n_searches, gpu.threshold * gpus) else 0L
-
-  tasks <- lapply(seq_len(n_searches), function(k) {
-    if (gpus > 0L && k <= n_gpu_searches) {
-      gpu_id <- (k - 1L) %% gpus
-      task_gpu_env <- sprintf("CUDA_VISIBLE_DEVICES=%d TF_FORCE_GPU_ALLOW_GROWTH=true", gpu_id)
-    } else {
-      task_gpu_env <- "CUDA_VISIBLE_DEVICES=-1"
-    }
-    list(
-      script  = "_search_worker.R",
-      id      = k,
-      result  = sprintf("results/search_%04d/done.txt", k),
-      prefix  = "search",
-      gpu_env = task_gpu_env
-    )
-  })
-
-  pool_result <- .launch.rscript.pool(
-    tasks, n_concurrent, work_dir,
-    gpus = 0L,
-    verbose = verbose, max_retries = 1L)
-
-  # Collect results with val_loss for ranking
-  all_search_results <- list()
-  search_entries <- list()  # list of (val_loss, hp, search_dir)
-
-  for (k in seq_len(n_searches)) {
-    search_dir <- file.path(results_dir, sprintf("search_%04d", k))
-    rds_file   <- file.path(search_dir, "result.rds")
-
-    if (file.exists(rds_file)) {
-      res <- tryCatch(readRDS(rds_file), error = function(e) NULL)
-      if (!is.null(res)) {
-        search_res <- res$all_results
-        search_res$search <- k
-        all_search_results[[length(all_search_results) + 1L]] <- search_res
-
-        if (verbose)
-          cat(sprintf("  Search %d: val_loss=%.6f\n", k, res$best_val_loss))
-
-        search_entries[[length(search_entries) + 1L]] <- list(
-          val_loss   = res$best_val_loss,
-          hp         = res$best_hp,
-          search_dir = search_dir
-        )
-      }
-    } else {
-      if (verbose) cat(sprintf("  Search %d: FAILED (no result)\n", k))
-    }
-  }
-
-  if (length(search_entries) == 0L)
-    stop("All parallel searches failed. Check worker logs in ", work_dir)
-
-  # Sort by val_loss and take top-K
-  vl_vec <- vapply(search_entries, `[[`, numeric(1), "val_loss")
-  ord <- order(vl_vec)
-  n_keep <- min(top_k, length(search_entries))
-  search_entries <- search_entries[ord[seq_len(n_keep)]]
-
-  # Load top-K models before cleaning work_dir (suppressWarnings: TF/reticulate
-  # emits benign "NAs introduced by coercion" during model deserialization)
-  models <- lapply(search_entries, function(entry) {
-    tryCatch(
-      suppressWarnings(keras::load_model_tf(file.path(entry$search_dir, "best_model"))),
-      error = function(e) {
-        warning("Could not load model (val_loss=",
-                sprintf("%.6f", entry$val_loss), "): ",
-                conditionMessage(e), call. = FALSE)
-        NULL
-      }
-    )
-  })
-  models_val_loss <- vapply(search_entries, `[[`, numeric(1), "val_loss")
-
-  # Remove NULLs from failed loads
-  keep <- !vapply(models, is.null, logical(1))
-  models <- models[keep]
-  models_val_loss <- models_val_loss[keep]
-
-  if (length(models) == 0L)
-    stop("All top-K models failed to load. Check worker logs in ", work_dir)
-
-  best_hp <- search_entries[[1L]]$hp
-
-  combined_results <- if (length(all_search_results) > 0)
-    do.call(rbind, all_search_results) else data.frame()
-
-  # Compute R² and MPE for each model
-  models_metrics <- lapply(models, .compute.model.metrics, data = data, type = type)
-
-  if (verbose) {
-    cat(sprintf("\nPipeMaster:: Best across %d searches: val_loss=%.6f\n",
-                n_searches, models_val_loss[1L]))
-    cat(sprintf("PipeMaster:: Kept top %d models (val_loss: %s)\n",
-                length(models),
-                paste(sprintf("%.6f", models_val_loss), collapse = ", ")))
-    cat(sprintf("PipeMaster:: Best config: %s\n", .hp.to.string(best_hp, type)))
-    .print.model.metrics(models_metrics, models_val_loss, verbose)
-  }
-
-  Sys.sleep(1)
-  unlink(work_dir, recursive = TRUE)
-
-  list(
-    best_hp         = best_hp,
-    best_val_loss   = models_val_loss[1L],
-    all_results     = combined_results,
-    best_model      = models[[1L]],
-    models          = models,
-    models_val_loss = models_val_loss,
-    models_metrics  = models_metrics
-  )
-}
-
-# ============================================================================
-# Internal: write standalone search worker Rscript
-# ============================================================================
-
-.write.search.worker.script <- function(filepath) {
-  writeLines(c(
-    '#!/usr/bin/env Rscript',
-    'args <- commandArgs(trailingOnly = TRUE)',
-    'task_id <- as.integer(args[1])',
-    '',
-    '# Load shared data',
-    'load("shared_search.RData")',
-    '',
-    '# Threading env',
-    'n_threads <- as.character(threads_per_worker)',
-    'Sys.setenv(TF_NUM_INTRAOP_THREADS = n_threads,',
-    '           TF_NUM_INTEROP_THREADS = "1",',
-    '           OMP_NUM_THREADS = n_threads)',
-    '',
-    '# Restore library paths and load PipeMaster',
-    '.libPaths(saved_lib_paths)',
-    'if (nzchar(pkg_source_dir)) {',
-    '  suppressPackageStartupMessages(devtools::load_all(pkg_source_dir, quiet = TRUE))',
-    '} else {',
-    '  suppressPackageStartupMessages(library(PipeMaster))',
-    '}',
-    '',
-    'suppressPackageStartupMessages({',
-    '  library(keras)',
-    '  library(tensorflow)',
-    '})',
-    '',
-    '# Enable GPU memory growth',
-    'tryCatch({',
-    '  tf_gpus <- tf$config$list_physical_devices("GPU")',
-    '  for (gpu in tf_gpus)',
-    '    tf$config$experimental$set_memory_growth(gpu, TRUE)',
-    '}, error = function(e) NULL)',
-    '',
-    '# Create task-specific output directory',
-    'out_dir <- file.path("results", sprintf("search_%04d", task_id))',
-    'dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)',
-    '',
-    '# Build data list',
-    'hb_data <- list(',
-    '  X_train = X_train, X_val = X_val,',
-    '  Y_train = Y_train, Y_val = Y_val,',
-    '  n_features = n_features, n_bins = n_bins',
-    ')',
-    '',
-    '# Per-search config',
-    'worker_seed       <- search_seeds[task_id]',
-    'worker_max_epochs <- search_max_epochs[task_id]',
-    'worker_eta        <- search_eta[task_id]',
-    'cat(sprintf("Search %d starting (seed=%d, eta=%d, max_epochs=%d)\\n",',
-    '            task_id, worker_seed, worker_eta, worker_max_epochs))',
-    '',
-    '# Check parent alive before starting expensive work',
-    'if (file.exists(".PM_parent.pid") && !PipeMaster:::.pm.parent.alive(".PM_parent.pid")) {',
-    '  cat("Parent died, worker exiting.\\n"); q("no") }',
-    '',
-    'hb <- PipeMaster:::.hyperband(',
-    '  search_space = search_space_saved,',
-    '  data = hb_data, type = type, sfs.dims = sfs.dims,',
-    '  max_epochs = worker_max_epochs, eta = worker_eta,',
-    '  seed = worker_seed, verbose = TRUE)',
-    '',
-    '# Check parent alive before retraining',
-    'if (file.exists(".PM_parent.pid") && !PipeMaster:::.pm.parent.alive(".PM_parent.pid")) {',
-    '  cat("Parent died, worker exiting.\\n"); q("no") }',
-    '',
-    '# Retrain best config to worker_max_epochs',
-    'tf$random$set_seed(as.integer(worker_seed))',
-    'model <- PipeMaster:::.build.nn(hb$best_hp, hb_data, type, sfs.dims)',
-    '',
-    'weights_loaded <- tryCatch({',
-    '  load_model_weights_tf(model, file.path(hb$best_weights_path, "ckpt"))',
-    '  TRUE',
-    '}, error = function(e) FALSE)',
-    '',
-    'start_epoch <- if (weights_loaded) as.integer(hb$best_epochs) else 0L',
-    'final_vl <- hb$best_val_loss',
-    '',
-    'if (start_epoch < worker_max_epochs) {',
-    '  cat(sprintf("Search %d: retraining from epoch %d to %d\\n",',
-    '              task_id, start_epoch, worker_max_epochs))',
-    '  retrain_h <- model |> fit(',
-    '    x = hb_data$X_train, y = hb_data$Y_train,',
-    '    validation_data = list(hb_data$X_val, hb_data$Y_val),',
-    '    epochs        = worker_max_epochs,',
-    '    initial_epoch = as.integer(start_epoch),',
-    '    batch_size    = as.integer(hb$best_hp$batch_size),',
-    '    callbacks     = list(',
-    '      callback_early_stopping(monitor = "val_loss", patience = 30L,',
-    '                              restore_best_weights = TRUE),',
-    '      callback_reduce_lr_on_plateau(monitor = "val_loss", patience = 15L,',
-    '                                    factor = 0.5, min_lr = 1e-6, verbose = 0L)',
-    '    ),',
-    '    verbose = 0L',
-    '  )',
-    '  rvl <- retrain_h$metrics$val_loss',
-    '  if (is.null(rvl)) rvl <- retrain_h$history$val_loss',
-    '  rvl <- unlist(rvl)',
-    '  if (length(rvl) > 0 && any(is.finite(rvl)))',
-    '    final_vl <- min(final_vl, min(rvl[is.finite(rvl)]))',
-    '}',
-    '',
-    '# Save model and results',
-    'save_model_tf(model, file.path(out_dir, "best_model"))',
-    'saveRDS(list(',
-    '  best_hp       = hb$best_hp,',
-    '  best_val_loss = final_vl,',
-    '  all_results   = hb$all_results',
-    '), file.path(out_dir, "result.rds"))',
-    '',
-    '# Clean up Hyperband temp weights',
-    'unlink(hb$best_weights_path, recursive = TRUE)',
-    '',
-    'cat(sprintf("Search %d done (val_loss=%.6f)\\n", task_id, final_vl))',
-    'writeLines("done", file.path(out_dir, "done.txt"))',
-    'k_clear_session()'
-  ), filepath)
-}
-
-# ============================================================================
-# save / load tune.nn results (keras model needs special serialization)
+# save / load tune.nn results (torch models serialized as .pt files)
 # ============================================================================
 
 #' Save tune.nn Result to Disk
 #'
 #' Saves the output of \code{tune.nn()} so it can be loaded on another machine.
-#' The keras model is serialized separately using \code{keras::save_model_tf()}.
+#' Torch models are serialized as \code{.pt} files via \code{torch::torch_save()}.
 #' When multiple models are present (from \code{top_k > 1}), each model is saved
-#' to a separate subdirectory under \code{models/}.
+#' to a separate file under \code{models/}.
 #'
 #' @param tune.result list — output from \code{tune.nn()}.
 #' @param path character — directory path where files will be saved (created if needed).
@@ -1495,56 +391,35 @@ tune.nn <- function(reftable, param.cols,
 save.tune.result <- function(tune.result, path) {
   dir.create(path, showWarnings = FALSE, recursive = TRUE)
 
-  nn_backend <- .detect.backend(tune.result)
+  data <- tune.result$data
+  tp <- tune.result$type
+  hp <- tune.result$best_hp
+  n_feat <- if (tp %in% c("sumstat", "emulator")) ncol(data$X_train) else data$n_features
+  n_targ <- ncol(data$Y_train)
+  n_bins <- data$n_bins  # NULL for sumstat
+  sfs_dims <- tune.result$sfs.dims
 
-  if (nn_backend == "torch") {
-    # Torch: save models as .pt files (need metadata for reconstruction)
-    data <- tune.result$data
-    tp <- tune.result$type
-    hp <- tune.result$best_hp
-    n_feat <- if (tp %in% c("sumstat", "emulator")) ncol(data$X_train) else data$n_features
-    n_targ <- ncol(data$Y_train)
-    n_bins <- data$n_bins  # NULL for sumstat
-    sfs_dims <- tune.result$sfs.dims
+  model_file <- file.path(path, "best_model.pt")
+  .torch.save.model(tune.result$best_model, model_file, tp, hp,
+                    n_features = n_feat, n_bins = n_bins,
+                    sfs_dims = sfs_dims, n_targets = n_targ)
 
-    model_file <- file.path(path, "best_model.pt")
-    .torch.save.model(tune.result$best_model, model_file, tp, hp,
-                      n_features = n_feat, n_bins = n_bins,
-                      sfs_dims = sfs_dims, n_targets = n_targ)
-
-    models <- tune.result$models
-    if (!is.null(models) && length(models) > 0L) {
-      models_dir <- file.path(path, "models")
-      dir.create(models_dir, showWarnings = FALSE, recursive = TRUE)
-      for (i in seq_along(models)) {
-        # Use per-model HP when available (top-K ensemble members may have
-        # different architectures via Hyperband search). Falls back to
-        # best_hp for older in-memory results without models_hp.
-        model_hp <- if (!is.null(tune.result$models_hp) &&
-                        i <= length(tune.result$models_hp))
-          tune.result$models_hp[[i]] else hp
-        .torch.save.model(models[[i]],
-                          file.path(models_dir, sprintf("model_%03d.pt", i)),
-                          tp, model_hp,
-                          n_features = n_feat, n_bins = n_bins,
-                          sfs_dims = sfs_dims, n_targets = n_targ)
-      }
-    }
-  } else {
-    # Keras: save models as TF SavedModel
-    if (!requireNamespace("keras", quietly = TRUE))
-      stop("save.tune.result() requires the 'keras' package for keras models.")
-
-    model_dir <- file.path(path, "best_model")
-    keras::save_model_tf(tune.result$best_model, model_dir)
-
-    models <- tune.result$models
-    if (!is.null(models) && length(models) > 0L) {
-      models_dir <- file.path(path, "models")
-      dir.create(models_dir, showWarnings = FALSE, recursive = TRUE)
-      for (i in seq_along(models))
-        keras::save_model_tf(models[[i]],
-                             file.path(models_dir, sprintf("model_%03d", i)))
+  models <- tune.result$models
+  if (!is.null(models) && length(models) > 0L) {
+    models_dir <- file.path(path, "models")
+    dir.create(models_dir, showWarnings = FALSE, recursive = TRUE)
+    for (i in seq_along(models)) {
+      # Use per-model HP when available (top-K ensemble members may have
+      # different architectures via Hyperband search). Falls back to
+      # best_hp for older in-memory results without models_hp.
+      model_hp <- if (!is.null(tune.result$models_hp) &&
+                      i <= length(tune.result$models_hp))
+        tune.result$models_hp[[i]] else hp
+      .torch.save.model(models[[i]],
+                        file.path(models_dir, sprintf("model_%03d.pt", i)),
+                        tp, model_hp,
+                        n_features = n_feat, n_bins = n_bins,
+                        sfs_dims = sfs_dims, n_targets = n_targ)
     }
   }
 
@@ -1554,8 +429,8 @@ save.tune.result <- function(tune.result, path) {
   result_no_model$models <- NULL
   saveRDS(result_no_model, file.path(path, "tune_result.rds"))
 
-  cat(sprintf("PipeMaster:: Saved tune.nn result to %s (%d models, backend=%s)\n",
-              path, length(tune.result$models), nn_backend))
+  cat(sprintf("PipeMaster:: Saved tune.nn result to %s (%d models)\n",
+              path, length(tune.result$models)))
 }
 
 #' Load tune.nn Result from Disk
@@ -1577,76 +452,40 @@ load.tune.result <- function(path) {
     stop("tune_result.rds not found in: ", path)
 
   result <- readRDS(rds_file)
-  nn_backend <- if (!is.null(result$backend)) result$backend else "keras"
+  if (!is.null(result$backend) && result$backend != "torch")
+    stop("Saved tune.result has backend='", result$backend,
+         "' — only torch is supported. Retrain with current PipeMaster.")
 
-  if (nn_backend == "torch") {
-    if (!requireNamespace("torch", quietly = TRUE))
-      stop("load.tune.result() requires the 'torch' package for torch models.")
+  best_pt <- file.path(path, "best_model.pt")
+  if (!file.exists(best_pt))
+    stop("best_model.pt not found in: ", path)
+  result$best_model <- .torch.load.model(best_pt)
 
-    best_pt <- file.path(path, "best_model.pt")
-    if (!file.exists(best_pt))
-      stop("best_model.pt not found in: ", path)
-    result$best_model <- .torch.load.model(best_pt)
-
-    models_dir <- file.path(path, "models")
-    if (dir.exists(models_dir)) {
-      model_files <- sort(list.files(models_dir, pattern = "\\.pt$",
-                                     full.names = TRUE))
-      if (length(model_files) > 0L) {
-        result$models <- lapply(model_files, function(f) {
-          tryCatch(.torch.load.model(f), error = function(e) {
-            warning("Could not load model from ", f, ": ",
-                    conditionMessage(e), call. = FALSE)
-            NULL
-          })
+  models_dir <- file.path(path, "models")
+  if (dir.exists(models_dir)) {
+    model_files <- sort(list.files(models_dir, pattern = "\\.pt$",
+                                   full.names = TRUE))
+    if (length(model_files) > 0L) {
+      result$models <- lapply(model_files, function(f) {
+        tryCatch(.torch.load.model(f), error = function(e) {
+          warning("Could not load model from ", f, ": ",
+                  conditionMessage(e), call. = FALSE)
+          NULL
         })
-        keep <- !vapply(result$models, is.null, logical(1))
-        result$models <- result$models[keep]
-        if (!is.null(result$models_val_loss))
-          result$models_val_loss <- result$models_val_loss[keep]
-      } else {
-        result$models <- list(result$best_model)
-      }
+      })
+      keep <- !vapply(result$models, is.null, logical(1))
+      result$models <- result$models[keep]
+      if (!is.null(result$models_val_loss))
+        result$models_val_loss <- result$models_val_loss[keep]
     } else {
       result$models <- list(result$best_model)
     }
   } else {
-    if (!requireNamespace("keras", quietly = TRUE))
-      stop("load.tune.result() requires the 'keras' package for keras models.")
-
-    model_dir <- file.path(path, "best_model")
-    if (!dir.exists(model_dir))
-      stop("best_model/ directory not found in: ", path)
-    result$best_model <- keras::load_model_tf(model_dir)
-
-    models_dir <- file.path(path, "models")
-    if (dir.exists(models_dir)) {
-      model_subdirs <- sort(list.dirs(models_dir, recursive = FALSE,
-                                      full.names = TRUE))
-      if (length(model_subdirs) > 0L) {
-        result$models <- lapply(model_subdirs, function(d) {
-          tryCatch(keras::load_model_tf(d), error = function(e) {
-            warning("Could not load model from ", d, ": ",
-                    conditionMessage(e), call. = FALSE)
-            NULL
-          })
-        })
-        keep <- !vapply(result$models, is.null, logical(1))
-        result$models <- result$models[keep]
-        if (!is.null(result$models_val_loss))
-          result$models_val_loss <- result$models_val_loss[keep]
-      } else {
-        result$models <- list(result$best_model)
-      }
-    } else {
-      result$models <- list(result$best_model)
-      if (is.null(result$models_val_loss))
-        result$models_val_loss <- result$best_val_loss
-    }
+    result$models <- list(result$best_model)
   }
 
-  cat(sprintf("PipeMaster:: Loaded tune.nn result from %s (%d models, backend=%s)\n",
-              path, length(result$models), nn_backend))
+  cat(sprintf("PipeMaster:: Loaded tune.nn result from %s (%d models)\n",
+              path, length(result$models)))
   result
 }
 
@@ -1737,18 +576,8 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
                        pls = FALSE, n.pls = 20L,
                        seed = 42, verbose = TRUE) {
 
-  # --- Detect backend ---
-  nn_backend <- .detect.backend(tune.result)
-
-  # --- Dependency check ---
-  if (nn_backend == "keras") {
-    if (!requireNamespace("keras", quietly = TRUE) ||
-        !requireNamespace("tensorflow", quietly = TRUE))
-      stop("nn.predict() with keras backend requires the 'keras' and 'tensorflow' R packages.")
-  } else {
-    if (!requireNamespace("torch", quietly = TRUE))
-      stop("nn.predict() with torch backend requires the 'torch' R package.")
-  }
+  if (!requireNamespace("torch", quietly = TRUE))
+    stop("nn.predict() requires the 'torch' R package.")
 
   method <- match.arg(method, c("point", "bootstrap", "ABC_NN_regression"),
                       several.ok = TRUE)
@@ -1849,7 +678,7 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
     boot_samples <- .run.residual.bootstrap(
       best_model, data, reftable, param.cols, observed,
       type, sfs.dims, n_boot, point_est, seed, verbose,
-      exclude.cols = exclude.cols, nn_backend = nn_backend,
+      exclude.cols = exclude.cols,
       pls = pls, n.pls = n.pls
     )
     colnames(boot_samples) <- param_names
@@ -1859,7 +688,7 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
     abc_samples <- .run.abc.nn.regression(
       best_model, data, reftable, param.cols, observed,
       type, sfs.dims, tolerance, point_est, verbose,
-      exclude.cols = exclude.cols, nn_backend = nn_backend,
+      exclude.cols = exclude.cols,
       pls = pls, n.pls = n.pls
     )
     colnames(abc_samples) <- param_names
@@ -2379,7 +1208,7 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 .run.residual.bootstrap <- function(best_model, data, reftable, param.cols,
                                     observed, type, sfs.dims, n_boot,
                                     point_est, seed, verbose,
-                                    exclude.cols = NULL, nn_backend = "keras",
+                                    exclude.cols = NULL,
                                     pls = FALSE, n.pls = 20L) {
 
   nuisance    <- c("mean.rate", "sd.rate")
@@ -2394,12 +1223,7 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   X_val <- data$X_val
   Y_val <- data$Y_val  # z-scored log-targets
 
-  # Predict on validation set
-  if (nn_backend == "torch") {
-    Y_pred_z <- .torch.predict(best_model, X_val)
-  } else {
-    Y_pred_z <- predict(best_model, X_val, verbose = 0L)
-  }
+  Y_pred_z <- .torch.predict(best_model, X_val)
 
   # Inverse-transform both to original scale
   Y_val_orig  <- .inv.transform(Y_val, data$target_mu, data$target_sd)
@@ -2494,7 +1318,7 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 .run.abc.nn.regression <- function(best_model, data, reftable, param.cols,
                                    observed, type, sfs.dims, tolerance,
                                    point_est, verbose,
-                                   exclude.cols = NULL, nn_backend = "keras",
+                                   exclude.cols = NULL,
                                    pls = FALSE, n.pls = 20L) {
 
   nuisance    <- c("mean.rate", "sd.rate")
@@ -2570,13 +1394,8 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   }
 
   # Predict theta_hat for accepted rows and for observed
-  if (nn_backend == "torch") {
-    Y_acc_pred_z <- .torch.predict(best_model, X_acc_z)
-    Y_obs_pred_z <- .torch.predict(best_model, X_obs_z)
-  } else {
-    Y_acc_pred_z <- predict(best_model, X_acc_z, verbose = 0L)
-    Y_obs_pred_z <- predict(best_model, X_obs_z, verbose = 0L)
-  }
+  Y_acc_pred_z <- .torch.predict(best_model, X_acc_z)
+  Y_obs_pred_z <- .torch.predict(best_model, X_obs_z)
 
   # Inverse-transform predictions to original scale
   theta_hat_acc <- .inv.transform(Y_acc_pred_z, data$target_mu, data$target_sd)
@@ -2595,174 +1414,6 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
                 nrow(abc_matrix)))
 
   abc_matrix
-}
-
-# ============================================================================
-# Internal: write standalone model-builder R script for parallel workers
-# ============================================================================
-
-.write.builder.script <- function(filepath, type) {
-  # Emit self-contained build_nn() that only needs keras/tensorflow loaded.
-  # Only writes the architecture(s) actually needed.
-
-  lines <- c(
-    '# Auto-generated model builder for nn.predict parallel workers',
-    'build_nn <- function(hp, data, type, sfs.dims) {',
-    '  switch(type,',
-    '    sumstat = build_resnet(hp, data),',
-    '    sfs1d   = build_cnn1d(hp, data),',
-    '    sfs2d   = build_cnn2d(hp, data, sfs.dims)',
-    '  )',
-    '}'
-  )
-
-  if (type == "sumstat" || type == "all") {
-    lines <- c(lines, '',
-    'build_resnet <- function(hp, data) {',
-    '  n_features <- ncol(data$X_train)',
-    '  n_targets  <- ncol(data$Y_train)',
-    '  l2 <- regularizer_l2(hp$l2_reg)',
-    '  res_block <- function(x, units) {',
-    '    skip <- x',
-    '    x <- x |>',
-    '      layer_dense(units = as.integer(units), activation = "relu",',
-    '                  kernel_regularizer = l2) |>',
-    '      layer_batch_normalization() |>',
-    '      layer_dense(units = as.integer(units), activation = "linear",',
-    '                  kernel_regularizer = l2) |>',
-    '      layer_batch_normalization()',
-    '    x <- layer_add(list(x, skip))',
-    '    layer_activation(x, activation = "relu")',
-    '  }',
-    '  inp <- layer_input(shape = n_features)',
-    '  x <- inp |>',
-    '    layer_dense(units = as.integer(hp$units_1), activation = "relu",',
-    '                kernel_regularizer = l2) |>',
-    '    layer_batch_normalization()',
-    '  for (i in seq_len(hp$n_resblocks_1)) x <- res_block(x, hp$units_1)',
-    '  x <- x |>',
-    '    layer_dense(units = as.integer(hp$units_2), activation = "relu",',
-    '                kernel_regularizer = l2) |>',
-    '    layer_batch_normalization()',
-    '  if (isTRUE(hp$use_dropout) && hp$dropout > 0)',
-    '    x <- layer_dropout(x, rate = hp$dropout)',
-    '  if (hp$n_resblocks_2 > 0)',
-    '    for (i in seq_len(hp$n_resblocks_2)) x <- res_block(x, hp$units_2)',
-    '  x <- x |>',
-    '    layer_dense(units = as.integer(hp$units_3), activation = "relu",',
-    '                kernel_regularizer = l2) |>',
-    '    layer_batch_normalization()',
-    '  if (isTRUE(hp$use_dropout) && hp$dropout > 0)',
-    '    x <- layer_dropout(x, rate = hp$dropout)',
-    '  out <- x |> layer_dense(units = n_targets, activation = "linear")',
-    '  model <- keras_model(inp, out)',
-    '  model |> compile(',
-    '    loss = loss_huber(delta = hp$huber_delta),',
-    '    optimizer = optimizer_adam(learning_rate = hp$learning_rate)',
-    '  )',
-    '  model',
-    '}')
-  }
-
-  if (type == "sfs1d" || type == "all") {
-    lines <- c(lines, '',
-    'build_cnn1d <- function(hp, data) {',
-    '  n_bins <- data$n_bins',
-    '  n_targets <- ncol(data$Y_train)',
-    '  l2 <- regularizer_l2(hp$l2_reg)',
-    '  input <- layer_input(shape = c(n_bins, 1L))',
-    '  x <- input',
-    '  for (b in seq_len(hp$n_blocks)) {',
-    '    filters <- as.integer(hp$base_filters * (2 ^ min(b - 1, 2)))',
-    '    ks <- as.integer(max(3L, hp$kernel_start - (b - 1) * 2))',
-    '    x <- x |>',
-    '      layer_conv_1d(filters = filters, kernel_size = ks,',
-    '                    padding = "same", kernel_regularizer = l2) |>',
-    '      layer_batch_normalization() |>',
-    '      layer_activation("relu")',
-    '    if (isTRUE(hp$use_residual) && b > 1 && b < hp$n_blocks) {',
-    '      skip <- x',
-    '      x <- x |>',
-    '        layer_conv_1d(filters = filters, kernel_size = ks,',
-    '                      padding = "same", kernel_regularizer = l2) |>',
-    '        layer_batch_normalization() |>',
-    '        layer_activation("relu") |>',
-    '        layer_conv_1d(filters = filters, kernel_size = ks,',
-    '                      padding = "same", kernel_regularizer = l2) |>',
-    '        layer_batch_normalization()',
-    '      x <- layer_add(list(x, skip)) |> layer_activation("relu")',
-    '    }',
-    '  }',
-    '  x <- x |> layer_global_average_pooling_1d()',
-    '  for (d in seq_len(hp$n_dense)) {',
-    '    units <- as.integer(hp$dense_units / (2 ^ (d - 1)))',
-    '    x <- x |>',
-    '      layer_dense(units = units, activation = "relu",',
-    '                  kernel_regularizer = l2) |>',
-    '      layer_batch_normalization() |>',
-    '      layer_dropout(rate = hp$dropout)',
-    '  }',
-    '  output <- x |> layer_dense(units = n_targets, activation = "linear")',
-    '  model <- keras_model(input, output)',
-    '  loss_fn <- if (identical(hp$loss, "huber")) loss_huber(delta = 1.0) else "mse"',
-    '  model |> compile(loss = loss_fn,',
-    '    optimizer = optimizer_adam(learning_rate = hp$learning_rate),',
-    '    metrics = list("mae"))',
-    '  model',
-    '}')
-  }
-
-  if (type == "sfs2d" || type == "all") {
-    lines <- c(lines, '',
-    'build_cnn2d <- function(hp, data, sfs.dims) {',
-    '  dim1 <- sfs.dims[1]; dim2 <- sfs.dims[2]',
-    '  n_targets <- ncol(data$Y_train)',
-    '  l2 <- regularizer_l2(hp$l2_reg)',
-    '  input <- layer_input(shape = c(dim1, dim2, 1L))',
-    '  x <- input',
-    '  for (b in seq_len(hp$n_blocks)) {',
-    '    filters <- as.integer(hp$base_filters * (2 ^ min(b - 1, 2)))',
-    '    ks <- as.integer(max(3L, hp$kernel_start - (b - 1) * 2))',
-    '    x <- x |>',
-    '      layer_conv_2d(filters = filters, kernel_size = c(ks, ks),',
-    '                    padding = "same", kernel_regularizer = l2) |>',
-    '      layer_batch_normalization() |>',
-    '      layer_activation("relu")',
-    '    if (b == 1 || b == (hp$n_blocks %/% 2 + 1))',
-    '      x <- layer_max_pooling_2d(x, pool_size = c(2L, 2L))',
-    '    if (isTRUE(hp$use_residual) && b > 1 && b < hp$n_blocks) {',
-    '      skip <- x',
-    '      x <- x |>',
-    '        layer_conv_2d(filters = filters, kernel_size = c(ks, ks),',
-    '                      padding = "same", kernel_regularizer = l2) |>',
-    '        layer_batch_normalization() |>',
-    '        layer_activation("relu") |>',
-    '        layer_conv_2d(filters = filters, kernel_size = c(ks, ks),',
-    '                      padding = "same", kernel_regularizer = l2) |>',
-    '        layer_batch_normalization()',
-    '      x <- layer_add(list(x, skip)) |> layer_activation("relu")',
-    '    }',
-    '  }',
-    '  x <- x |> layer_global_average_pooling_2d()',
-    '  for (d in seq_len(hp$n_dense)) {',
-    '    units <- as.integer(hp$dense_units / (2 ^ (d - 1)))',
-    '    x <- x |>',
-    '      layer_dense(units = units, activation = "relu",',
-    '                  kernel_regularizer = l2) |>',
-    '      layer_batch_normalization() |>',
-    '      layer_dropout(rate = hp$dropout)',
-    '  }',
-    '  output <- x |> layer_dense(units = n_targets, activation = "linear")',
-    '  model <- keras_model(input, output)',
-    '  loss_fn <- if (identical(hp$loss, "huber")) loss_huber(delta = 1.0) else "mse"',
-    '  model |> compile(loss = loss_fn,',
-    '    optimizer = optimizer_adam(learning_rate = hp$learning_rate),',
-    '    metrics = list("mae"))',
-    '  model',
-    '}')
-  }
-
-  writeLines(lines, filepath)
 }
 
 # ============================================================================
@@ -3103,9 +1754,9 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 # ============================================================================
 # Torch backend for tune.nn
 #
-# Dispatched from tune.nn() when backend = "torch". Uses .torch.hyperband()
-# and .torch.train.model() from torch_training.R, and .build.nn.torch()
-# from torch_modules.R.
+# Implementation backing tune.nn(). Uses .torch.hyperband() and
+# .torch.train.model() from torch_training.R, plus .build.nn.torch() from
+# torch_modules.R.
 # ============================================================================
 
 #' @keywords internal
@@ -3116,7 +1767,7 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
                            top_k, seed, verbose) {
 
   if (!requireNamespace("torch", quietly = TRUE))
-    stop("tune.nn(backend='torch') requires the 'torch' R package.\n",
+    stop("tune.nn() requires the 'torch' R package.\n",
          "Install with: install.packages('torch')\n",
          "Then run: torch::install_torch()")
 
@@ -3124,8 +1775,8 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
   # Note: torch backend currently supports sumstat/emulator (ResNet) only
   if (type %in% c("sfs1d", "sfs2d"))
-    stop("Torch backend does not yet support CNN architectures (sfs1d/sfs2d). ",
-         "Use backend='keras' for SFS-based models.")
+    stop("CNN architectures (sfs1d/sfs2d) are not yet implemented for the ",
+         "torch backend.")
 
   top_k <- as.integer(top_k)
   if (top_k < 1L) stop("top_k must be >= 1")
@@ -3435,34 +2086,13 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 }
 
 # ============================================================================
-# Unified model predict dispatcher
-#
-# Detects keras vs torch models and dispatches to the right predict function.
-# Used by nn.predict(), OOD.posttrain(), .ensemble.predict(), etc.
+# Forward-pass wrapper used by nn.predict(), OOD.posttrain(), .ensemble.predict()
 # ============================================================================
 
 #' @keywords internal
 .predict.nn <- function(model, X) {
-  if (inherits(model, "nn_module")) {
-    .torch.predict(model, X)
-  } else {
-    predict(model, X, verbose = 0L)
-  }
+  .torch.predict(model, X)
 }
-
-# ============================================================================
-# Detect backend from tune result or model object
-# ============================================================================
-
-#' @keywords internal
-.detect.backend <- function(tune.result) {
-  # Explicit backend field (new results)
-  if (!is.null(tune.result$backend)) return(tune.result$backend)
-  # Detect from model type
-  if (inherits(tune.result$best_model, "nn_module")) return("torch")
-  "keras"
-}
-
 
 # ============================================================================
 # Sensitivity / Inverse Jacobian for tune.nn (regression NN: stats -> params)
@@ -3593,10 +2223,6 @@ tune.nn.sensitivity <- function(tune.result, observed,
                                 device = NULL, verbose = TRUE) {
   ensemble_weights <- match.arg(ensemble_weights)
   aggregate <- match.arg(aggregate)
-
-  backend <- .detect.backend(tune.result)
-  if (backend != "torch")
-    stop("tune.nn.sensitivity currently supports torch backend only.")
 
   data <- tune.result$data
   stat_cols <- data$stat_cols

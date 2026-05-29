@@ -25,7 +25,7 @@
 #'   then the 4 moments across species produce the 24 output values.
 #'
 #' @author Marcelo Gehara
-#' @export
+#' @noRd
 obs.coexp.ngs <- function(hmodel = NULL, phylip_paths = NULL) {
 
   # Input validation

@@ -13,7 +13,7 @@ save.tune.result(tune.result, path)
 }
 \description{
 Saves the output of \code{tune.nn()} so it can be loaded on another machine.
-The keras model is serialized separately using \code{keras::save_model_tf()}.
+Torch models are serialized as \code{.pt} files via \code{torch::torch_save()}.
 When multiple models are present (from \code{top_k > 1}), each model is saved
-to a separate subdirectory under \code{models/}.
+to a separate file under \code{models/}.
 }
