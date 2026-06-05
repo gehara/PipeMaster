@@ -42,10 +42,6 @@
 #' # Project reftable and observed into PLS space
 #' stats_pls <- pls.project(pls_fit, as.matrix(reftable[, stat_cols]))
 #' obs_pls   <- pls.project(pls_fit, matrix(obs_raw, nrow = 1))
-#'
-#' # Use in ABC
-#' reftable_pls <- cbind(reftable[, param_cols], as.data.frame(stats_pls))
-#' abc_result <- abc.rejection(reftable_pls, obs_pls, param.cols = param_cols)
 #' }
 #'
 #' @export

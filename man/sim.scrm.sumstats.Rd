@@ -17,6 +17,7 @@ sim.scrm.sumstats(
   variable_samples = FALSE,
   append.sims = FALSE,
   verbose = TRUE,
+  stall.seconds = NULL,
   .parent.pid.file = NULL
 )
 }
@@ -71,6 +72,13 @@ Default is FALSE.}
 \item{append.sims}{Logical. If TRUE, append to existing file.}
 
 \item{verbose}{Logical. Print progress messages.}
+
+\item{stall.seconds}{Numeric or NULL. Per-worker stall timeout in seconds
+for the head-node watchdog. If a worker's log file mtime has not advanced
+for more than \code{stall.seconds}, the head kills the worker via
+\code{SIGKILL} and treats its already-completed blocks as the final output
+(recovered from the worker subdir). \code{NULL} (default) disables the
+watchdog. See \code{Details} for sensible values per data regime.}
 }
 \value{
 Invisibly returns the output file path. Writes results to
@@ -99,4 +107,25 @@ All loci must have the same length.
 
 Multi-core parallelism uses independent Rscript worker processes
 (same approach as \code{sim.sumstats()}).
+
+Under wide priors, a small fraction of parameter draws produce pathological
+ARGs that can take orders of magnitude longer than typical sims to complete.
+One stuck sim blocks an entire worker (each worker is single-threaded over
+its assigned blocks), and the head waits for all workers to finish before
+compiling the final reftable. The \code{stall.seconds} watchdog runs in the
+head: if a worker's per-block progress (tracked via its log mtime) stops
+advancing for more than \code{stall.seconds}, the worker is killed and its
+already-completed blocks are salvaged from its subdir during the compile
+step. The reftable will contain fewer rows than requested when this fires.
+
+Sensible \code{stall.seconds} values depend on the per-block wall time
+(= \code{batch.size} x typical-sim-time). For reference, batch.size = 32 with:
+\itemize{
+  \item RAD / short-locus (typical sim ~ seconds): try 300 (5 min)
+  \item pseudo-WGS 100 kb informative (typical block ~ minutes): try 1800
+  \item real-WGS informative (typical block ~ 90 min): try 18000 (5 h)
+  \item real-WGS diffuse, OoA-scale (typical block ~ 3.3 h): try 36000 (10 h)
+}
+Tighten when the typical block time is well below the threshold; loosen if
+you see false positives on the slow tail.
 }

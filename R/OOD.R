@@ -38,6 +38,113 @@
   RANN::nn2(scores, score_obs, k = 1L)$nn.dists[1, 1]
 }
 
+# k-NN average distance (LOO, per sim). Returns vector of length nrow(scores)
+# containing the mean distance from each sim to its k nearest OTHER sims.
+# Sun et al. 2022 (ICLR) "Out-of-Distribution Detection with Deep Nearest
+# Neighbors" -- k-NN average is the current standard non-Gaussian OOD metric.
+.ood.knn.k.loo <- function(scores, k = 10L) {
+  if (!requireNamespace("RANN", quietly = TRUE))
+    stop("OOD diagnostics require the 'RANN' package.")
+  k <- as.integer(k)
+  k_eff <- min(k, nrow(scores) - 1L)
+  if (k_eff < 1L) return(rep(NA_real_, nrow(scores)))
+  nn <- RANN::nn2(scores, scores, k = k_eff + 1L)$nn.dists
+  rowMeans(nn[, 2:(k_eff + 1L), drop = FALSE])
+}
+
+# k-NN average distance from obs to k nearest sims.
+.ood.knn.k.obs <- function(scores, score_obs, k = 10L) {
+  if (!requireNamespace("RANN", quietly = TRUE))
+    stop("OOD diagnostics require the 'RANN' package.")
+  k <- as.integer(k)
+  k_eff <- min(k, nrow(scores))
+  if (k_eff < 1L) return(NA_real_)
+  nn <- RANN::nn2(scores, score_obs, k = k_eff)$nn.dists
+  mean(nn[1, ])
+}
+
+# Pooled within-class covariance matrix (weighted average of per-class S_k).
+# Matches the construction used in Lee et al. 2018 (NeurIPS) for Mahalanobis
+# OOD detection in penultimate-layer feature space.
+.ood.pooled.cov <- function(scores, class_id) {
+  uniq <- sort(unique(class_id))
+  d <- ncol(scores)
+  total <- matrix(0, d, d)
+  total_w <- 0
+  for (k in uniq) {
+    rows <- which(class_id == k)
+    if (length(rows) < 2L) next
+    S_k <- cov(scores[rows, , drop = FALSE])
+    w   <- length(rows) - 1L
+    total   <- total + w * S_k
+    total_w <- total_w + w
+  }
+  if (total_w == 0) diag(1, d, d) else (total / total_w)
+}
+
+# Mahalanobis distance (LOO, per sim) from each sim to its OWN class mean,
+# using the pooled within-class covariance. Equivalent in spirit to Lee
+# et al. 2018 (NeurIPS) "A Simple Unified Framework for Detecting OOD
+# Samples and Adversarial Attacks", but expressed as the LOO empirical
+# null distribution for the per-class geometric verdict.
+.ood.mahalanobis.loo <- function(scores, class_id) {
+  uniq <- sort(unique(class_id))
+  Sigma <- .ood.pooled.cov(scores, class_id)
+  Sigma <- Sigma + diag(1e-6, ncol(Sigma))
+  Sigma_inv <- tryCatch(solve(Sigma),
+                        error = function(e) MASS::ginv(Sigma))
+  d_loo <- rep(NA_real_, nrow(scores))
+  for (k in uniq) {
+    rows <- which(class_id == k)
+    if (length(rows) < 2L) next
+    mu_k <- colMeans(scores[rows, , drop = FALSE])
+    centered <- sweep(scores[rows, , drop = FALSE], 2, mu_k, "-")
+    d2 <- rowSums((centered %*% Sigma_inv) * centered)
+    d_loo[rows] <- sqrt(pmax(d2, 0))
+  }
+  d_loo
+}
+
+# Mahalanobis distance from obs to each class mean, using pooled Sigma.
+.ood.mahalanobis.obs.per.class <- function(scores, score_obs, class_id) {
+  uniq <- sort(unique(class_id))
+  Sigma <- .ood.pooled.cov(scores, class_id)
+  Sigma <- Sigma + diag(1e-6, ncol(Sigma))
+  Sigma_inv <- tryCatch(solve(Sigma),
+                        error = function(e) MASS::ginv(Sigma))
+  d_out <- setNames(rep(NA_real_, length(uniq)), as.character(uniq))
+  for (i in seq_along(uniq)) {
+    k <- uniq[i]
+    rows <- which(class_id == k)
+    if (length(rows) < 2L) next
+    mu_k <- colMeans(scores[rows, , drop = FALSE])
+    delta <- as.numeric(score_obs[1, ]) - mu_k
+    d2 <- sum((delta %*% Sigma_inv) * delta)
+    d_out[i] <- sqrt(max(d2, 0))
+  }
+  d_out
+}
+
+# Per-method geometric PASS / WARN / FAIL verdict.
+#
+# Pure descriptive geometry vs. the empirical sim-to-sim LOO-NN cloud:
+#   PASS = obs is INSIDE  the cloud  (d_obs <= Q95(d_loo))
+#   WARN = obs is AT  THE EDGE       (Q95 < d_obs <= max(d_loo))
+#   FAIL = obs is OUTSIDE the cloud  (d_obs >  max(d_loo))
+#
+# No combination with alpha, no interpretation. The user reads it and
+# decides what it means for their problem.
+.ood.geometric.verdict <- function(d_obs, d_loo, edge.quantile = 0.95) {
+  if (!is.finite(d_obs) || length(d_loo) < 2 || !any(is.finite(d_loo)))
+    return(NA_character_)
+  d_loo <- d_loo[is.finite(d_loo)]
+  q_edge <- as.numeric(quantile(d_loo, probs = edge.quantile, na.rm = TRUE))
+  d_max  <- max(d_loo)
+  if (d_obs <= q_edge) "PASS"
+  else if (d_obs <= d_max) "WARN"
+  else "FAIL"
+}
+
 # Per-stat support classification + mid-rank percentiles.
 # Outlier = obs strictly outside sim range (model cannot produce obs).
 # Uninformative = sim is constant AND obs matches that constant (no info).
@@ -125,8 +232,12 @@
   d_obs <- .ood.knn.obs(scores, score_obs)
   d_loo <- .ood.knn.loo(scores)
   p <- mean(d_loo >= d_obs)
+  verdict <- .ood.geometric.verdict(d_obs, d_loo)
 
   list(d_obs = d_obs, p_value = p, pass = p >= alpha,
+       verdict = verdict,
+       d_loo_q95 = as.numeric(quantile(d_loo, 0.95, na.rm = TRUE)),
+       d_loo_max = max(d_loo),
        null_distribution = d_loo, n_pcs = n_pcs,
        var_explained = var_cum[n_pcs], n_stats = ncol(S),
        scores = scores, score_obs = score_obs,
@@ -156,8 +267,12 @@
   d_obs <- .ood.knn.obs(scores, score_obs)
   d_loo <- .ood.knn.loo(scores)
   p <- mean(d_loo >= d_obs)
+  verdict <- .ood.geometric.verdict(d_obs, d_loo)
 
   list(d_obs = d_obs, p_value = p, pass = p >= alpha,
+       verdict = verdict,
+       d_loo_q95 = as.numeric(quantile(d_loo, 0.95, na.rm = TRUE)),
+       d_loo_max = max(d_loo),
        null_distribution = d_loo, n_comp = n_comp_eff,
        n_stats = ncol(S),
        scores = scores, score_obs = score_obs,
@@ -588,6 +703,7 @@ OOD.posttrain <- function(trained.nn, observed, reftable,
   d_obs <- .ood.knn.obs(Z_sim_n, Z_obs_n)
   d_loo <- .ood.knn.loo(Z_sim_n)
   p <- mean(d_loo >= d_obs)
+  verdict <- .ood.geometric.verdict(d_obs, d_loo)
 
   # Project obs (outliers neutralized) through the NN for honest panel-1 Y
   Z_obs_proj_n <- NULL
@@ -601,6 +717,9 @@ OOD.posttrain <- function(trained.nn, observed, reftable,
   }
 
   list(d_obs = d_obs, p_value = p, pass = p >= alpha,
+       verdict = verdict,
+       d_loo_q95 = as.numeric(quantile(d_loo, 0.95, na.rm = TRUE)),
+       d_loo_max = max(d_loo),
        null_distribution = d_loo, n_dims = ncol(Z_sim),
        n_stats = ncol(S_sim),
        scores = Z_sim_n, score_obs = Z_obs_n,
@@ -1160,7 +1279,52 @@ OOD.posttrain <- function(trained.nn, observed, reftable,
     d_obs <- .ood.knn.obs(Z_k, z_o_mat)
     d_loo <- .ood.knn.loo(Z_k)
     p <- mean(d_loo >= d_obs)
+    verdict <- .ood.geometric.verdict(d_obs, d_loo)
     out[[k]] <- list(d_obs = d_obs, p_value = p, pass = p >= alpha,
+                     verdict = verdict,
+                     d_loo_q95 = as.numeric(quantile(d_loo, 0.95, na.rm = TRUE)),
+                     d_loo_max = max(d_loo),
+                     null_distribution = d_loo)
+  }
+  out
+}
+
+# Per-class NN density in PLS-DA space. Takes precomputed PLS-DA scores
+# (from .ood.classify.plsda) + obs's projection, partitions by class,
+# and computes the geometric verdict per class. Z-scoring is done in
+# the global PLS-DA space so cross-class distances share a metric.
+.ood.classify.per.model.plsda <- function(scores, score_obs,
+                                          model_id_int, class_names, alpha) {
+  K <- length(class_names)
+  if (is.null(scores) || nrow(scores) < 2L)
+    return(setNames(replicate(K, list(d_obs = NA_real_, p_value = NA_real_,
+                                       pass = NA, verdict = NA_character_,
+                                       null_distribution = numeric(0)),
+                              simplify = FALSE),
+                    class_names))
+  mu <- colMeans(scores); sd_ <- apply(scores, 2, sd); sd_[sd_ == 0] <- 1
+  Z   <- sweep(sweep(scores, 2, mu, "-"), 2, sd_, "/")
+  z_o <- (as.numeric(score_obs[1, ]) - mu) / sd_
+
+  out <- vector("list", K); names(out) <- class_names
+  for (k in seq_len(K)) {
+    rows <- which(model_id_int == k)
+    if (length(rows) < 2L) {
+      out[[k]] <- list(d_obs = NA_real_, p_value = NA_real_, pass = NA,
+                       verdict = NA_character_,
+                       null_distribution = numeric(0))
+      next
+    }
+    Z_k <- Z[rows, , drop = FALSE]
+    z_o_mat <- matrix(z_o, nrow = 1L)
+    d_obs <- .ood.knn.obs(Z_k, z_o_mat)
+    d_loo <- .ood.knn.loo(Z_k)
+    p <- mean(d_loo >= d_obs)
+    verdict <- .ood.geometric.verdict(d_obs, d_loo)
+    out[[k]] <- list(d_obs = d_obs, p_value = p, pass = p >= alpha,
+                     verdict = verdict,
+                     d_loo_q95 = as.numeric(quantile(d_loo, 0.95, na.rm = TRUE)),
+                     d_loo_max = max(d_loo),
                      null_distribution = d_loo)
   }
   out
@@ -1325,6 +1489,10 @@ OOD.pretrain.classify <- function(reftable, model_col, observed,
   # --- 4. Per-model NN density (PCA-space and PLS-DA-space optional) ---
   per_model_nn <- .ood.classify.per.model.nn(S_sim, model_id_int, observed,
                                               pca_keep, class_names, alpha)
+  per_model_plsda <- .ood.classify.per.model.plsda(
+    plsda_res$scores, plsda_res$score_obs,
+    model_id_int, class_names, alpha
+  )
 
   results <- list(
     class_names           = class_names,
@@ -1344,6 +1512,7 @@ OOD.pretrain.classify <- function(reftable, model_col, observed,
     pca                   = pca_res,
     pls_da                = plsda_res,
     per_model_nn          = per_model_nn,
+    per_model_plsda       = per_model_plsda,
     .context              = list(
       S_sim        = S_sim,
       model_id_int = model_id_int,
@@ -1374,8 +1543,8 @@ OOD.pretrain.classify <- function(reftable, model_col, observed,
   cat(sprintf("  Stats: %d total | %d matched (no model rejects) | %d model-specific outliers | %d universal outliers\n",
               results$n_stats, sum(results$matched_mask),
               sum(results$specific_mask), sum(results$universal_mask)))
-  cat(sprintf("  Universal outlier fraction: %.1f%% [%s]\n",
-              100 * results$universal_frac, toupper(results$verdict)))
+  cat(sprintf("  Universal outlier fraction: %.1f%%\n",
+              100 * results$universal_frac))
 
   cat("  Per-model rejection counts (out of all stats):\n")
   for (k in seq_along(results$class_names))
@@ -1391,13 +1560,53 @@ OOD.pretrain.classify <- function(reftable, model_col, observed,
     cat(sprintf("  PLS-DA: %d components, %d kept stats\n",
                 results$pls_da$n_comp, results$pls_da$n_stats))
 
-  cat("  Per-model NN density (PCA-space) p-values [obs plausible under model]:\n")
-  for (k in seq_along(results$class_names)) {
-    nn <- results$per_model_nn[[k]]
-    if (is.na(nn$p_value)) next
-    cat(sprintf("    %-20s: d_obs=%.3f, p=%.4f [%s]\n",
-                results$class_names[k], nn$d_obs, nn$p_value,
-                ifelse(isTRUE(nn$pass), "PLAUSIBLE", "REJECTED")))
+  cat("\n  Per-method geometric verdict (PASS=inside, WARN=edge, FAIL=outside the sim cloud):\n")
+  cat(sprintf("    %-20s  %-7s  %-7s  %-7s  %-7s  %-7s\n",
+              "class", "d_obs", "Q95", "max", "p_val", "verdict"))
+
+  ## PCA (per-class)
+  if (length(results$per_model_nn) > 0L &&
+      !is.null(results$per_model_nn[[1]]$verdict)) {
+    cat(sprintf("  -- PCA (%d PCs) --\n",
+                if (!is.null(results$pca$n_pcs)) results$pca$n_pcs else NA))
+    for (k in seq_along(results$class_names)) {
+      nn <- results$per_model_nn[[k]]
+      if (is.null(nn$d_obs) || is.na(nn$d_obs)) next
+      cat(sprintf("    %-20s  %-7.3f  %-7.3f  %-7.3f  %-7.4f  %s\n",
+                  results$class_names[k],
+                  nn$d_obs, nn$d_loo_q95, nn$d_loo_max,
+                  nn$p_value, nn$verdict))
+    }
+  }
+
+  ## PLS-DA (per-class)
+  if (!is.null(results$per_model_plsda) &&
+      !is.null(results$per_model_plsda[[1]]$verdict) &&
+      !is.na(results$per_model_plsda[[1]]$verdict)) {
+    cat(sprintf("  -- PLS-DA (%d comps) --\n",
+                if (!is.null(results$pls_da$n_comp)) results$pls_da$n_comp else NA))
+    for (k in seq_along(results$class_names)) {
+      nn <- results$per_model_plsda[[k]]
+      if (is.null(nn$d_obs) || is.na(nn$d_obs)) next
+      cat(sprintf("    %-20s  %-7.3f  %-7.3f  %-7.3f  %-7.4f  %s\n",
+                  results$class_names[k],
+                  nn$d_obs, nn$d_loo_q95, nn$d_loo_max,
+                  nn$p_value, nn$verdict))
+    }
+  }
+
+  ## Overall PCA (single, all classes pooled)
+  if (!is.null(results$pca) && !is.null(results$pca$verdict)) {
+    cat(sprintf("  -- PCA  (pooled, %d PCs, %.0f%% var) -- d_obs=%.3f  Q95=%.3f  max=%.3f  verdict=%s\n",
+                results$pca$n_pcs, 100 * results$pca$var_explained,
+                results$pca$d_obs, results$pca$d_loo_q95,
+                results$pca$d_loo_max, results$pca$verdict))
+  }
+  if (!is.null(results$pls_da) && !is.null(results$pls_da$verdict)) {
+    cat(sprintf("  -- PLS  (pooled, %d comps) -- d_obs=%.3f  Q95=%.3f  max=%.3f  verdict=%s\n",
+                results$pls_da$n_comp,
+                results$pls_da$d_obs, results$pls_da$d_loo_q95,
+                results$pls_da$d_loo_max, results$pls_da$verdict))
   }
 
   if (sum(results$universal_mask) > 0L) {
@@ -1444,21 +1653,33 @@ OOD.pretrain.classify <- function(reftable, model_col, observed,
           ylab = "n outlier stats", las = 2,
           ylim = c(0, max(rej_per_model, 1) * 1.1))
 
-  # 3: verdict text
-  plot.new(); title(main = "Summary")
-  v <- results$verdict
-  v_col <- switch(v, pass = "darkgreen", warn = "darkorange", fail = "red")
-  text(0.5, 0.85, sprintf("VERDICT: %s", toupper(v)), col = v_col, cex = 1.3, font = 2)
-  text(0.5, 0.70, sprintf("Universal outliers: %d / %d (%.1f%%)",
+  # 3: per-class verdict panel (geometric)
+  plot.new(); title(main = "Per-class PCA-NN verdict")
+  v_col_for <- function(v) switch(as.character(v),
+                                   PASS = "darkgreen",
+                                   WARN = "darkorange",
+                                   FAIL = "red",
+                                   "grey40")
+  text(0.5, 0.95, "PASS=inside, WARN=edge, FAIL=outside the sim cloud",
+       cex = 0.8, col = "grey40")
+  text(0.5, 0.85, sprintf("Universal outliers: %d / %d (%.1f%%)",
                           sum(results$universal_mask), results$n_stats,
                           100 * results$universal_frac), cex = 0.95)
-  text(0.5, 0.58, sprintf("Model-specific: %d", sum(results$specific_mask)), cex = 0.95)
-  text(0.5, 0.46, sprintf("Matched: %d", sum(results$matched_mask)), cex = 0.95)
-  text(0.5, 0.30, sprintf("Halt threshold: %.0f%%", 100 * results$.context$universal_fail_threshold),
-       cex = 0.85, col = "grey40")
-  text(0.5, 0.18, sprintf("Drop %d stats from classifier features",
+  K_local <- length(results$class_names)
+  y_top <- 0.70
+  y_step <- 0.5 / max(1, K_local)
+  for (i in seq_len(K_local)) {
+    cn <- results$class_names[i]
+    e  <- results$per_model_nn[[i]]
+    v  <- if (!is.null(e$verdict) && !is.na(e$verdict)) e$verdict else "--"
+    yi <- y_top - (i - 1) * y_step
+    text(0.5, yi,
+         sprintf("%s : %s", cn, v),
+         col = v_col_for(v), cex = 1.0, font = 2)
+  }
+  text(0.5, 0.10, sprintf("Drop %d universal-outlier stats from features",
                           sum(results$universal_mask)),
-       cex = 0.85, col = "grey40")
+       cex = 0.8, col = "grey40")
 
   # ---- Row 2: PCA — Comp1 vs LOO-NN in full PC space (per class) ----
   if (!is.null(results$pca$scores)) {
@@ -1502,16 +1723,37 @@ OOD.pretrain.classify <- function(reftable, model_col, observed,
           main = "PCA-space d_obs to nearest sim",
           ylab = "z-scored Euclidean distance", las = 2)
 
-  # 6: per-model PCA p-values
-  p_pca <- vapply(results$per_model_nn, function(x) x$p_value, numeric(1))
-  p_pca[is.na(p_pca)] <- 0
-  bar_col <- ifelse(p_pca >= results$.context$alpha, "darkgreen", "red")
-  barplot(p_pca, col = bar_col, border = "white", names.arg = results$class_names,
-          main = sprintf("Per-model NN p-value (alpha=%.2f)",
-                         results$.context$alpha),
-          ylab = "p (obs plausible under model)", las = 2,
-          ylim = c(0, max(p_pca, results$.context$alpha) * 1.2))
-  abline(h = results$.context$alpha, lty = 2, col = "grey40")
+  # 6: per-class PCA verdict + percentile of obs in sim NN distribution
+  .ood.verdict.panel <- function(nn_list, class_names, title_main) {
+    plot.new(); title(main = title_main)
+    v_col <- function(v) switch(as.character(v),
+                                 PASS = "darkgreen", WARN = "darkorange",
+                                 FAIL = "red", "grey60")
+    text(0.5, 0.92,
+         "PASS=inside  WARN=edge  FAIL=outside",
+         cex = 0.75, col = "grey40")
+    text(0.18, 0.78, "class",   adj = 0, cex = 0.9, font = 2)
+    text(0.62, 0.78, "verdict", adj = 0, cex = 0.9, font = 2)
+    text(0.85, 0.78, "pct",     adj = 1, cex = 0.9, font = 2)
+    K_local <- length(class_names)
+    y_top  <- 0.62
+    y_step <- 0.5 / max(1, K_local)
+    for (i in seq_len(K_local)) {
+      nn <- nn_list[[i]]
+      yi <- y_top - (i - 1) * y_step
+      v  <- if (!is.null(nn$verdict) && !is.na(nn$verdict)) nn$verdict else "--"
+      p  <- if (!is.null(nn$p_value) && !is.na(nn$p_value)) nn$p_value else NA_real_
+      pct_label <- if (is.na(p)) "--"
+                   else if (v == "FAIL") ">100"
+                   else sprintf("%.1f", 100 * (1 - p))
+      text(0.18, yi, class_names[i], adj = 0, cex = 0.95)
+      text(0.62, yi, v,
+           adj = 0, cex = 1.0, font = 2, col = v_col(v))
+      text(0.85, yi, pct_label, adj = 1, cex = 0.95, col = "grey20")
+    }
+  }
+  .ood.verdict.panel(results$per_model_nn, results$class_names,
+                     "PCA per-class verdict")
 
   # ---- Row 3: PLS-DA — Comp1 vs LOO-NN in full PLS space (per class) ----
   if (!is.null(results$pls_da$scores) && ncol(results$pls_da$scores) >= 2L) {
@@ -1549,15 +1791,9 @@ OOD.pretrain.classify <- function(reftable, model_col, observed,
             main = "PLS-DA-space d_obs to nearest sim",
             ylab = "z-scored Euclidean distance", las = 2)
 
-    p_pls <- nn_pls$p_value; p_pls[is.na(p_pls)] <- 0
-    bar_col <- ifelse(p_pls >= results$.context$alpha, "darkgreen", "red")
-    barplot(p_pls, col = bar_col, border = "white",
-            names.arg = results$class_names,
-            main = sprintf("Per-model PLS-DA NN p-value (alpha=%.2f)",
-                           results$.context$alpha),
-            ylab = "p (obs plausible under model)", las = 2,
-            ylim = c(0, max(p_pls, results$.context$alpha) * 1.2))
-    abline(h = results$.context$alpha, lty = 2, col = "grey40")
+    # 9: per-class PLS-DA verdict + percentile
+    .ood.verdict.panel(results$per_model_plsda, results$class_names,
+                       "PLS-DA per-class verdict")
   } else {
     plot.new(); title(main = "PLS-DA — unavailable")
     plot.new(); plot.new()
@@ -1642,7 +1878,7 @@ summary.OOD_pretrain_classify <- function(object, ...) {
 #     each class subset. Mirrors .ood.classify.per.model.nn but on latent
 #     coordinates, not raw stats. ---
 .ood.classify.latent.nn <- function(Z_sim, model_id_int, Z_obs,
-                                    class_names, alpha) {
+                                    class_names, alpha, knn.k = 10L) {
   K <- length(class_names)
   mu <- colMeans(Z_sim)
   sd_ <- apply(Z_sim, 2, sd)
@@ -1655,18 +1891,67 @@ summary.OOD_pretrain_classify <- function(object, ...) {
     rows <- which(model_id_int == k)
     if (length(rows) < 2L) {
       out[[k]] <- list(d_obs = NA_real_, p_value = NA_real_, pass = NA,
-                       null_distribution = numeric(0))
+                       verdict = NA_character_,
+                       null_distribution = numeric(0),
+                       knn.k = as.integer(knn.k))
       next
     }
     Z_k <- Z_n[rows, , drop = FALSE]
-    d_obs <- .ood.knn.obs(Z_k, Z_o_n)
-    d_loo <- .ood.knn.loo(Z_k)
+    # k-NN average distance (Sun et al. 2022, ICLR).
+    d_obs <- .ood.knn.k.obs(Z_k, Z_o_n, k = knn.k)
+    d_loo <- .ood.knn.k.loo(Z_k,        k = knn.k)
     p <- mean(d_loo >= d_obs)
+    verdict <- .ood.geometric.verdict(d_obs, d_loo)
     out[[k]] <- list(d_obs = d_obs, p_value = p, pass = p >= alpha,
-                     null_distribution = d_loo)
+                     verdict = verdict,
+                     d_loo_q95 = as.numeric(quantile(d_loo, 0.95, na.rm = TRUE)),
+                     d_loo_max = max(d_loo),
+                     null_distribution = d_loo,
+                     knn.k = as.integer(knn.k))
   }
   list(per_class = out, scores = Z_n, score_obs = Z_o_n,
-       n_dims = ncol(Z_sim))
+       n_dims = ncol(Z_sim), knn.k = as.integer(knn.k))
+}
+
+# Per-class Mahalanobis distance in penultimate latent space.
+# Distance from sim/obs to each class mean using pooled within-class Sigma
+# (Lee et al. 2018, NeurIPS). Per-sim LOO distance to its OWN class mean
+# forms the empirical null for the geometric verdict.
+.ood.classify.latent.mahalanobis <- function(Z_sim, model_id_int, Z_obs,
+                                              class_names, alpha) {
+  K <- length(class_names)
+  mu <- colMeans(Z_sim)
+  sd_ <- apply(Z_sim, 2, sd)
+  sd_[sd_ == 0 | !is.finite(sd_)] <- 1
+  Z_n   <- sweep(sweep(Z_sim, 2, mu, "-"), 2, sd_, "/")
+  Z_o_n <- sweep(sweep(Z_obs, 2, mu, "-"), 2, sd_, "/")
+
+  d_loo_all <- .ood.mahalanobis.loo(Z_n, model_id_int)
+  d_obs_per_class <- .ood.mahalanobis.obs.per.class(
+    Z_n, Z_o_n, model_id_int)
+
+  out <- vector("list", K); names(out) <- class_names
+  for (k in seq_len(K)) {
+    rows <- which(model_id_int == k)
+    if (length(rows) < 2L) {
+      out[[k]] <- list(d_obs = NA_real_, p_value = NA_real_, pass = NA,
+                       verdict = NA_character_,
+                       null_distribution = numeric(0))
+      next
+    }
+    d_loo <- d_loo_all[rows]
+    d_loo <- d_loo[is.finite(d_loo)]
+    d_obs <- d_obs_per_class[as.character(k)]
+    if (is.na(d_obs)) d_obs <- d_obs_per_class[k]
+    p <- mean(d_loo >= d_obs)
+    verdict <- .ood.geometric.verdict(d_obs, d_loo)
+    out[[k]] <- list(d_obs = as.numeric(d_obs), p_value = p, pass = p >= alpha,
+                     verdict = verdict,
+                     d_loo_q95 = as.numeric(quantile(d_loo, 0.95, na.rm = TRUE)),
+                     d_loo_max = max(d_loo),
+                     null_distribution = d_loo)
+  }
+  list(per_class = out)
 }
 
 
@@ -1821,9 +2106,11 @@ OOD.posttrain.classify <- function(classifier, observed, reftable,
   Z_sim <- .torch.penultimate(classifier$model, S_z, device = dev)
   Z_obs <- .torch.penultimate(classifier$model, obs_z, device = dev)
 
-  # --- Per-class latent NN density ---
+  # --- Per-class latent k-NN density (Sun 2022) + Mahalanobis (Lee 2018) ---
   latent <- .ood.classify.latent.nn(Z_sim, model_id_int, Z_obs,
-                                    class_names, alpha)
+                                    class_names, alpha, knn.k = 10L)
+  mahal  <- .ood.classify.latent.mahalanobis(Z_sim, model_id_int, Z_obs,
+                                              class_names, alpha)
 
   # --- Predicted class via the classifier ---
   obs_df <- as.data.frame(matrix(obs_raw, nrow = 1L,
@@ -1836,10 +2123,38 @@ OOD.posttrain.classify <- function(classifier, observed, reftable,
   margin <- if (length(prob_sorted) >= 2L)
               unname(prob_sorted[1] - prob_sorted[2]) else NA_real_
 
+  # --- Bayes factors of predicted class vs each other class ---
+  # Under uniform model prior, softmax_k ~ P(M_k | obs); BF_ij = p_i / p_j.
+  # Returns named vector (per class) of BF(predicted vs class). Self BF is 1.
+  pred_p <- prediction$prob_mean[pred_class]
+  bf_vec <- sapply(class_names, function(cn) {
+    p_k <- prediction$prob_mean[cn]
+    if (is.null(p_k) || !is.finite(p_k) || p_k == 0) Inf
+    else as.numeric(pred_p / p_k)
+  })
+  names(bf_vec) <- class_names
+  log10_bf_vec <- log10(bf_vec)
+  log10_bf_runner_up <- if (length(prob_sorted) >= 2L)
+    log10(prob_sorted[1] / prob_sorted[2]) else NA_real_
+  jeffreys_label <- function(lbf) {
+    if (!is.finite(lbf)) return("--")
+    if (abs(lbf) > 2)   return("decisive")
+    if (abs(lbf) > 1.5) return("very strong")
+    if (abs(lbf) > 1)   return("strong")
+    if (abs(lbf) > 0.5) return("substantial")
+    "weak"
+  }
+  bf_runner_up_label <- jeffreys_label(log10_bf_runner_up)
+
   # --- Verdict ---
-  pred_pass <- isTRUE(latent$per_class[[pred_class]]$pass)
-  any_pass  <- any(vapply(latent$per_class,
-                          function(x) isTRUE(x$pass), logical(1)))
+  # "Obs in class" = obs is at most at the edge of the cloud, i.e. NOT FAIL.
+  # PASS = inside  -> YES,  WARN = at the edge -> YES,  FAIL = outside -> NO.
+  .in_cloud <- function(e) {
+    v <- e$verdict
+    !is.null(v) && !is.na(v) && v %in% c("PASS", "WARN")
+  }
+  pred_pass <- .in_cloud(latent$per_class[[pred_class]])
+  any_pass  <- any(vapply(latent$per_class, .in_cloud, logical(1)))
   verdict_secondary <- if (pred_pass) "pass"
                        else if (any_pass) "warn"
                        else "fail"
@@ -1858,7 +2173,13 @@ OOD.posttrain.classify <- function(classifier, observed, reftable,
     predicted_class  = pred_class,
     predicted_prob   = pred_prob,
     margin           = margin,
+    bayes_factor     = bf_vec,
+    log10_bayes_factor = log10_bf_vec,
+    log10_bf_runner_up = log10_bf_runner_up,
+    bf_runner_up_label = bf_runner_up_label,
     latent_nn        = latent$per_class,
+    latent_mahal     = mahal$per_class,
+    knn.k            = latent$knn.k,
     latent_scores    = latent$scores,
     latent_score_obs = latent$score_obs,
     latent_class_id  = model_id_int,
@@ -1883,25 +2204,72 @@ OOD.posttrain.classify <- function(classifier, observed, reftable,
   cat("\nOOD.posttrain.classify summary\n")
   cat(sprintf("  Predicted class : %s (P=%.3f, margin=%.3f)\n",
               x$predicted_class, x$predicted_prob, x$margin))
+  if (!is.null(x$log10_bf_runner_up) && is.finite(x$log10_bf_runner_up))
+    cat(sprintf("  log10 BF (pred vs runner-up) : %.2f  [%s]\n",
+                x$log10_bf_runner_up,
+                if (!is.null(x$bf_runner_up_label)) x$bf_runner_up_label else "--"))
   cat(sprintf("  Latent dims     : %d (penultimate layer)\n",
               x$n_latent_dims))
-  cat(sprintf("\n  Per-class latent NN density (alpha=%.2f):\n",
-              x$.context$alpha))
-  for (cn in x$class_names) {
-    e <- x$latent_nn[[cn]]
-    flag <- if (is.na(e$pass)) "  -- " else if (e$pass) "PASS" else "fail"
-    star <- if (cn == x$predicted_class) "  <- predicted" else ""
-    cat(sprintf("    %-20s d_obs=%7.3f  p=%6.4f  [%s]%s\n",
-                cn, e$d_obs, e$p_value, flag, star))
+
+  # Bayes factor table: predicted vs each other class
+  if (!is.null(x$bayes_factor)) {
+    cat(sprintf("\n  Bayes factors (predicted=%s vs each class):\n",
+                x$predicted_class))
+    cat(sprintf("    %-20s  %-10s  %-10s  %-12s\n",
+                "class", "BF", "log10 BF", "Jeffreys"))
+    jeffreys_label <- function(lbf) {
+      if (!is.finite(lbf)) return("--")
+      if (abs(lbf) > 2)   return("decisive")
+      if (abs(lbf) > 1.5) return("very strong")
+      if (abs(lbf) > 1)   return("strong")
+      if (abs(lbf) > 0.5) return("substantial")
+      "weak"
+    }
+    for (cn in x$class_names) {
+      if (cn == x$predicted_class) next
+      bf <- x$bayes_factor[[cn]]
+      lbf <- x$log10_bayes_factor[[cn]]
+      bf_str <- if (!is.finite(bf)) "Inf" else
+                if (bf >= 100) sprintf("%.1f", bf) else
+                sprintf("%.2f", bf)
+      lbf_str <- if (!is.finite(lbf)) "Inf" else sprintf("%.2f", lbf)
+      cat(sprintf("    %-20s  %-10s  %-10s  %-12s\n",
+                  cn, bf_str, lbf_str, jeffreys_label(lbf)))
+    }
   }
+  cat(sprintf("\n  Per-class latent verdicts (PASS=inside, WARN=edge, FAIL=outside):\n"))
+  cat(sprintf("    k-NN k=%d (Sun 2022) + Mahalanobis (Lee 2018)\n\n",
+              if (!is.null(x$knn.k)) x$knn.k else 10L))
+  cat(sprintf("    %-18s | %-7s  %-7s  %-7s | %-7s  %-7s  %-7s\n",
+              "class",
+              "k-NN d", "k-NN pct", "k-NN",
+              "M d",    "M pct",    "M"))
+  for (cn in x$class_names) {
+    e_nn <- x$latent_nn[[cn]]
+    e_m  <- x$latent_mahal[[cn]]
+    if (is.null(e_nn$d_obs) || is.na(e_nn$d_obs)) next
+    star <- if (cn == x$predicted_class) " *" else "  "
+    v_nn <- if (!is.null(e_nn$verdict)) e_nn$verdict else "--"
+    v_m  <- if (!is.null(e_m$verdict))  e_m$verdict  else "--"
+    pct_nn <- if (is.na(e_nn$p_value)) "--"
+              else if (v_nn == "FAIL") ">100"
+              else sprintf("%.1f", 100 * (1 - e_nn$p_value))
+    pct_m  <- if (is.null(e_m$p_value) || is.na(e_m$p_value)) "--"
+              else if (v_m == "FAIL") ">100"
+              else sprintf("%.1f", 100 * (1 - e_m$p_value))
+    cat(sprintf("    %-16s%s | %-7.3f  %-7s  %-7s | %-7.3f  %-7s  %-7s\n",
+                cn, star,
+                e_nn$d_obs, pct_nn, v_nn,
+                if (is.null(e_m$d_obs) || is.na(e_m$d_obs)) NA_real_ else e_m$d_obs,
+                pct_m, v_m))
+  }
+  cat("\n    (k-NN d = mean distance to k nearest sims; M d = Mahalanobis)\n")
+  cat("    * = predicted class\n")
   cat(sprintf("\n  Obs in predicted class : %s\n",
               ifelse(x$obs_in_predicted_class, "YES", "NO")))
   cat(sprintf("  Obs in any class       : %s\n",
               ifelse(x$obs_in_any_class, "YES", "NO")))
-  if (!is.null(x$pretrain) && !is.null(x$pretrain$verdict))
-    cat(sprintf("  Pretrain verdict       : %s\n",
-                toupper(x$pretrain$verdict)))
-  cat(sprintf("\n  VERDICT: %s\n\n", toupper(x$verdict)))
+  cat("\n")
 }
 
 
@@ -1930,59 +2298,61 @@ OOD.posttrain.classify <- function(classifier, observed, reftable,
                 ylab = "P(class | obs)", las = 2)
   text(bp, pm + max(pm) * 0.04, sprintf("%.3f", pm), cex = 0.75)
 
-  # (1,2) Per-class latent NN p-value bars
-  pv <- vapply(x$latent_nn, function(e)
-                 if (is.na(e$p_value)) 0 else e$p_value, numeric(1))
-  bar_col <- ifelse(pv >= alpha, "darkgreen", "red")
-  border_col <- ifelse(names(pv) == x$predicted_class, "black", "white")
-  barplot(pv, col = bar_col, border = border_col,
-          names.arg = x$class_names, las = 2,
-          main = sprintf("Latent NN p-value (alpha=%.2f)", alpha),
-          ylab = "p (obs in class manifold)",
-          ylim = c(0, max(pv, alpha) * 1.2))
-  abline(h = alpha, lty = 2, col = "grey40")
+  v_col_for <- function(v) switch(as.character(v),
+                                   PASS = "darkgreen", WARN = "darkorange",
+                                   FAIL = "red", "grey60")
+  # Helper: per-class verdict + percentile table (single method).
+  one_method_panel <- function(per_class_list, class_names, predicted_class,
+                               title_main) {
+    plot.new(); title(main = title_main)
+    text(0.5, 0.94, "PASS=inside  WARN=edge  FAIL=outside",
+         cex = 0.72, col = "grey40")
+    text(0.18, 0.80, "class",   adj = 0, cex = 0.9, font = 2)
+    text(0.62, 0.80, "verdict", adj = 0, cex = 0.9, font = 2)
+    text(0.92, 0.80, "pct",     adj = 1, cex = 0.9, font = 2)
+    K_local <- length(class_names)
+    y_top  <- 0.65
+    y_step <- 0.55 / max(1, K_local)
+    for (i in seq_len(K_local)) {
+      cn <- class_names[i]
+      e  <- per_class_list[[cn]]
+      yi <- y_top - (i - 1) * y_step
+      v  <- if (!is.null(e$verdict) && !is.na(e$verdict)) e$verdict else "--"
+      p  <- if (!is.null(e$p_value) && !is.na(e$p_value)) e$p_value else NA_real_
+      pct_label <- if (is.na(p)) "--"
+                   else if (v == "FAIL") ">100"
+                   else sprintf("%.1f", 100 * (1 - p))
+      star <- if (cn == predicted_class) " *" else ""
+      text(0.18, yi, paste0(cn, star), adj = 0, cex = 0.95)
+      text(0.62, yi, v, adj = 0, cex = 1.0, font = 2, col = v_col_for(v))
+      text(0.92, yi, pct_label, adj = 1, cex = 0.95, col = "grey20")
+    }
+    text(0.5, 0.06, "* = predicted class", cex = 0.7, col = "grey40")
+  }
 
-  # (1,3) Verdict text panel
-  plot.new(); title(main = "Summary")
-  v <- x$verdict
-  v_col <- switch(v, pass = "darkgreen", warn = "darkorange", fail = "red")
-  text(0.5, 0.92, sprintf("VERDICT: %s", toupper(v)),
-       col = v_col, cex = 1.3, font = 2)
-  text(0.5, 0.78,
-       sprintf("Predicted: %s (P=%.3f)",
-               x$predicted_class, x$predicted_prob), cex = 0.95)
-  text(0.5, 0.68, sprintf("Margin (top1-top2): %.3f", x$margin), cex = 0.9)
-  text(0.5, 0.55,
-       sprintf("Obs in predicted class: %s",
-               ifelse(x$obs_in_predicted_class, "YES", "NO")), cex = 0.9)
-  text(0.5, 0.45,
-       sprintf("Obs in any class: %s",
-               ifelse(x$obs_in_any_class, "YES", "NO")), cex = 0.9)
-  text(0.5, 0.30, sprintf("Latent dims: %d", x$n_latent_dims),
-       cex = 0.85, col = "grey40")
-  if (!is.null(x$pretrain) && !is.null(x$pretrain$verdict))
-    text(0.5, 0.20, sprintf("Pretrain verdict: %s",
-                             toupper(x$pretrain$verdict)),
-         cex = 0.85, col = "grey40")
+  # (1,2) k-NN per-class verdict
+  one_method_panel(x$latent_nn, x$class_names, x$predicted_class,
+                   sprintf("k-NN k=%d  (Sun 2022)",
+                           if (!is.null(x$knn.k)) x$knn.k else 10L))
 
-  # (2,1) Latent scatter -- Z1 vs LOO-NN distance in full latent space
-  # (per class). Same convention as OOD.pretrain() PCA panel: X = Z1,
-  # Y = LOO-NN to nearest same-class sim in full latent. K obs markers,
-  # one per class, at (Z1_obs, obs-to-nearest-class-k).
-  if (!is.null(x$latent_scores) && ncol(x$latent_scores) >= 2L) {
-    sc <- x$latent_scores
-    so <- x$latent_score_obs
-    # Reconstruct per-row LOO-NN distance from per-class null_distribution.
+  # (1,3) Mahalanobis per-class verdict
+  one_method_panel(x$latent_mahal, x$class_names, x$predicted_class,
+                   "Mahalanobis  (Lee 2018)")
+
+  # ---- Bottom-row scatter helper ----
+  # X = Latent Z1, Y = per-sim LOO distance in the chosen metric. Per-class
+  # color; obs marked once per class at (Z1_obs, obs-to-class-k distance).
+  scatter_panel <- function(sc, so, per_class_list, ylab_text, title_main) {
     sim_loo <- rep(NA_real_, nrow(sc))
     for (k in seq_len(K)) {
       cn <- x$class_names[k]
       rows <- which(x$latent_class_id == k)
-      nd <- x$latent_nn[[cn]]$null_distribution
+      nd <- per_class_list[[cn]]$null_distribution
       if (length(rows) >= 2L && length(nd) == length(rows))
         sim_loo[rows] <- nd
     }
-    obs_d <- vapply(x$latent_nn, function(e) e$d_obs, numeric(1))
-
+    obs_d <- vapply(per_class_list, function(e)
+      if (is.null(e$d_obs)) NA_real_ else e$d_obs, numeric(1))
     cls_v <- cols[x$class_names[x$latent_class_id]]
     y_all <- c(sim_loo, obs_d)
     y_all <- y_all[is.finite(y_all) & y_all > 0]
@@ -1992,10 +2362,8 @@ OOD.posttrain.classify <- function(classifier, observed, reftable,
          col = adjustcolor(cls_v, 0.5), pch = 16, cex = 0.5,
          log = if (use_log_y) "y" else "",
          xlab = "Latent Z1 (z-scored)",
-         ylab = sprintf("LOO-NN distance in full %d-D latent space",
-                        x$n_latent_dims),
-         main = sprintf("Classifier latent: Z1 vs LOO-NN (%d dims)",
-                        x$n_latent_dims))
+         ylab = ylab_text,
+         main = title_main)
     for (k in seq_len(K)) {
       cn <- x$class_names[k]
       if (!is.na(obs_d[k]))
@@ -2004,53 +2372,69 @@ OOD.posttrain.classify <- function(classifier, observed, reftable,
     }
     legend("topright", legend = c(x$class_names, "obs (per class)"),
            col = c(cols, "black"), pch = c(rep(16, K), 8),
-           pt.cex = c(rep(1, K), 1.6), cex = 0.7, bty = "n")
+           pt.cex = c(rep(1, K), 1.6), cex = 0.65, bty = "n")
+  }
+
+  # (2,1) k-NN scatter
+  if (!is.null(x$latent_scores) && ncol(x$latent_scores) >= 2L) {
+    scatter_panel(
+      x$latent_scores, x$latent_score_obs, x$latent_nn,
+      sprintf("LOO k-NN distance (full %d-D latent)", x$n_latent_dims),
+      sprintf("Latent: Z1 vs LOO k-NN (k=%d, %d dims)",
+              if (!is.null(x$knn.k)) x$knn.k else 10L, x$n_latent_dims))
   } else {
-    plot.new(); title(main = "Latent scatter -- unavailable")
+    plot.new(); title(main = "k-NN scatter -- unavailable")
   }
 
-  # (2,2) Per-class LOO-NN null with d_obs marker
-  d_obs_vec <- vapply(x$latent_nn, function(e) e$d_obs, numeric(1))
-  null_max <- suppressWarnings(max(c(
-    unlist(lapply(x$latent_nn, function(e) e$null_distribution)),
-    d_obs_vec), na.rm = TRUE))
-  if (!is.finite(null_max) || null_max <= 0) null_max <- 1
-  plot(NULL, xlim = c(0, null_max * 1.05),
-       ylim = c(0.3, K + 0.7), yaxt = "n",
-       xlab = "z-scored latent NN distance", ylab = "",
-       main = "LOO-NN null per class (| = d_obs)")
-  axis(2, at = seq_len(K), labels = x$class_names,
-       las = 1, cex.axis = 0.75)
-  for (k in seq_len(K)) {
-    cn <- x$class_names[k]
-    e <- x$latent_nn[[cn]]
-    if (length(e$null_distribution) == 0) next
-    qs <- quantile(e$null_distribution,
-                   probs = c(0.025, 0.25, 0.5, 0.75, 0.975), na.rm = TRUE)
-    segments(qs[1], k, qs[5], k,
-             col = adjustcolor(cols[cn], 0.5), lwd = 2)
-    rect(qs[2], k - 0.18, qs[4], k + 0.18,
-         col = adjustcolor(cols[cn], 0.6), border = cols[cn])
-    segments(qs[3], k - 0.22, qs[3], k + 0.22, col = "black", lwd = 1.5)
-    if (!is.na(e$d_obs))
-      segments(e$d_obs, k - 0.32, e$d_obs, k + 0.32,
-               col = "black", lwd = 2.5)
+  # (2,2) Mahalanobis scatter
+  if (!is.null(x$latent_scores) && ncol(x$latent_scores) >= 2L) {
+    scatter_panel(
+      x$latent_scores, x$latent_score_obs, x$latent_mahal,
+      "LOO Mahalanobis distance (pooled Sigma)",
+      "Latent: Z1 vs LOO Mahalanobis")
+  } else {
+    plot.new(); title(main = "Mahalanobis scatter -- unavailable")
   }
 
-  # (2,3) d_obs / median d_loo per class
-  med_loo <- vapply(x$latent_nn, function(e)
-    if (length(e$null_distribution) == 0) NA_real_
-    else median(e$null_distribution, na.rm = TRUE), numeric(1))
-  ratio <- d_obs_vec / med_loo
-  ratio[!is.finite(ratio)] <- 0
-  ratio_col <- ifelse(ratio <= 1, "darkgreen", "red")
-  border_col <- ifelse(names(ratio) == x$predicted_class, "black", "white")
-  barplot(ratio, col = ratio_col, border = border_col,
-          names.arg = x$class_names, las = 2,
-          ylim = c(0, max(ratio, 1) * 1.18),
-          main = "d_obs / median d_loo  (>1 = obs outside)",
-          ylab = "ratio")
-  abline(h = 1, lty = 2, col = "grey40")
+  # (2,3) Prediction summary text panel
+  plot.new(); title(main = "Prediction summary")
+  text(0.5, 0.92, sprintf("Predicted class : %s", x$predicted_class),
+       cex = 1.0, font = 2)
+  text(0.5, 0.82, sprintf("P(class | obs) : %.3f", x$predicted_prob), cex = 0.9)
+  text(0.5, 0.74, sprintf("Margin (top1-top2) : %.3f", x$margin), cex = 0.9)
+  if (!is.null(x$log10_bf_runner_up) && is.finite(x$log10_bf_runner_up)) {
+    bf_lab <- if (!is.null(x$bf_runner_up_label)) x$bf_runner_up_label else "--"
+    text(0.5, 0.65, sprintf("log10 BF (vs runner-up) : %.2f  [%s]",
+                            x$log10_bf_runner_up, bf_lab),
+         cex = 0.9, col = "grey20")
+  }
+  # Per-class BF list (predicted vs each other)
+  if (!is.null(x$bayes_factor)) {
+    text(0.5, 0.55, "Bayes factor (pred vs class) :",
+         cex = 0.8, col = "grey40")
+    y_b <- 0.48
+    for (cn in x$class_names) {
+      if (cn == x$predicted_class) next
+      lbf <- x$log10_bayes_factor[[cn]]
+      bf  <- x$bayes_factor[[cn]]
+      bf_str <- if (!is.finite(bf)) "Inf" else
+                if (bf >= 100) sprintf("%.1f", bf) else
+                sprintf("%.2f", bf)
+      lbf_str <- if (!is.finite(lbf)) "Inf" else sprintf("%.2f", lbf)
+      text(0.5, y_b,
+           sprintf("vs %s : BF=%s  log10=%s", cn, bf_str, lbf_str),
+           cex = 0.8, col = "grey20")
+      y_b <- y_b - 0.07
+    }
+  }
+  text(0.5, 0.20, sprintf("Latent dims : %d", x$n_latent_dims),
+       cex = 0.8, col = "grey40")
+  text(0.5, 0.12,
+       sprintf("Obs in predicted class : %s",
+               ifelse(x$obs_in_predicted_class, "YES", "NO")), cex = 0.85)
+  text(0.5, 0.05,
+       sprintf("Obs in any class : %s",
+               ifelse(x$obs_in_any_class, "YES", "NO")), cex = 0.85)
 }
 
 

@@ -38,7 +38,7 @@
 #'   \item{param_names}{parameter column names}
 #' }
 #'
-#' @export
+#' @noRd
 abc.rejection <- function(reftable, observed,
                           param.cols,
                           tol = 0.01,

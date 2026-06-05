@@ -321,9 +321,9 @@ OOD.projection.diagnose <- function(ood_result, basis = NULL,
 #'     \code{K_frac}, but reuses the projection that was already fit.
 #'   \item \code{posterior =} (external): the function consumes any
 #'     posterior object with an \code{$abc} matrix of accepted parameter
-#'     samples — e.g., from \code{abc.rejection()}, or any future
-#'     ABC/NPE method that returns class \code{"posterior"}. The
-#'     \code{reftable} is required to extract empirical prior bounds.
+#'     samples — e.g., from \code{nn.predict(method = "ABC_NN_regression")},
+#'     or any future ABC/NPE method that returns class \code{"posterior"}.
+#'     The \code{reftable} is required to extract empirical prior bounds.
 #' }
 #'
 #' Prior bounds are inferred from the empirical \code{min}/\code{max} of
@@ -341,7 +341,8 @@ OOD.projection.diagnose <- function(ood_result, basis = NULL,
 #' @param ood_result output of \code{OOD.pretrain()} (or \code{OOD.posttrain()}).
 #'   Mutually exclusive with \code{posterior}.
 #' @param posterior object of class \code{"posterior"} (e.g., from
-#'   \code{abc.rejection()}). Mutually exclusive with \code{ood_result}.
+#'   \code{nn.predict(method = "ABC_NN_regression")}). Mutually exclusive
+#'   with \code{ood_result}.
 #' @param reftable data.frame — required when \code{posterior} is given,
 #'   for extracting empirical prior bounds.
 #' @param K_frac numeric — fraction of sims to keep as nearest neighbors
@@ -384,7 +385,7 @@ OOD.priors.bestfit <- function(ood_result = NULL,
   if (!is.null(posterior)) {
     # Mode B: external posterior
     if (!inherits(posterior, "posterior"))
-      stop("posterior must be of class 'posterior' (e.g., from abc.rejection()).")
+      stop("posterior must be of class 'posterior' (e.g., from nn.predict(method = 'ABC_NN_regression')).")
     if (is.null(posterior$abc))
       stop("posterior must contain $abc (matrix of accepted samples).")
     if (is.null(reftable))

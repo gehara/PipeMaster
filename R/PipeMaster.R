@@ -38,12 +38,6 @@
 #' high-dimensional joint SFS for tractable inference; [plot.2D.sfs()]
 #' visualises 2D joint spectra in the dadi/moments convention.
 #'
-#' @section ABC inference:
-#' [abc.rejection()] performs rejection sampling with standard-deviation,
-#' median-absolute-deviation, or Mahalanobis distance, with optional PLS
-#' pre-projection. Returns objects of class \code{"posterior"} with
-#' \code{summary}, \code{plot}, \code{print}, and \code{density} methods.
-#'
 #' @section Neural-network inference:
 #' [tune.nn()] tunes ResNet (summary statistics) or 1D/2D CNN (SFS)
 #' regression architectures via Hyperband, optionally in parallel across

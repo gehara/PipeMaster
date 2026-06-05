@@ -20,9 +20,8 @@ with the package — no external downloads are needed.
 2. [Example Models](#2-example-models)
 3. [Computing Observed Statistics](#3-computing-observed-statistics)
 4. [Simulating Reference Tables](#4-simulating-reference-tables)
-5. [ABC Rejection](#5-abc-rejection)
-6. [Supervised Machine Learning (SML)](#6-supervised-machine-learning)
-7. [Out-of-Distribution Diagnostics](#7-out-of-distribution-diagnostics)
+5. [Supervised Machine Learning (SML)](#5-supervised-machine-learning)
+6. [Out-of-Distribution Diagnostics](#6-out-of-distribution-diagnostics)
 
 ---
 
@@ -41,9 +40,13 @@ Load the package:
 library(PipeMaster)
 ```
 
-PipeMaster requires `ape`, `e1071`, and `msm` (installed automatically).
-For the Shiny GUI, you also need `shiny`, `shinydashboard`, `shinyjs`, and
-`DT`. For the torch neural network backend, install the `torch` package.
+PipeMaster requires `ape`, `e1071`, `msm`, and `torch` (installed
+automatically). `torch` powers all neural-network paths (`tune.nn()`,
+`nn.predict()`, classifier, and OOD diagnostics) and pulls in `luz` as a
+transitive dependency. For the Shiny GUI, you also need `shiny`,
+`shinydashboard`, `shinyjs`, and `DT`. For accelerated parallel
+Hyperband, install `bigmemory` (Suggested); for OOD nearest-neighbor
+diagnostics, install `RANN` (Suggested).
 
 ### Simulation engines
 
@@ -150,14 +153,30 @@ list.files(extdir)
 # [2] "obs_allstats_wgs.txt"     "pop_assign.txt"
 # [3] "Vaquita2Epoch_RAD.vcf"
 
-# Load model
+# Load model (object is named Vaquita2Epoch_WGS_informative)
 load(file.path(extdir, "model_informative.RData"))
-model <- get(ls(pattern = "Vaquita"))
+model <- Vaquita2Epoch_WGS_informative
 
 # File paths
 vcf_file <- file.path(extdir, "Vaquita2Epoch_RAD.vcf")
 pop_file <- file.path(extdir, "pop_assign.txt")
 ```
+
+The shipped model is WGS-configured (10,000 loci × 100,000 bp). If you
+want to use it with a different locus structure — your own RAD VCF, a
+PHYLIP alignment, or the bundled `Vaquita2Epoch_RAD.vcf` — align the model
+to your data first with `get.data.structure()`:
+
+```r
+# Align model's locus structure to the data (number of loci + locus lengths)
+model <- get.data.structure(model,
+                            path.to.vcf = vcf_file,
+                            pop.assign  = pop_file)
+```
+
+This rewrites `model$loci` to match the data. Skip this step if you're
+using the pre-computed WGS observed stats below (which were computed
+against the original WGS model).
 
 ---
 
@@ -205,6 +224,66 @@ obs_wgs <- read.table(
 )
 ```
 
+### Suggesting prior bounds from observed stats
+
+Before simulating, you can use `suggest.priors()` to derive starting-point
+prior bounds from the observed summary statistics. The function uses
+classical population-genetic moment estimators:
+
+- **Ne** from \pi/(4\mu) and \theta_W/(4\mu) (per population)
+- **Ancestral Ne** from average of daughter populations
+- **Divergence time** from `T = -2*Ne*log(1 - Fst)` (pure isolation)
+- **Migrants per generation** from `Nm = (1 - Fst)/(4*Fst)` (drift-migration equilibrium)
+
+The bounds are `[est / expand_factor, est * expand_factor]` (default
+expand_factor = 10, ~2 orders of magnitude around the point estimate).
+
+```r
+# Compute observed stats first (see above)
+# Then derive priors:
+model <- suggest.priors(
+  model         = model,
+  obs           = obs,         # 1-row data.frame from observed.sumstats()
+  mu            = 5.83e-9,     # per bp per generation
+  expand_factor = 10
+)
+
+# Output (verbose):
+# PipeMaster:: suggest.priors  mu=5.83e-09  locus_length=100  expand_factor=10  npops=1  mig_scale=Nm
+#   NOTE: these are STARTING-POINT priors from classical moment estimators.
+#         Moment estimators (pi/(4mu), thetaW/(4mu), Fst-based T and Nm)
+#         assume stationarity/equilibrium and are time-averaged. Under
+#         expansion, bottleneck, structure, or selection, they can be
+#         biased by an order of magnitude. Do not trust them blindly:
+#           - run OOD.pretrain() to check obs lies inside the prior support;
+#           - inspect whether the posterior pushes against any prior bound;
+#           - widen expand_factor or set bounds manually if it does.
+#   pop 1: Ne_pi=3940  Ne_W=3643  Ne_est=3792  Hd=0.009  TajD=0.004
+#   Updated 3 prior rows: Ne0.pop1, Ne1.pop1, t.Ne1.pop1
+```
+
+The function writes the suggested `lo`/`hi` directly into `model$flags`
+and attaches a `model$prior_suggestions` list with the point estimates,
+per-pair Fst readings, and any warnings.
+
+**Caveats** (also printed in the NOTE above):
+
+- Moment estimators are **time-averaged**. Under expansion (Ne0 >> Ne1),
+  \pi/(4\mu) sits closer to Ne1 than Ne0 — the present-day Ne can be
+  10x larger than the suggested upper bound.
+- Tajima's D is reported but **no expansion/bottleneck/constant verdict
+  is made** — `|D| < 0.5` is too noisy to call, and even larger |D| can
+  reflect selection or structure rather than demography.
+- For multi-population models, a single pairwise Fst cannot be decomposed
+  into divergence time and migration. The function reports both readings
+  (`T_iso` under pure isolation, `Nm_eq` under drift-migration equilibrium)
+  and uses `fixed/(fixed+shared)` as a soft tiebreaker, but always issues
+  a per-pair warning. Treat both priors as upper bounds.
+
+Always validate suggested priors with `OOD.pretrain()` (Section 6) before
+running a large reference table. If the posterior later pushes against any
+bound, widen `expand_factor` or set the bound manually.
+
 ---
 
 ## 4. Simulating Reference Tables
@@ -220,8 +299,8 @@ For short loci (e.g., 100 bp RAD-seq), use `sim.sumstats()`:
 ```r
 sim.sumstats(
   model       = model,
-  nsim.blocks = 10,       # blocks per worker
-  block.size  = 10,       # simulations per block
+  nsims       = 10000,    # total number of simulations
+  batch.size  = 10,       # simulations per C call (controls memory + progress)
   mu.rates    = 5.83e-9,  # mutation rate per bp per gen
   ncores      = 4,        # parallel workers
   path        = "output/vaquita",
@@ -230,8 +309,9 @@ sim.sumstats(
 # Output: output/vaquita/SIMS_reftable.txt
 ```
 
-Total simulations = nsim.blocks x block.size x ncores. For the Vaquita
-model with 3 parameters, 10,000-50,000 simulations are sufficient.
+`batch.size` controls memory usage and progress-reporting granularity, not
+the simulation total. For the Vaquita model with 3 parameters,
+10,000–50,000 simulations are sufficient.
 
 ### WGS reference table (scrm engine)
 
@@ -241,16 +321,20 @@ For long loci with recombination (e.g., 100 kb WGS), use
 ```r
 sim.scrm.sumstats(
   model       = model,
-  nsim.blocks = 10,
-  block.size  = 10,
+  nsims       = 10000,    # total number of simulations
+  batch.size  = 32,       # simulations per C call (scrm default)
   mu.rates    = 5.83e-9,  # mutation rate
   rec.rates   = 1e-8,     # recombination rate
-  skip.zns    = TRUE,     # skip ZnS (O(segsites^2))
+  skip.zns    = TRUE,     # skip ZnS (O(segsites^2)); default TRUE for WGS
   ncores      = 4,
   path        = "output/vaquita_wgs",
   output.name = "reftable"
 )
 ```
+
+For pathological priors that occasionally generate runaway ARGs, pass
+`stall.seconds = 600` to enable a head-side worker watchdog that kills
+any worker whose log file hasn't progressed in that many seconds.
 
 ### Loading a reference table
 
@@ -273,44 +357,7 @@ stat_cols  <- setdiff(colnames(reftable), c(param_cols, nuisance))
 
 ---
 
-## 5. ABC Rejection
-
-`abc.rejection()` performs ABC with optional PLS distance projection.
-It accepts the simulated reference table and observed statistics, and
-returns posterior samples at multiple tolerance levels.
-
-```r
-# Prepare observed vector (matching stat columns)
-obs_raw <- as.numeric(obs[1, stat_cols])
-
-# Run ABC rejection at three tolerance levels
-result <- abc.rejection(
-  reftable   = reftable,
-  observed   = obs_raw,
-  param.cols = param_cols,
-  tol        = 0.01,       # accept closest 1%
-  distance   = "sd",       # standardized Euclidean distance
-  pls        = TRUE,       # PLS distance projection
-  verbose    = TRUE
-)
-
-# Point estimate (weighted median of accepted simulations)
-result$point_estimate
-
-# Posterior samples
-head(result$abc)
-```
-
-### Plotting ABC posteriors
-
-```r
-true_vals <- c(Ne0.pop1 = 2807, Ne1.pop1 = 4485, t.Ne1.pop1 = 2162)
-plot(result, true_values = true_vals, show_prior = TRUE)
-```
-
----
-
-## 6. Supervised Machine Learning
+## 5. Supervised Machine Learning
 
 PipeMaster's SML pipeline trains a neural network to learn the mapping from
 summary statistics to parameters, then predicts parameters for the observed
@@ -329,8 +376,8 @@ tune_result <- tune.nn(
   n_searches   = 20,       # parallel Hyperband searches
   top_k        = 3,        # keep top 3 models as ensemble
   cores        = 4,        # parallel workers
+  gpus         = 0,        # set to 1+ to use CUDA-capable GPUs
   seed         = 42,
-  backend      = "torch",  # or "keras"
   verbose      = TRUE
 )
 
@@ -338,24 +385,44 @@ tune_result <- tune.nn(
 save.tune.result(tune_result, "output/vaquita/tune_result")
 ```
 
-The `backend` parameter selects the neural network framework:
-- `"torch"` — pure R, no Python dependency, lower memory usage
-- `"keras"` — requires Python + TensorFlow, slightly faster training
+`tune.nn()` runs Hyperband across `n_searches` parallel workers. With
+`gpus > 0`, the slowest brackets are routed to GPU workers via
+`CUDA_VISIBLE_DEVICES`; set `gpu.threshold = N` to switch from CPU to GPU
+once a Hyperband bracket reaches model budget `N` epochs.
 
 ### Step 2: Prediction with `nn.predict()`
 
+`nn.predict()` runs one of three uncertainty methods per call. Call it
+twice — once for the bootstrap interval, once for the ABC-NN-regression
+posterior — and merge them if you want both.
+
 ```r
-pred <- nn.predict(
+# Locally-weighted residual bootstrap (frequentist prediction interval)
+post_boot <- nn.predict(
   tune_result,
   observed   = obs_raw,
   reftable   = reftable,
   param.cols = param_cols,
-  method     = c("bootstrap", "ABC_NN_regression"),
+  method     = "bootstrap",
   n_boot     = 5000,       # bootstrap resamples
-  tolerance  = 0.05,       # ABC-NN acceptance tolerance
-  seed       = 42,
-  verbose    = TRUE
+  seed       = 42, verbose = TRUE
 )
+
+# ABC-with-NN-regression (proper Bayesian posterior)
+post_abc <- nn.predict(
+  tune_result,
+  observed   = obs_raw,
+  reftable   = reftable,
+  param.cols = param_cols,
+  method     = "ABC_NN_regression",
+  tolerance  = 0.05,       # ABC acceptance fraction
+  seed       = 42, verbose = TRUE
+)
+
+# Merge into a single posterior object (both slots populated for plotting)
+pred <- post_abc
+pred$bootstrap <- post_boot$bootstrap
+class(pred) <- "posterior"
 
 # Point estimate (weighted ensemble prediction)
 pred$point_estimate
@@ -370,6 +437,9 @@ Two uncertainty methods are available:
   residuals. Captures prediction uncertainty without reference to the prior.
 - **ABC-NN regression**: Beaumont et al. (2002) regression adjustment.
   Proper Bayesian posterior incorporating prior and likelihood.
+
+A third method, `method = "point"`, returns only the ensemble point
+estimate without uncertainty quantification.
 
 ### Step 3: Plot posteriors
 
@@ -388,7 +458,7 @@ tune_result <- load.tune.result("output/vaquita/tune_result")
 
 ---
 
-## 7. Out-of-Distribution Diagnostics
+## 6. Out-of-Distribution Diagnostics
 
 PipeMaster splits OOD checks into two tiers, run at different points in
 the pipeline:
@@ -462,12 +532,12 @@ OOD.projection.diagnose(post, basis = "nn_latent", pdf_file = "proj_post.pdf")
 
 ### Diagnosing prior bounds
 
-Two complementary helpers; use both.
+If priors were set with `suggest.priors()` (Section 3), this is the
+validation step. Two complementary helpers; use both.
 
 **Best-fit boundary pressure** — for the simulations that fit obs best
-(rejection-ABC posterior), where do their params cluster within the prior
-range? Mechanically equivalent to running `abc.rejection(pls=TRUE)` and
-checking whether the accepted samples press the prior bounds.
+(nearest-neighbor posterior in PLS space), where do their params cluster
+within the prior range? Reuses the cached PLS scores from `OOD.pretrain()`.
 
 ```r
 # Mode A: in-pipeline (uses cached PLS scores, fast)
@@ -477,11 +547,12 @@ bf <- OOD.priors.bestfit(ood_result = pre,
                          pdf_file = "ood_priors_bestfit.pdf")
 print(bf$table[bf$table$edge_pressure != "ok", ])
 
-# Mode B: with explicit ABC (full reftable, tunable distance)
-post <- abc.rejection(reftable, obs_raw, param_cols,
-                      tol = 0.01, pls = TRUE, n.pls = 30)
-bf   <- OOD.priors.bestfit(posterior = post, reftable = reftable,
-                            pdf_file = "ood_priors_bestfit.pdf")
+# Mode B: with an explicit posterior (e.g., from nn.predict ABC-NN regression)
+post_abc <- nn.predict(tune_result, observed = obs_raw,
+                       reftable = reftable, param.cols = param_cols,
+                       method = "ABC_NN_regression", tolerance = 0.05)
+bf <- OOD.priors.bestfit(posterior = post_abc, reftable = reftable,
+                         pdf_file = "ood_priors_bestfit.pdf")
 ```
 
 Pairs with `OOD.projection.diagnose(basis = "pls")`: the param Y-loadings
@@ -562,8 +633,8 @@ The GUI provides:
 - Prior distribution specification with real-time validation
 - Migration rate configuration (Nm or m scale)
 - Condition constraints (parameter ordering, equality)
-- Model visualization with `PlotModel()`
-- Export to R object or file
+- Live demographic plot with colorblind-safe palettes
+- Export to R object, file, or PDF figure
 
 ---
 

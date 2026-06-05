@@ -22,7 +22,8 @@ OOD.priors.bestfit(
 Mutually exclusive with \code{posterior}.}
 
 \item{posterior}{object of class \code{"posterior"} (e.g., from
-\code{abc.rejection()}). Mutually exclusive with \code{ood_result}.}
+\code{nn.predict(method = "ABC_NN_regression")}). Mutually exclusive
+with \code{ood_result}.}
 
 \item{reftable}{data.frame — required when \code{posterior} is given,
 for extracting empirical prior bounds.}
@@ -72,9 +73,9 @@ Two input modes (mutually exclusive):
     \code{K_frac}, but reuses the projection that was already fit.
   \item \code{posterior =} (external): the function consumes any
     posterior object with an \code{$abc} matrix of accepted parameter
-    samples — e.g., from \code{abc.rejection()}, or any future
-    ABC/NPE method that returns class \code{"posterior"}. The
-    \code{reftable} is required to extract empirical prior bounds.
+    samples — e.g., from \code{nn.predict(method = "ABC_NN_regression")},
+    or any future ABC/NPE method that returns class \code{"posterior"}.
+    The \code{reftable} is required to extract empirical prior bounds.
 }
 
 Prior bounds are inferred from the empirical \code{min}/\code{max} of

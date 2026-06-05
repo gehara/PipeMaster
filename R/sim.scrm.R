@@ -44,6 +44,12 @@
 #'   Default is FALSE.
 #' @param append.sims Logical. If TRUE, append to existing file.
 #' @param verbose Logical. Print progress messages.
+#' @param stall.seconds Numeric or NULL. Per-worker stall timeout in seconds
+#'   for the head-node watchdog. If a worker's log file mtime has not advanced
+#'   for more than \code{stall.seconds}, the head kills the worker via
+#'   \code{SIGKILL} and treats its already-completed blocks as the final output
+#'   (recovered from the worker subdir). \code{NULL} (default) disables the
+#'   watchdog. See \code{Details} for sensible values per data regime.
 #' @return Invisibly returns the output file path. Writes results to
 #'   SIMS_<output.name>.txt in the specified path.
 #'
@@ -65,6 +71,27 @@
 #' Multi-core parallelism uses independent Rscript worker processes
 #' (same approach as \code{sim.sumstats()}).
 #'
+#' Under wide priors, a small fraction of parameter draws produce pathological
+#' ARGs that can take orders of magnitude longer than typical sims to complete.
+#' One stuck sim blocks an entire worker (each worker is single-threaded over
+#' its assigned blocks), and the head waits for all workers to finish before
+#' compiling the final reftable. The \code{stall.seconds} watchdog runs in the
+#' head: if a worker's per-block progress (tracked via its log mtime) stops
+#' advancing for more than \code{stall.seconds}, the worker is killed and its
+#' already-completed blocks are salvaged from its subdir during the compile
+#' step. The reftable will contain fewer rows than requested when this fires.
+#'
+#' Sensible \code{stall.seconds} values depend on the per-block wall time
+#' (= \code{batch.size} x typical-sim-time). For reference, batch.size = 32 with:
+#' \itemize{
+#'   \item RAD / short-locus (typical sim ~ seconds): try 300 (5 min)
+#'   \item pseudo-WGS 100 kb informative (typical block ~ minutes): try 1800
+#'   \item real-WGS informative (typical block ~ 90 min): try 18000 (5 h)
+#'   \item real-WGS diffuse, OoA-scale (typical block ~ 3.3 h): try 36000 (10 h)
+#' }
+#' Tighten when the typical block time is well below the threshold; loosen if
+#' you see false positives on the slow tail.
+#'
 #' @export
 sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
                            mu.rates, rec.rates,
@@ -72,6 +99,7 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
                            ncores = 1, path = ".", output.name = "scrm",
                            variable_samples = FALSE,
                            append.sims = FALSE, verbose = TRUE,
+                           stall.seconds = NULL,
                            .parent.pid.file = NULL) {
 
   if (is.null(model$use.alpha))
@@ -114,6 +142,12 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
   }
   .validate_rate_spec(mu.rates,  "mu.rates")
   .validate_rate_spec(rec.rates, "rec.rates")
+
+  if (!is.null(stall.seconds) && (!is.numeric(stall.seconds) ||
+                                  length(stall.seconds) != 1L ||
+                                  !is.finite(stall.seconds) ||
+                                  stall.seconds <= 0))
+    stop("stall.seconds must be a single positive number, or NULL to disable.")
 
   mu_is_distribution  <- is.list(mu.rates)  && !is.null(mu.rates$distribution)
   rec_is_distribution <- is.list(rec.rates) && !is.null(rec.rates$distribution)
@@ -259,6 +293,7 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
     total_expected <- nsim.blocks * batch.size * ncores
     prev_total_sims <- -1
     prev_done_count <- -1
+    killed_workers <- integer(0)
     while (TRUE) {
       Sys.sleep(5)
       done_count <- sum(file.exists(file.path(abs_path,
@@ -289,6 +324,31 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
                     done_count, ncores))
         prev_total_sims <- total_sims_done
         prev_done_count <- done_count
+      }
+
+      # Watchdog: kill workers whose log file mtime has not advanced for
+      # more than stall.seconds. The worker's already-completed blocks are
+      # left on disk for the compile step to pick up.
+      if (!is.null(stall.seconds)) {
+        for (w in setdiff(seq_len(ncores), killed_workers)) {
+          done_f <- file.path(abs_path, sprintf(".scrm_worker_%d.done", w))
+          if (file.exists(done_f)) next
+          log_f  <- file.path(abs_path, sprintf(".scrm_worker_%d.log", w))
+          if (!file.exists(log_f)) next
+          age <- as.numeric(difftime(Sys.time(), file.mtime(log_f),
+                                     units = "secs"))
+          if (age > stall.seconds) {
+            pid <- if (length(worker_pids_env$pids) >= w)
+                     worker_pids_env$pids[w] else NA_integer_
+            cat(sprintf("PipeMaster:: worker %d stalled %.0f sec (>%.0f), killing PID %s\n",
+                        w, age, stall.seconds,
+                        if (is.na(pid)) "?" else as.character(pid)))
+            if (!is.na(pid))
+              try(tools::pskill(pid, signal = tools::SIGKILL), silent = TRUE)
+            writeLines("killed", done_f)
+            killed_workers <- c(killed_workers, w)
+          }
+        }
       }
 
       if (done_count >= ncores) break
@@ -322,6 +382,12 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
     elapsed_h <- as.numeric(difftime(end_time, start_time, units = "hours"))
     cat(sprintf("PipeMaster:: Done! %d simulations in %.3f hours (~%d sims/h)\n",
                 total_expected, elapsed_h, round(total_expected / elapsed_h)))
+    if (length(killed_workers) > 0) {
+      cat(sprintf("PipeMaster:: %d worker(s) killed by stall watchdog (>%g sec): %s\n",
+                  length(killed_workers), stall.seconds,
+                  paste(killed_workers, collapse = ", ")))
+      cat("PipeMaster:: their completed blocks were salvaged into the final reftable.\n")
+    }
 
   } else {
     ############### Single-core path
