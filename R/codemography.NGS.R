@@ -33,6 +33,7 @@ sim.coexp.ngs<-function(nsims_or_hmodel,
                     gene.prior = NULL,
                     mu.rates = NULL,
                     alpha = NULL,
+                    model = NULL,
                     append.sims=FALSE,
                     block.size=100,
                     path=getwd())
@@ -51,6 +52,7 @@ sim.coexp.ngs<-function(nsims_or_hmodel,
     if (is.null(gene.prior)) gene.prior <- hm$gene.prior
     if (is.null(mu.rates))   mu.rates   <- hm$mu.rates
     if (is.null(alpha))      alpha      <- hm$alpha
+    if (is.null(model))      model      <- if (!is.null(hm$model)) hm$model else "single"
   } else if (is.numeric(nsims_or_hmodel)) {
     # Legacy mode: first arg is nsims
     nsims <- nsims_or_hmodel
@@ -59,6 +61,7 @@ sim.coexp.ngs<-function(nsims_or_hmodel,
         is.null(gene.prior) || is.null(mu.rates))
       stop("All prior arguments are required in legacy mode (when first argument is numeric nsims)")
     if (is.null(alpha)) alpha <- FALSE
+    if (is.null(model)) model <- "single"
   } else {
     stop("First argument must be an hModel object or a numeric nsims value")
   }
@@ -66,25 +69,53 @@ sim.coexp.ngs<-function(nsims_or_hmodel,
   setwd(path)
   on.exit(setwd(WD))
 
-  if(!append.sims){
-    simulations<-matrix(nrow=1,ncol=28)
-    simulations[1,]<-c("zeta","ts","E(t)","DI",
-                       "s_mean_segs", "s_mean_pi", "s_mean_w", "s_mean_tajd", "s_mean_dvk", "s_mean_dvh",
-                       "s_var_segs", "s_var_pi", "s_var_w", "s_var_tajd", "s_var_dvk", "s_var_dvh",
-                       "s_kurt_segs", "s_kurt_pi", "s_kurt_w", "s_kurt_tajd", "s_kurt_dvk", "s_kurt_dvh",
-                       "s_skew_segs", "s_skew_pi", "s_skew_w", "s_skew_tajd", "s_skew_dvk", "s_skew_dvh")
+  ## --- Column header for the simulation output ---------------------------
+  ## Panel: zeta, ts, E(t), DI                                  (4 hyperparams)
+  ## + per-species 4 within-species moments x 7 stats           (28 features/species)
+  ## + 8 across-species summaries                               x 28 = 224 hyper-stats
+  ## Naming:
+  ##   within (msABC native): s_{mean,var,skew,kurt}_{segs,pi,thetaW,tajd,ZnS,nhap,Hd}
+  ##   across (this aggregator): h_{mean,var,q25,q50,q75,mad,skew,kurt}_<within>
+  WITHIN_STATS    <- c("segs", "pi", "thetaW", "tajd", "ZnS", "nhap", "Hd")
+  WITHIN_MOMENTS  <- c("mean", "var", "skew", "kurt")
+  ACROSS_FEATURES <- c("hmean", "hvar", "hq25", "hq50", "hq75", "hmad", "hskew", "hkurt")
+  within_names <- as.vector(outer(WITHIN_MOMENTS, WITHIN_STATS,
+                                  function(m, s) paste0("s_", m, "_", s)))
+  hyper_names  <- as.vector(outer(ACROSS_FEATURES, within_names,
+                                  function(a, w) paste0(a, "_", w)))
+  N_HYPER <- length(hyper_names)   # 8 * 28 = 224
 
-    write.table(simulations, file="simulations.txt", quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
+  if(!append.sims){
+    nsp_hdr <- nrow(Ne.prior)
+    sp_lbl  <- if (!is.null(Ne.prior$species)) as.character(Ne.prior$species)
+               else as.character(Ne.prior[, 1])
+    if (length(sp_lbl) != nsp_hdr) sp_lbl <- sprintf("pop_%d", seq_len(nsp_hdr))
+    t_cols <- paste0("t_", sp_lbl)
+    header_row <- c("K", "zeta", "ts", "E(t)", "DI", t_cols, hyper_names)
+    write.table(matrix(header_row, nrow = 1), file = "simulations.txt",
+                quote = FALSE, row.names = FALSE, col.names = FALSE, sep = "\t")
   }
 
   nsim.blocks <- ceiling(nsims / block.size)
 
+  ## LHS-stratify K for the bins model: pre-shuffle a vector of length nsims
+  ## that contains balanced counts of each K in {1..nspecies}. Each block
+  ## consumes the next bs entries. For non-bins models, K is unused at the
+  ## sampler level (zeta is sampled instead).
+  nspecies <- nrow(Ne.prior)
+  K_lhs <- if (model == "bins") {
+    sample(rep(seq_len(nspecies), length.out = nsims))
+  } else NULL
+
+  cat(sprintf("PipeMaster:: sim.coexp.ngs model=%s\n", model))
   for(j in 1:nsim.blocks){
     bs <- min(block.size, nsims - (j-1) * block.size)
+    K_block <- if (!is.null(K_lhs)) K_lhs[((j-1) * block.size + 1):((j-1) * block.size + bs)] else NULL
 
     x <- coexp.sample.pars.msABC(nruns=bs, var.zeta=var.zeta, coexp.prior=coexp.prior, th=th,
                                   Ne.prior=Ne.prior, NeA.prior=NeA.prior, time.prior=time.prior,
-                                  gene.prior=gene.prior)
+                                  gene.prior=gene.prior, model=model,
+                                  K_block=K_block)
 
     y <- coexp.msABC.batch(MS.par=x$MS.par, gene.prior=gene.prior, alpha=alpha,
                            pop.par=x$pop.par, mu.rates=mu.rates)
@@ -109,12 +140,21 @@ coexp.sample.pars.msABC<-function(nruns,
                             Ne.prior,
                             NeA.prior,
                             time.prior,
-                            gene.prior) {
+                            gene.prior,
+                            model = c("single", "PT", "bins"),
+                            K_block = NULL) {
+
+  model <- match.arg(model)
 
   MS.par<-list(NULL)
   pop.par<-list(NULL)
-  coexp.par<-matrix(nrow=nruns,ncol=4)
   nspecies<-nrow(Ne.prior)
+  ## coexp.par columns: K, zeta, Ts, E(t), DI, t_pop_1, ..., t_pop_nspecies
+  ##   K, zeta, Ts, E(t), DI: hyperparams (5)
+  ##   t_pop_i              : per-species realized time (nspecies)
+  ## Per-species times let downstream ABC pool times across accepted sims
+  ## for multimodal "pulse" detection in the time posterior.
+  coexp.par<-matrix(nrow=nruns,ncol=5L + nspecies)
 
   for(i in 1:nspecies){
     mat<-matrix(nrow=nruns,ncol=4)
@@ -124,41 +164,127 @@ coexp.sample.pars.msABC<-function(nruns,
 
   for(j in 1:nruns) {
     time.prior.B<-time.prior
-    if (var.zeta=="FREE") {
-      zeta.space<-1/nspecies # creates prior for n coexpanding species
-      zeta.space<-zeta.space*(1:nspecies) # creates prior for n coexpanding species
-      zeta<-sample(zeta.space,1)
-      zeta.b<-nspecies*zeta
-    } else {
-      zeta<-var.zeta
-      zeta.b<-nspecies*zeta
-    }
 
-    if(zeta.b==1){
-      for(u in 1:nrow(time.prior.B)){
-        time.prior.B[u,3]<-runif(1,time.prior.B[u,3],time.prior.B[u,4])
+    ## --- Time assignment per species --------------------------------------
+    ## single: Ts uniform from coexp.prior; non-coexp species get times from
+    ##         their own per-species time.prior.
+    ## PT    : divide coexp.prior into nspecies equal sub-bins, draw one time
+    ##         from each (the e.t pool), pick Ts from the pool, non-coexp
+    ##         species share the REMAINING pool entries (sampled without
+    ##         replacement). Allows multiple distinct shared times.
+    ## bins  : K-uniform partition model (Variant 3b) with LHS-stratified K
+    ##   and UNIFORM (linear) time bins (flat density over coexp.prior).
+    ##   1. Sample K from the LHS strata (K_block if supplied, else uniform).
+    ##   2. Pick K time bins (without replacement) from nspecies equal-width
+    ##      sub-bins of coexp.prior; one time uniformly from each. Uniform
+    ##      bins -> flat prior density on time, so any posterior clustering
+    ##      is data-driven, not prior-induced.
+    ##   3. Sample K group sizes uniformly from compositions of nspecies
+    ##      into K positive parts (stars-and-bars on nspecies-1 gaps).
+    ##   4. Randomly assign species to groups respecting sizes.
+    ##   K is reported uniformly on {1..nspecies}. zeta is the fraction of
+    ##   species in the largest group; Ts is that group's shared time.
+    if (model == "bins") {
+      K <- if (!is.null(K_block)) K_block[j] else sample.int(nspecies, 1L)
+
+      range <- coexp.prior[2] - coexp.prior[1]
+      step  <- range / nspecies
+      cuts  <- coexp.prior[1] + step * (0:nspecies)
+      chosen_bins <- sort(sample.int(nspecies, K))
+      bin_times   <- vapply(chosen_bins,
+                            function(k) runif(1, cuts[k], cuts[k + 1L]),
+                            numeric(1))
+
+      ## Uniform sample of K positive group sizes summing to nspecies
+      if (K == 1L) {
+        group_sizes <- nspecies
+      } else {
+        divider_pos <- sort(sample.int(nspecies - 1L, K - 1L))
+        group_sizes <- diff(c(0L, divider_pos, nspecies))
       }
-      Ts <-runif(1,coexp.prior[1],coexp.prior[2])
+
+      ## Random species-to-group assignment respecting sizes
+      group_indices  <- rep.int(seq_len(K), group_sizes)
+      species_perm   <- sample.int(nspecies)
+      species_to_grp <- integer(nspecies)
+      species_to_grp[species_perm] <- group_indices
+
+      for (i in seq_len(nspecies)) {
+        t <- bin_times[species_to_grp[i]]
+        time.prior.B[i, c(3, 4)] <- t
+      }
+
+      zeta.b <- max(group_sizes)
+      zeta   <- zeta.b / nspecies
+      Ts     <- bin_times[which.max(group_sizes)]
+
     } else {
+      ## single or PT: sample zeta (number of co-changing species) first.
+      if (var.zeta == "FREE") {
+        zeta.space <- (1:nspecies) / nspecies
+        zeta       <- sample(zeta.space, 1)
+        zeta.b     <- nspecies * zeta
+      } else {
+        zeta   <- var.zeta
+        zeta.b <- nspecies * zeta
+      }
 
-      Ts<-runif(1,coexp.prior[1],coexp.prior[2])
-      coexp.sp<-sort(sample.int(nspecies,zeta.b))
-      time.prior.B[c(coexp.sp),c(3,4)]<-Ts
+    if (model == "PT") {
+      ## Build the e.t pool: one time per sub-bin of coexp.prior
+      range  <- coexp.prior[2] - coexp.prior[1]
+      step   <- range / nspecies
+      cuts   <- coexp.prior[1] + step * (0:nspecies)
+      e.t    <- vapply(seq_len(nspecies),
+                       function(k) runif(1, cuts[k], cuts[k + 1]),
+                       numeric(1))
+      ## Pick Ts from the pool; remove it from the remaining pool
+      Ts_idx <- sample.int(nspecies, 1)
+      Ts     <- e.t[Ts_idx]
+      pool   <- e.t[-Ts_idx]
 
-      for(u in 1:nrow(time.prior.B)){
-        if(!(u %in% coexp.sp)){
-          time<-runif(1,time.prior.B[u,3],time.prior.B[u,4])
-          while(abs(time-Ts)<th){
-            time<-runif(1,time.prior.B[u,3],time.prior.B[u,4])
+      if (zeta.b == nspecies) {
+        time.prior.B[, 3] <- Ts
+      } else {
+        coexp.sp <- sort(sample.int(nspecies, zeta.b))
+        time.prior.B[coexp.sp, c(3, 4)] <- Ts
+        ## non-coexp species draw without replacement from the pool
+        non_coexp <- setdiff(seq_len(nspecies), coexp.sp)
+        picks     <- sample(pool, length(non_coexp))
+        time.prior.B[non_coexp, c(3, 4)] <- picks
+      }
+
+    } else {  ## "single"
+      if (zeta.b == 1) {
+        for (u in 1:nrow(time.prior.B)) {
+          time.prior.B[u, 3] <- runif(1, time.prior.B[u, 3], time.prior.B[u, 4])
+        }
+        Ts <- runif(1, coexp.prior[1], coexp.prior[2])
+      } else {
+        Ts <- runif(1, coexp.prior[1], coexp.prior[2])
+        coexp.sp <- sort(sample.int(nspecies, zeta.b))
+        time.prior.B[coexp.sp, c(3, 4)] <- Ts
+        for (u in 1:nrow(time.prior.B)) {
+          if (!(u %in% coexp.sp)) {
+            time <- runif(1, time.prior.B[u, 3], time.prior.B[u, 4])
+            while (abs(time - Ts) < th) {
+              time <- runif(1, time.prior.B[u, 3], time.prior.B[u, 4])
+            }
+            time.prior.B[u, 3:4] <- time
           }
-          time.prior.B[u,3:4]<-time
         }
       }
     }
+
+      ## K for single/PT: deterministic from zeta.b
+      ##   1 main shared time + (nspecies - zeta.b) other distinct times
+      K <- nspecies - zeta.b + 1L
+    }  ## end of single/PT else branch
+
     Et<-mean(time.prior.B[,3])
     Disp.index<-var(time.prior.B[,3])/Et
 
-    coexp.par[j,]<-c(zeta,Ts,Et,Disp.index)
+    coexp.par[j,]<-c(K, zeta, Ts, Et, Disp.index,
+                     as.numeric(time.prior.B[, 3]))
 
     for(i in 1:nspecies){
       ms.par<-NULL
@@ -247,12 +373,17 @@ coexp.msABC.batch<-function(MS.par, gene.prior, alpha, pop.par, mu.rates) {
                      PACKAGE = "PipeMaster")
 
     # Parse outputs -> extract s_mean_* columns
+    ## Keep all 4 within-species moments (s_mean_, s_var_, s_skew_, s_kurt_)
+    ## for the 7 retained stats: segs, pi, thetaW, tajd, ZnS, nhap, Hd.
+    ## Drops thomson_est, thomson_var, FayWuH.
+    ## Returns a sims-block-row x 28 matrix per species.
     species_stats[[sp]] <- t(sapply(strsplit(outputs, "\n", fixed=TRUE), function(lines) {
       tab <- read.table(text=lines, header=TRUE, sep="\t")
-      tab <- tab[, grep("^s_mean_", colnames(tab))]
       cols_rm <- c(grep("thomson", colnames(tab)),
-                   grep("FayWuH", colnames(tab)))
+                   grep("FayWuH",  colnames(tab)))
       if(length(cols_rm) > 0) tab <- tab[, -cols_rm]
+      moment_cols <- grep("^s_(mean|var|skew|kurt)_", colnames(tab))
+      tab <- tab[, moment_cols]
       as.numeric(tab)
     }))
   }
@@ -260,18 +391,26 @@ coexp.msABC.batch<-function(MS.par, gene.prior, alpha, pop.par, mu.rates) {
   # Clean up locfile
   if(file.exists(".1locfile.txt")) file.remove(".1locfile.txt")
 
-  # Compute hypersummary for each sim across species
-  result <- matrix(0, nrow=block_size, ncol=24)
+  ## Compute hypersummary for each sim across species.
+  ## sp_mat is (nspecies x 28). Apply 8 across-species summaries -> 224 hyper-stats.
+  n_features <- ncol(species_stats[[1]])
+  n_hyper    <- 8L * n_features   # 8 across-species summaries
+  result <- matrix(0, nrow=block_size, ncol=n_hyper)
 
+  ## Detect mad availability (base::mad exists; e1071::kurtosis/skewness used elsewhere here)
   for(i in 1:block_size) {
-    # Stack species stats for this sim: nspecies x 6
     sp_mat <- do.call(rbind, lapply(species_stats, function(m) m[i, ]))
 
-    average <- colMeans(sp_mat)
-    vari <- apply(sp_mat, 2, var, na.rm=TRUE)
-    kur <- apply(sp_mat, 2, kurtosis, na.rm=TRUE)
-    skew <- apply(sp_mat, 2, skewness, na.rm=TRUE)
-    result[i, ] <- c(average, vari, kur, skew)
+    hmean <- colMeans(sp_mat, na.rm=TRUE)
+    hvar  <- apply(sp_mat, 2, stats::var, na.rm=TRUE)
+    hq25  <- apply(sp_mat, 2, function(x) stats::quantile(x, probs=0.25, na.rm=TRUE))
+    hq50  <- apply(sp_mat, 2, function(x) stats::quantile(x, probs=0.50, na.rm=TRUE))
+    hq75  <- apply(sp_mat, 2, function(x) stats::quantile(x, probs=0.75, na.rm=TRUE))
+    hmad  <- apply(sp_mat, 2, function(x) stats::mad(x, na.rm=TRUE))
+    hskew <- apply(sp_mat, 2, e1071::skewness, na.rm=TRUE)
+    hkurt <- apply(sp_mat, 2, e1071::kurtosis, na.rm=TRUE)
+
+    result[i, ] <- c(hmean, hvar, hq25, hq50, hq75, hmad, hskew, hkurt)
   }
 
   result

@@ -27,7 +27,9 @@
 #' @noRd
 hModel <- function(Ne.prior, NeA.prior, time.prior, gene.prior,
                    coexp.prior, var.zeta = "FREE", th = 0,
-                   mu.rates, alpha = FALSE, phylip_paths = NULL) {
+                   mu.rates, alpha = FALSE, phylip_paths = NULL,
+                   model = c("single", "PT", "bins")) {
+  model <- match.arg(model)
 
   # --- Input validation ---
   if (!is.data.frame(Ne.prior))
@@ -95,7 +97,8 @@ hModel <- function(Ne.prior, NeA.prior, time.prior, gene.prior,
     alpha       = alpha,
     nspecies    = nsp,
     species     = as.character(Ne.prior[, 1]),
-    phylip_paths = phylip_paths
+    phylip_paths = phylip_paths,
+    model       = model
   )
 
   class(obj) <- "hModel"

@@ -42,7 +42,7 @@ obs.coexp.ngs <- function(hmodel = NULL, phylip_paths = NULL) {
     stop("At least 2 species/populations are needed for coexpansion hyper-stats")
 
   nspecies <- length(phylip_paths)
-  species_stats <- matrix(NA_real_, nrow = nspecies, ncol = 6)
+  species_stats <- NULL    # filled on first species (dynamic ncol = 28)
   stat_names <- NULL
 
   cat("PipeMaster:: Computing observed coexpansion hyper-stats for", nspecies, "species\n")
@@ -70,7 +70,13 @@ obs.coexp.ngs <- function(hmodel = NULL, phylip_paths = NULL) {
       i <- i + 1
 
       for (j in 1:ntax) {
-        sname <- trimws(substr(lines[i], 1, 10))
+        ## Detect tab-delimited (long names) vs fixed-width (10-char names),
+        ## matching phylip_to_ms_file()'s dual-mode parser.
+        if (grepl("\t", lines[i])) {
+          sname <- trimws(strsplit(lines[i], "\t")[[1]][1])
+        } else {
+          sname <- trimws(substr(lines[i], 1, 10))
+        }
         all_samples <- c(all_samples, sname)
         i <- i + 1
       }
@@ -123,21 +129,25 @@ obs.coexp.ngs <- function(hmodel = NULL, phylip_paths = NULL) {
     frag_nam <- x[[1]]
     values <- as.numeric(x[[2]])
 
-    # Keep only s_mean_* columns (mean of each stat across loci)
-    keep <- grep("^s_mean_", frag_nam)
+    ## Keep all 4 within-species moments (s_mean_, s_var_, s_skew_, s_kurt_)
+    ## for the 7 retained stats: segs, pi, thetaW, tajd, ZnS, nhap, Hd.
+    keep <- grep("^s_(mean|var|skew|kurt)_", frag_nam)
     frag_nam <- frag_nam[keep]
-    values <- values[keep]
+    values   <- values[keep]
 
-    # Remove thomson, FayWuH (same filtering as sim.coexp.ngs; ZnS retained)
     cols_rm <- c(grep("thomson", frag_nam),
-                 grep("FayWuH", frag_nam))
+                 grep("FayWuH",  frag_nam))
     if (length(cols_rm) > 0) {
       frag_nam <- frag_nam[-cols_rm]
-      values <- values[-cols_rm]
+      values   <- values[-cols_rm]
     }
 
+    ## On the first species, allocate species_stats with the right ncol.
+    if (is.null(species_stats)) {
+      species_stats <- matrix(NA_real_, nrow = nspecies, ncol = length(values))
+      stat_names    <- frag_nam
+    }
     species_stats[sp, ] <- values
-    if (is.null(stat_names)) stat_names <- frag_nam
 
     # Clean up
     unlink(tmpdir, recursive = TRUE)
@@ -146,24 +156,28 @@ obs.coexp.ngs <- function(hmodel = NULL, phylip_paths = NULL) {
   colnames(species_stats) <- stat_names
   rownames(species_stats) <- basename(phylip_paths)
 
-  # --- Compute hyper-summary stats across species (same as coexp.msABC.batch) ---
-  average <- colMeans(species_stats)
-  vari    <- apply(species_stats, 2, var, na.rm = TRUE)
-  kur     <- apply(species_stats, 2, e1071::kurtosis, na.rm = TRUE)
-  skew    <- apply(species_stats, 2, e1071::skewness, na.rm = TRUE)
+  ## --- Compute hyper-summary stats across species
+  ## 8 across-species summaries x 28 within-species features = 224 hyper-stats.
+  ## Match the aggregation in coexp.msABC.batch().
+  hmean <- colMeans(species_stats, na.rm = TRUE)
+  hvar  <- apply(species_stats, 2, stats::var, na.rm = TRUE)
+  hq25  <- apply(species_stats, 2, function(x) stats::quantile(x, probs = 0.25, na.rm = TRUE))
+  hq50  <- apply(species_stats, 2, function(x) stats::quantile(x, probs = 0.50, na.rm = TRUE))
+  hq75  <- apply(species_stats, 2, function(x) stats::quantile(x, probs = 0.75, na.rm = TRUE))
+  hmad  <- apply(species_stats, 2, function(x) stats::mad(x, na.rm = TRUE))
+  hskew <- apply(species_stats, 2, e1071::skewness, na.rm = TRUE)
+  hkurt <- apply(species_stats, 2, e1071::kurtosis, na.rm = TRUE)
 
-  hyper <- c(average, vari, kur, skew)
+  hyper <- c(hmean, hvar, hq25, hq50, hq75, hmad, hskew, hkurt)
 
-  base_names <- sub("^s_mean_", "", stat_names)
-  names(hyper) <- c(
-    paste0("s_mean_", base_names),
-    paste0("s_var_",  base_names),
-    paste0("s_kurt_", base_names),
-    paste0("s_skew_", base_names)
-  )
+  ## Names: h<across>_<within>_<stat>, matching coexp.msABC.batch header.
+  across_features <- c("hmean", "hvar", "hq25", "hq50", "hq75", "hmad", "hskew", "hkurt")
+  names(hyper) <- as.vector(outer(across_features, stat_names,
+                                  function(a, w) paste0(a, "_", w)))
 
   attr(hyper, "species_stats") <- species_stats
 
-  cat("PipeMaster:: Done. 24 hyper-summary statistics computed.\n")
+  cat(sprintf("PipeMaster:: Done. %d hyper-summary statistics computed.\n",
+              length(hyper)))
   return(hyper)
 }
