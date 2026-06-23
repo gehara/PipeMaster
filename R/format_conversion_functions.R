@@ -281,8 +281,24 @@ read.phylip.loci <- function(filepath) {
         name <- trimws(parts[1])
         seq_str <- gsub("\\s", "", parts[2])
       } else {
-        name <- trimws(substr(line, 1, 10))
-        seq_str <- gsub("\\s", "", substr(line, 11, nchar(line)))
+        # Try relaxed PHYLIP first (name + whitespace run + sequence).
+        # Fall back to classic fixed-width (10-char name) only if relaxed
+        # split doesn't yield the expected sequence length.
+        m <- regexpr("\\s+", line)
+        relaxed_ok <- FALSE
+        if (m > 1L) {
+          cand_name    <- trimws(substr(line, 1, m - 1L))
+          cand_seq_str <- gsub("\\s", "", substr(line, m, nchar(line)))
+          if (nchar(cand_seq_str) == nchar_seq) {
+            name       <- cand_name
+            seq_str    <- cand_seq_str
+            relaxed_ok <- TRUE
+          }
+        }
+        if (!relaxed_ok) {
+          name <- trimws(substr(line, 1, 10))
+          seq_str <- gsub("\\s", "", substr(line, 11, nchar(line)))
+        }
       }
       names_vec[j] <- name
       mat[j, ] <- strsplit(tolower(seq_str), "")[[1]]

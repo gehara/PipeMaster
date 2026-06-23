@@ -2897,14 +2897,28 @@ main.menu.gui <- function(input = NULL) {
           shiny::tags$span(style = "color: red;", "Please upload a population assignment file."))
         return()
       }
-      pop_assign <- tryCatch(
-        utils::read.table(pa_file$datapath, header = TRUE, sep = "",
-                          stringsAsFactors = FALSE),
-        error = function(e) NULL)
-      if (is.null(pop_assign) || ncol(pop_assign) < 2) {
+      # Robustly read pop.assign: accept comma, tab, or any whitespace as
+      # separator, and detect header presence by sniffing the first row's
+      # 2nd field (integer = no header, non-integer = header).
+      read_pop_assign <- function(path) {
+        for (sep in c(",", "\t", "")) {
+          df <- tryCatch(
+            utils::read.table(path, header = FALSE, sep = sep,
+                              stringsAsFactors = FALSE),
+            error = function(e) NULL)
+          if (!is.null(df) && ncol(df) >= 2) {
+            first_val <- suppressWarnings(as.integer(trimws(as.character(df[1, 2]))))
+            if (is.na(first_val)) df <- df[-1L, , drop = FALSE]
+            return(df)
+          }
+        }
+        NULL
+      }
+      pop_assign <- read_pop_assign(pa_file$datapath)
+      if (is.null(pop_assign) || ncol(pop_assign) < 2 || nrow(pop_assign) == 0) {
         output$data_load_status <- shiny::renderUI(
           shiny::tags$span(style = "color: red;",
-            "Could not read pop.assign file. Expected 2 columns with header: sample, pops."))
+            "Could not read pop.assign file. Expected 2 columns (sample, pop) separated by comma, tab, or whitespace."))
         return()
       }
       pop_assign[[1]] <- trimws(pop_assign[[1]])
