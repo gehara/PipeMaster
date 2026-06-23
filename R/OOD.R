@@ -1293,6 +1293,50 @@ OOD.posttrain <- function(trained.nn, observed, reftable,
 # (from .ood.classify.plsda) + obs's projection, partitions by class,
 # and computes the geometric verdict per class. Z-scoring is done in
 # the global PLS-DA space so cross-class distances share a metric.
+## Per-class Mahalanobis-to-centroid verdict in score space (PCA or PLS-DA).
+## Complements the K=1 NN-density verdict — gives a centroid distance,
+## which is more interpretable for "is obs at the cloud center". Reuses
+## the standalone helpers .ood.mahalanobis.loo() and
+## .ood.mahalanobis.obs.per.class() (Lee et al. 2018).
+.ood.classify.per.model.mahalanobis <- function(scores, score_obs,
+                                                model_id_int, class_names,
+                                                alpha) {
+  K <- length(class_names)
+  if (is.null(scores) || nrow(scores) < 2L)
+    return(setNames(replicate(K, list(d_obs = NA_real_, p_value = NA_real_,
+                                       pass = NA, verdict = NA_character_,
+                                       null_distribution = numeric(0)),
+                              simplify = FALSE),
+                    class_names))
+
+  d_loo_all       <- .ood.mahalanobis.loo(scores, model_id_int)
+  d_obs_per_class <- .ood.mahalanobis.obs.per.class(scores, score_obs,
+                                                    model_id_int)
+
+  out <- vector("list", K); names(out) <- class_names
+  for (k in seq_len(K)) {
+    rows <- which(model_id_int == k)
+    if (length(rows) < 2L) {
+      out[[k]] <- list(d_obs = NA_real_, p_value = NA_real_, pass = NA,
+                       verdict = NA_character_,
+                       null_distribution = numeric(0))
+      next
+    }
+    d_loo <- d_loo_all[rows]
+    d_loo <- d_loo[is.finite(d_loo)]
+    d_obs <- d_obs_per_class[as.character(k)]
+    if (is.na(d_obs)) d_obs <- d_obs_per_class[k]
+    p <- mean(d_loo >= d_obs)
+    verdict <- .ood.geometric.verdict(d_obs, d_loo)
+    out[[k]] <- list(d_obs = as.numeric(d_obs), p_value = p, pass = p >= alpha,
+                     verdict = verdict,
+                     d_loo_q95 = as.numeric(quantile(d_loo, 0.95, na.rm = TRUE)),
+                     d_loo_max = max(d_loo),
+                     null_distribution = d_loo)
+  }
+  out
+}
+
 .ood.classify.per.model.plsda <- function(scores, score_obs,
                                           model_id_int, class_names, alpha) {
   K <- length(class_names)
@@ -1494,6 +1538,18 @@ OOD.pretrain.classify <- function(reftable, model_col, observed,
     model_id_int, class_names, alpha
   )
 
+  ## Page-2 complement: Mahalanobis-to-centroid verdicts in PCA and PLS-DA
+  ## score spaces. NN-density (above) catches local-density coverage;
+  ## Mahalanobis catches centroid distance. Both reported.
+  per_model_pca_mahal   <- .ood.classify.per.model.mahalanobis(
+    pca_res$scores, pca_res$score_obs,
+    model_id_int, class_names, alpha
+  )
+  per_model_plsda_mahal <- .ood.classify.per.model.mahalanobis(
+    plsda_res$scores, plsda_res$score_obs,
+    model_id_int, class_names, alpha
+  )
+
   results <- list(
     class_names           = class_names,
     n_classes             = K,
@@ -1513,6 +1569,8 @@ OOD.pretrain.classify <- function(reftable, model_col, observed,
     pls_da                = plsda_res,
     per_model_nn          = per_model_nn,
     per_model_plsda       = per_model_plsda,
+    per_model_pca_mahal   = per_model_pca_mahal,
+    per_model_plsda_mahal = per_model_plsda_mahal,
     .context              = list(
       S_sim        = S_sim,
       model_id_int = model_id_int,
@@ -1720,6 +1778,7 @@ OOD.pretrain.classify <- function(reftable, model_col, observed,
   d_obs_pca <- vapply(results$per_model_nn, function(x) x$d_obs, numeric(1))
   d_obs_pca[is.na(d_obs_pca)] <- 0
   barplot(d_obs_pca, col = cols, border = "white", names.arg = results$class_names,
+          cex.names = 0.7,
           main = "PCA-space d_obs to nearest sim",
           ylab = "z-scored Euclidean distance", las = 2)
 
@@ -1788,6 +1847,7 @@ OOD.pretrain.classify <- function(reftable, model_col, observed,
     d_obs_pls <- nn_pls$obs_d; d_obs_pls[is.na(d_obs_pls)] <- 0
     barplot(d_obs_pls, col = cols, border = "white",
             names.arg = results$class_names,
+            cex.names = 0.7,
             main = "PLS-DA-space d_obs to nearest sim",
             ylab = "z-scored Euclidean distance", las = 2)
 
@@ -1798,6 +1858,104 @@ OOD.pretrain.classify <- function(reftable, model_col, observed,
     plot.new(); title(main = "PLS-DA — unavailable")
     plot.new(); plot.new()
   }
+
+  # ============================================================================
+  # Page 2 — Mahalanobis-to-centroid verdicts + 2D (Comp1 vs Comp2) scatters.
+  # Complements page 1's K=1 NN-density view (local density) with a centroid-
+  # distance view (Mahalanobis), and exposes the second PC/PLS axis the
+  # page-1 scatter hides.
+  # ============================================================================
+  par(mfrow = c(2, 3), mar = c(4, 4, 3, 1))
+
+  ## --- Row 1: PCA Comp1 vs Comp2 + per-class Mahalanobis ---
+  if (!is.null(results$pca$scores) && ncol(results$pca$scores) >= 2L) {
+    sc  <- results$pca$scores
+    so  <- results$pca$score_obs
+    mid <- results$.context$model_id_int
+    cls_v <- cols[results$class_names[mid]]
+    pct_pc1 <- 100 * results$pca$fit$sdev[1]^2 / sum(results$pca$fit$sdev^2)
+    pct_pc2 <- 100 * results$pca$fit$sdev[2]^2 / sum(results$pca$fit$sdev^2)
+    plot(sc[, 1], sc[, 2],
+         col = adjustcolor(cls_v, 0.4), pch = 16, cex = 0.5,
+         xlab = sprintf("PC1 (%.1f%%)", pct_pc1),
+         ylab = sprintf("PC2 (%.1f%%)", pct_pc2),
+         main = sprintf("PCA: PC1 vs PC2 (%.1f%% var)", pct_pc1 + pct_pc2))
+    ## per-class centroids
+    for (k in seq_len(K)) {
+      rows <- which(mid == k)
+      if (length(rows) < 1L) next
+      cn <- results$class_names[k]
+      points(mean(sc[rows, 1]), mean(sc[rows, 2]),
+             col = "black", pch = 21, bg = cols[cn],
+             cex = 2.4, lwd = 1.4)
+    }
+    ## obs (single point — same in all classes)
+    points(so[1, 1], so[1, 2], pch = 8, col = "red",
+           cex = 2.6, lwd = 2.5)
+    legend("topright", legend = c(results$class_names, "centroid", "obs"),
+           col = c(cols, "black", "red"),
+           pch = c(rep(16, K), 21, 8),
+           pt.bg = c(rep(NA, K), "grey80", NA),
+           pt.cex = c(rep(1, K), 1.6, 1.6),
+           cex = 0.7, bty = "n")
+  } else {
+    plot.new(); title(main = "PCA Comp1 vs Comp2 — unavailable")
+  }
+
+  ## per-class Mahalanobis-to-centroid bar (PCA space)
+  d_mahal_pca <- vapply(results$per_model_pca_mahal,
+                        function(x) x$d_obs, numeric(1))
+  d_mahal_pca[is.na(d_mahal_pca)] <- 0
+  barplot(d_mahal_pca, col = cols, border = "white",
+          names.arg = results$class_names, cex.names = 0.7,
+          main = "PCA Mahalanobis: obs to centroid",
+          ylab = "Mahalanobis distance", las = 2)
+
+  ## per-class Mahalanobis verdict
+  .ood.verdict.panel(results$per_model_pca_mahal, results$class_names,
+                     "PCA per-class Mahalanobis verdict")
+
+  ## --- Row 2: PLS-DA Comp1 vs Comp2 + per-class Mahalanobis ---
+  if (!is.null(results$pls_da$scores) && ncol(results$pls_da$scores) >= 2L) {
+    sc  <- results$pls_da$scores
+    so  <- results$pls_da$score_obs
+    mid <- results$.context$model_id_int
+    cls_v <- cols[results$class_names[mid]]
+    plot(sc[, 1], sc[, 2],
+         col = adjustcolor(cls_v, 0.4), pch = 16, cex = 0.5,
+         xlab = "PLS Comp 1", ylab = "PLS Comp 2",
+         main = sprintf("PLS-DA: Comp1 vs Comp2 (%d comps)",
+                        results$pls_da$n_comp))
+    for (k in seq_len(K)) {
+      rows <- which(mid == k)
+      if (length(rows) < 1L) next
+      cn <- results$class_names[k]
+      points(mean(sc[rows, 1]), mean(sc[rows, 2]),
+             col = "black", pch = 21, bg = cols[cn],
+             cex = 2.4, lwd = 1.4)
+    }
+    points(so[1, 1], so[1, 2], pch = 8, col = "red",
+           cex = 2.6, lwd = 2.5)
+    legend("topright", legend = c(results$class_names, "centroid", "obs"),
+           col = c(cols, "black", "red"),
+           pch = c(rep(16, K), 21, 8),
+           pt.bg = c(rep(NA, K), "grey80", NA),
+           pt.cex = c(rep(1, K), 1.6, 1.6),
+           cex = 0.7, bty = "n")
+  } else {
+    plot.new(); title(main = "PLS-DA Comp1 vs Comp2 — unavailable")
+  }
+
+  d_mahal_pls <- vapply(results$per_model_plsda_mahal,
+                        function(x) x$d_obs, numeric(1))
+  d_mahal_pls[is.na(d_mahal_pls)] <- 0
+  barplot(d_mahal_pls, col = cols, border = "white",
+          names.arg = results$class_names, cex.names = 0.7,
+          main = "PLS-DA Mahalanobis: obs to centroid",
+          ylab = "Mahalanobis distance", las = 2)
+
+  .ood.verdict.panel(results$per_model_plsda_mahal, results$class_names,
+                     "PLS-DA per-class Mahalanobis verdict")
 }
 
 
