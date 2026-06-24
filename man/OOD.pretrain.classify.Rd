@@ -20,36 +20,36 @@ OOD.pretrain.classify(
 )
 }
 \arguments{
-\item{reftable}{data.frame — combined reference table with sims from all
+\item{reftable}{data.frame -- combined reference table with sims from all
 candidate models stacked, and a label column (`model_col`) identifying
 which model each sim came from.}
 
-\item{model_col}{character — name of the label column.}
+\item{model_col}{character -- name of the label column.}
 
-\item{observed}{numeric vector or 1-row data.frame — observed summary stats.}
+\item{observed}{numeric vector or 1-row data.frame -- observed summary stats.}
 
-\item{stat.cols}{character vector or NULL — feature columns. If NULL, all
+\item{stat.cols}{character vector or NULL -- feature columns. If NULL, all
 non-param non-label columns are used.}
 
-\item{subsample}{integer or NULL — per-model subsample for PCA/PLS-DA
+\item{subsample}{integer or NULL -- per-model subsample for PCA/PLS-DA
 (default NULL = use all sims). Useful for very large reftables.}
 
-\item{alpha}{numeric — significance level for per-model NN density p-values
+\item{alpha}{numeric -- significance level for per-model NN density p-values
 (default 0.01).}
 
-\item{universal_fail_threshold}{numeric — fraction of universal outliers
+\item{universal_fail_threshold}{numeric -- fraction of universal outliers
 above which the diagnostic fails (default 0.25).}
 
-\item{pca.var}{numeric — PCA cumulative variance threshold (default 0.95).}
+\item{pca.var}{numeric -- PCA cumulative variance threshold (default 0.95).}
 
-\item{pls.n.comp}{integer or NULL — PLS-DA components (default K-1 or 2,
+\item{pls.n.comp}{integer or NULL -- PLS-DA components (default K-1 or 2,
 whichever is larger).}
 
-\item{seed}{integer — random seed for subsampling.}
+\item{seed}{integer -- random seed for subsampling.}
 
-\item{plot}{logical — produce diagnostic plots (default TRUE).}
+\item{plot}{logical -- produce diagnostic plots (default TRUE).}
 
-\item{verbose}{logical — print summary (default TRUE).}
+\item{verbose}{logical -- print summary (default TRUE).}
 }
 \value{
 A list of class `c("OOD_pretrain_classify", "OOD_diagnostic")`
@@ -58,12 +58,12 @@ A list of class `c("OOD_pretrain_classify", "OOD_diagnostic")`
   \item{class_names}{character vector of K model labels}
   \item{n_classes}{integer K}
   \item{n_stats}{integer total stats considered}
-  \item{rejection}{K x n_stats logical matrix — TRUE if obs outside model k's support for stat j}
-  \item{rejection_count}{integer vector length n_stats — number of models rejecting each stat}
-  \item{universal_mask}{logical mask — stats rejected by all K models}
-  \item{specific_mask}{logical mask — stats rejected by 1..K-1 models}
-  \item{keep_mask}{logical mask — feature-set filter for tune.nn.classify (= !universal)}
-  \item{stat_cols}{character — original stat column names}
+  \item{rejection}{K x n_stats logical matrix -- TRUE if obs outside model k's support for stat j}
+  \item{rejection_count}{integer vector length n_stats -- number of models rejecting each stat}
+  \item{universal_mask}{logical mask -- stats rejected by all K models}
+  \item{specific_mask}{logical mask -- stats rejected by 1..K-1 models}
+  \item{keep_mask}{logical mask -- feature-set filter for tune.nn.classify (= !universal)}
+  \item{stat_cols}{character -- original stat column names}
   \item{percentiles_per_model}{K x n_stats matrix of mid-rank percentiles}
   \item{pca}{combined PCA: scores, score_obs, fit, n_pcs, var_explained}
   \item{pls_da}{PLS-DA: scores, score_obs, fit, n_comp}

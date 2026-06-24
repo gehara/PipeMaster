@@ -10,9 +10,9 @@
 #'   \item \strong{Ne0.pop\eqn{p}}: average of \eqn{Ne_\pi = \pi/(4\mu)} and
 #'     \eqn{Ne_W = \theta_W/(4\mu)} using per-site values
 #'     (\code{s_mean_pi_p / locus_length} etc.).
-#'   \item \strong{Ne1.pop\eqn{p}}: same bounds as \code{Ne0.pop\eqn{p}}.
+#'   \item \strong{Ne1.pop\eqn{p}}: same bounds as Ne0.pop\eqn{p}.
 #'     The function does NOT call a demographic syndrome (expansion / bottleneck
-#'     / constant) from Tajima's D — \eqn{|D| < 0.5} is too noisy to call,
+#'     / constant) from Tajima's D -- \eqn{|D| < 0.5} is too noisy to call,
 #'     and even \eqn{|D| > 0.5} can be selection, structure, or other
 #'     departures. The raw TajD value is reported in the suggestions object
 #'     for the user to inspect.
@@ -28,7 +28,7 @@
 #'
 #' Moment estimators are time-averaged: under expansion (Ne0 >> Ne1),
 #' \eqn{\pi / (4\mu)} sits closer to Ne1 than Ne0. Treat the suggested
-#' Ne bounds as a starting point — if the classifier or posterior pushes
+#' Ne bounds as a starting point -- if the classifier or posterior pushes
 #' against the upper bound, widen.
 #'
 #' When \code{model$flags$ej} and \code{model$flags$m} are both present,

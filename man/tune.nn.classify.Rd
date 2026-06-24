@@ -39,26 +39,26 @@ uses the same ResNet search space as the regression `tune.nn()`.}
 
 \item{val.frac}{Fraction of sims for validation (stratified per class).}
 
-\item{n_searches}{Integer — number of independent Hyperband searches to run
+\item{n_searches}{Integer -- number of independent Hyperband searches to run
 (default 1L). Mirrors `tune.nn(n_searches=)`: each search runs a full
 independent Hyperband with its own seed; the best across all searches is
 returned. With `cores > 1`, searches run in parallel via Rscript workers.}
 
-\item{cores}{Integer — maximum number of concurrent search workers
+\item{cores}{Integer -- maximum number of concurrent search workers
 (default 1L). Ignored when `n_searches = 1`. Per-worker RAM scales with
 the data size; bigmemory (if available) shares the data via mmap.}
 
-\item{gpus}{Integer — number of GPUs to distribute searches across
+\item{gpus}{Integer -- number of GPUs to distribute searches across
 (default 0L, CPU only). With `gpus > 0`, the first
 `min(n_searches, gpu.threshold*gpus)` workers are pinned to GPUs
 round-robin via `CUDA_VISIBLE_DEVICES`. With `n_searches = 1`, the single
 search uses CUDA directly if available.}
 
-\item{gpu.threshold}{Integer — maximum concurrent searches per GPU
+\item{gpu.threshold}{Integer -- maximum concurrent searches per GPU
 (default 4L). Total GPU searches = `min(n_searches, gpu.threshold*gpus)`;
 excess searches run on CPU. Ignored when `gpus = 0`.}
 
-\item{greedy}{Logical — thread allocation policy across concurrent workers
+\item{greedy}{Logical -- thread allocation policy across concurrent workers
 (default TRUE). Passed through to `.compute.threads.per.worker()`.}
 
 \item{seed}{Random seed.}

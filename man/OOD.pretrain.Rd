@@ -17,29 +17,31 @@ OOD.pretrain(
 )
 }
 \arguments{
-\item{observed}{numeric vector or 1-row data.frame — observed summary
+\item{observed}{numeric vector or 1-row data.frame -- observed summary
 statistics. If a data.frame with named columns, those names are matched
 against the reftable.}
 
-\item{reftable}{data.frame — the prior-predictive reference table.}
+\item{reftable}{data.frame -- the prior-predictive reference table.}
 
-\item{stat.cols}{character vector — stat columns in the reftable.
+\item{stat.cols}{character vector -- stat columns in the reftable.
 Required unless \code{observed} is a data.frame whose column names
 identify stats.}
 
-\item{param.cols}{character vector or NULL — parameter columns in the
+\item{param.cols}{character vector or NULL -- parameter columns in the
 reftable. When provided, the PLS NN density check is computed.}
 
-\item{pca.var}{numeric — cumulative variance threshold for PCA (default 0.95).}
+\item{pca.var}{numeric -- cumulative variance threshold for PCA (default 0.95).}
 
-\item{pls.n.comp}{integer — number of PLS components to fit (default 10,
+\item{pls.n.comp}{integer -- number of PLS components to fit (default 10,
 capped at \code{n_params + 5} and \code{n_stats - 1}).}
 
-\item{alpha}{numeric — significance level for the NN density tests
+\item{alpha}{numeric -- significance level for the NN density tests
 (default 0.01). Per-stat outliers use a strict support-based criterion
 (obs outside sim range) and do not depend on alpha.}
 
-\item{plot}{logical — produce diagnostic plots (default TRUE).}
+\item{plot}{logical -- produce diagnostic plots (default TRUE).}
+
+\item{verbose}{logical -- print progress messages (default TRUE).}
 }
 \value{
 A list of class \code{"OOD_pretrain"} with:
@@ -49,7 +51,7 @@ A list of class \code{"OOD_pretrain"} with:
   \item{percentiles}{data.frame with stat, percentile, outlier, reason}
   \item{pca_all, pca_filtered}{NN density in PCA space (all stats, and
     stats minus zero-var + per-stat outliers)}
-  \item{pls_all, pls_filtered}{NN density in PLS space — present when
+  \item{pls_all, pls_filtered}{NN density in PLS space -- present when
     \code{param.cols} is provided}
   \item{overall}{character: \code{"pass"}, \code{"warn"}, or \code{"fail"}}
 }
@@ -57,7 +59,7 @@ A list of class \code{"OOD_pretrain"} with:
 \description{
 Evaluates whether the observed summary statistics are reachable under the
 prior predictive distribution, before any model is trained. Operates on
-the reftable (prior-predictive sims) and observed stats alone — no neural
+the reftable (prior-predictive sims) and observed stats alone -- no neural
 network required.
 }
 \details{
@@ -65,7 +67,7 @@ Three complementary checks:
 \itemize{
   \item \strong{Per-stat support} (marginal): each stat is classified as
     \code{ok} (obs inside sim range), \code{outlier} (obs strictly outside
-    sim range — model cannot produce this observation under the prior),
+    sim range -- model cannot produce this observation under the prior),
     or \code{uninformative} (sims constant + obs matches constant).
     Outlier fraction drives the per-stat tier:
     \code{pass} (< 10\%), \code{warn} (10-25\%), \code{fail} (> 25\%).

@@ -82,7 +82,7 @@ reduce.sfs <- function(sfs, sample_sizes, method = c("marginal2d", "binned"),
   obj_bytes <- object.size(sfs)
   if (obj_bytes > 2e9)
     stop(sprintf(
-      "SFS object is %.1f GB — too large for in-memory reduction. Pass a file path instead.",
+      "SFS object is %.1f GB -- too large for in-memory reduction. Pass a file path instead.",
       as.numeric(obj_bytes) / 1e9))
 
   npop <- length(sample_sizes)
@@ -319,7 +319,7 @@ reduce.sfs <- function(sfs, sample_sizes, method = c("marginal2d", "binned"),
   }
 
   elapsed <- (proc.time() - t0)[3]
-  cat(sprintf("\nPipeMaster:: reduce.sfs: done — %s rows in %.2f h (%.0f rows/h) -> %s\n",
+  cat(sprintf("\nPipeMaster:: reduce.sfs: done -- %s rows in %.2f h (%.0f rows/h) -> %s\n",
               format(offset, big.mark = ","), elapsed / 3600, offset / elapsed * 3600, output_file))
 
   return(invisible(output_file))

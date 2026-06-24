@@ -7,9 +7,9 @@
 save.tune.result(tune.result, path)
 }
 \arguments{
-\item{tune.result}{list — output from \code{tune.nn()}.}
+\item{tune.result}{list -- output from \code{tune.nn()}.}
 
-\item{path}{character — directory path where files will be saved (created if needed).}
+\item{path}{character -- directory path where files will be saved (created if needed).}
 }
 \description{
 Saves the output of \code{tune.nn()} so it can be loaded on another machine.

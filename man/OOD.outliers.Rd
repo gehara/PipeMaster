@@ -23,15 +23,15 @@ as passed to \code{OOD.pretrain()} / \code{OOD.posttrain()}.}
 
 \item{reftable}{data.frame of simulated stats (the reference table).}
 
-\item{max_stats}{integer — maximum number of outlier stats to plot
+\item{max_stats}{integer -- maximum number of outlier stats to plot
 (default 24). Most extreme first.}
 
-\item{ncol}{integer — number of histograms per row in the grid (default 4).}
+\item{ncol}{integer -- number of histograms per row in the grid (default 4).}
 
-\item{pdf_file}{character or NULL — if provided, writes the plot to this
+\item{pdf_file}{character or NULL -- if provided, writes the plot to this
 PDF file. Otherwise plots to the active device.}
 
-\item{pdf_width, pdf_height}{numeric — PDF dimensions if \code{pdf_file} given.}
+\item{pdf_width, pdf_height}{numeric -- PDF dimensions if \code{pdf_file} given.}
 }
 \value{
 Invisibly returns the outlier data.frame (sorted by extremity, truncated).

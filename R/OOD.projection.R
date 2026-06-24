@@ -1,16 +1,18 @@
 # ============================================================================
 # OOD Projection Forensics + Per-Outlier Sim Distributions
 #
-# OOD.projection.diagnose() — class-dispatched on OOD_pretrain / OOD_posttrain.
+# OOD.projection.diagnose() -- class-dispatched on OOD_pretrain / OOD_posttrain.
 #   For OOD_pretrain : basis in {"pca", "pls"}.
 #   For OOD_posttrain: basis in {"pca", "pls", "nn_latent"}; default nn_latent.
 #
-# OOD.outliers() — small-multiples plot of the sim distribution for each
+# OOD.outliers() -- small-multiples plot of the sim distribution for each
 #   outlier stat with the observed value overlaid.
 # ============================================================================
 
 
-#' Diagnose why the "obs projected (outliers neutralized)" arrow lands where
+#' Diagnose the projected-observation arrow location in OOD projection space
+#'
+#' Explains why the "obs projected (outliers neutralized)" arrow lands where
 #' it does in the chosen projection basis.
 #'
 #' Runs three complementary checks on the chosen basis:
@@ -39,17 +41,17 @@
 #' }
 #'
 #' @param ood_result output of \code{OOD.pretrain()} or \code{OOD.posttrain()}.
-#' @param basis character — projection basis to diagnose. See class dispatch.
-#' @param pdf_file character or NULL — write the plot to this PDF.
-#' @param top_n integer — how many top stats to show in the loading plots.
-#' @param pdf_width,pdf_height numeric — PDF dimensions if \code{pdf_file} given.
+#' @param basis character -- projection basis to diagnose. See class dispatch.
+#' @param pdf_file character or NULL -- write the plot to this PDF.
+#' @param top_n integer -- how many top stats to show in the loading plots.
+#' @param pdf_width,pdf_height numeric -- PDF dimensions if \code{pdf_file} given.
 #'
 #' @return Invisibly a list with:
 #' \describe{
 #'   \item{nn_obs_full}{Full-component NN distance from obs to nearest sim}
 #'   \item{nn_proj_full}{Full-component NN distance from projected obs to
 #'     nearest sim}
-#'   \item{cumulative_distance}{matrix [n_comp x 2] — cumulative distance
+#'   \item{cumulative_distance}{matrix [n_comp x 2] -- cumulative distance
 #'     to nearest sim as components are added one by one}
 #'   \item{obs_pc_z, proj_pc_z}{|score| / sim component sd per component}
 #'   \item{loadings_pc1, loadings_pc2}{outlier-stat loadings on components
@@ -72,9 +74,9 @@ OOD.projection.diagnose <- function(ood_result, basis = NULL,
   # Resolve the basis result and metadata
   br <- .ood.proj.resolve.basis(ood_result, basis)
   if (is.null(br$scores))
-    stop(sprintf("ood_result$%s has no scores — basis unavailable.", br$slot))
+    stop(sprintf("ood_result$%s has no scores -- basis unavailable.", br$slot))
   if (is.null(br$score_obs_projected))
-    stop("No projected obs in result — no outlier stats, nothing to diagnose.")
+    stop("No projected obs in result -- no outlier stats, nothing to diagnose.")
 
   scores     <- br$scores
   score_obs  <- as.numeric(br$score_obs[1, ])
@@ -170,7 +172,7 @@ OOD.projection.diagnose <- function(ood_result, basis = NULL,
   } else {
     # NN-latent: no loadings exist
     plot.new(); title(main = "Loadings: not defined for NN-latent")
-    plot.new(); title(main = "(nonlinear basis — use OOD.outliers())")
+    plot.new(); title(main = "(nonlinear basis -- use OOD.outliers())")
   }
 
   invisible(list(
@@ -196,7 +198,7 @@ OOD.projection.diagnose <- function(ood_result, basis = NULL,
                  nn_latent = "nn_latent")
   br <- ood_result[[slot]]
   if (is.null(br))
-    stop(sprintf("ood_result$%s is NULL — basis '%s' unavailable.",
+    stop(sprintf("ood_result$%s is NULL -- basis '%s' unavailable.",
                  slot, basis))
   list(
     slot                = slot,
@@ -321,13 +323,13 @@ OOD.projection.diagnose <- function(ood_result, basis = NULL,
 #'     \code{K_frac}, but reuses the projection that was already fit.
 #'   \item \code{posterior =} (external): the function consumes any
 #'     posterior object with an \code{$abc} matrix of accepted parameter
-#'     samples — e.g., from \code{nn.predict(method = "ABC_NN_regression")},
+#'     samples -- e.g., from \code{nn.predict(method = "ABC_NN_regression")},
 #'     or any future ABC/NPE method that returns class \code{"posterior"}.
 #'     The \code{reftable} is required to extract empirical prior bounds.
 #' }
 #'
 #' Prior bounds are inferred from the empirical \code{min}/\code{max} of
-#' each param column (assumes uniform priors — the PipeMaster default).
+#' each param column (assumes uniform priors -- the PipeMaster default).
 #'
 #' Boundary pressure is flagged when the median of the accepted samples
 #' sits within \code{edge_threshold * (prior_hi - prior_lo)} of either
@@ -343,29 +345,29 @@ OOD.projection.diagnose <- function(ood_result, basis = NULL,
 #' @param posterior object of class \code{"posterior"} (e.g., from
 #'   \code{nn.predict(method = "ABC_NN_regression")}). Mutually exclusive
 #'   with \code{ood_result}.
-#' @param reftable data.frame — required when \code{posterior} is given,
+#' @param reftable data.frame -- required when \code{posterior} is given,
 #'   for extracting empirical prior bounds.
-#' @param K_frac numeric — fraction of sims to keep as nearest neighbors
+#' @param K_frac numeric -- fraction of sims to keep as nearest neighbors
 #'   when \code{ood_result} is given (default 0.025). Ignored in
 #'   \code{posterior} mode.
-#' @param edge_threshold numeric — fraction of prior range considered
+#' @param edge_threshold numeric -- fraction of prior range considered
 #'   "near boundary" (default 0.05).
-#' @param basis character — projection basis for the in-pipeline K-NN.
+#' @param basis character -- projection basis for the in-pipeline K-NN.
 #'   \code{"pls"} (default) is param-aligned; \code{"pca"} is
 #'   variance-aligned. Ignored in \code{posterior} mode.
-#' @param plot logical — produce a per-param grid showing the prior range
+#' @param plot logical -- produce a per-param grid showing the prior range
 #'   with accepted samples overlaid as a boxplot (default TRUE).
-#' @param pdf_file character or NULL — write the plot to this PDF.
-#' @param pdf_width,pdf_height numeric — PDF dimensions if \code{pdf_file}.
+#' @param pdf_file character or NULL -- write the plot to this PDF.
+#' @param pdf_width,pdf_height numeric -- PDF dimensions if \code{pdf_file}.
 #'
 #' @return A list with:
 #' \describe{
 #'   \item{table}{data.frame: \code{param, prior_lo, prior_hi,
 #'     neighbor_lo, neighbor_q25, neighbor_med, neighbor_q75, neighbor_hi,
 #'     edge_pressure, med_dist_lo, med_dist_hi}}
-#'   \item{method}{character — short description of how \code{accepted}
+#'   \item{method}{character -- short description of how \code{accepted}
 #'     was obtained}
-#'   \item{K}{integer — number of accepted samples used}
+#'   \item{K}{integer -- number of accepted samples used}
 #' }
 #' @export
 OOD.priors.bestfit <- function(ood_result = NULL,
@@ -559,12 +561,12 @@ OOD.priors.bestfit <- function(ood_result = NULL,
 #' top-K most-correlated parameters in the reftable and translates each
 #' \code{(corr sign x outlier direction)} pair into a vote to widen that
 #' parameter's HI or LO bound. Aggregates votes into a per-parameter
-#' consensus table — the actionable answer to "if I want to keep these
+#' consensus table -- the actionable answer to "if I want to keep these
 #' outlier stats, which priors should I widen and in which direction?"
 #'
 #' Complementary to \code{OOD.priors.bestfit()}, which uses joint K-NN-of-obs
 #' (rejection ABC) boundary pressure (one signal averaged over all stats).
-#' This function is per-outlier-stat marginal — different signal, different
+#' This function is per-outlier-stat marginal -- different signal, different
 #' failure mode. Use both.
 #'
 #' Caveat: marginal correlations miss param interactions. Strong when one
@@ -574,18 +576,18 @@ OOD.priors.bestfit <- function(ood_result = NULL,
 #'
 #' @param ood_result output of \code{OOD.pretrain()} (or \code{OOD.posttrain()})
 #'   that was called with \code{param.cols} so \code{P_sim} was stashed.
-#' @param top_k integer — number of top-correlated params per outlier stat
+#' @param top_k integer -- number of top-correlated params per outlier stat
 #'   that get a vote (default 3).
-#' @param corr_threshold numeric — minimum \code{|corr|} for a param to vote
+#' @param corr_threshold numeric -- minimum \code{|corr|} for a param to vote
 #'   (default 0.2). Params with weaker signal than this are ignored even if
 #'   in the top-k.
-#' @param ambiguous_threshold numeric — when \code{|net| / total <
+#' @param ambiguous_threshold numeric -- when \code{|net| / total <
 #'   ambiguous_threshold}, the consensus is reported as \code{"ambiguous"}
 #'   rather than HI/LO (default 0.3).
-#' @param plot logical — produce a per-param visual (default TRUE):
-#'   side-by-side diverging "net" bars (HI − LO) and "total" bars.
-#' @param pdf_file character or NULL — write the plot to this PDF.
-#' @param pdf_width,pdf_height numeric — PDF dimensions if \code{pdf_file}.
+#' @param plot logical -- produce a per-param visual (default TRUE):
+#'   side-by-side diverging "net" bars (HI - LO) and "total" bars.
+#' @param pdf_file character or NULL -- write the plot to this PDF.
+#' @param pdf_width,pdf_height numeric -- PDF dimensions if \code{pdf_file}.
 #'
 #' @return A list with:
 #' \describe{
@@ -616,7 +618,7 @@ OOD.priors.outliers <- function(ood_result, top_k = 3L,
   outlier_mask <- ctx$outlier_mask
 
   if (is.null(outlier_mask) || !any(outlier_mask)) {
-    cat("PipeMaster:: OOD.priors.outliers: no outlier stats — nothing to vote on.\n")
+    cat("PipeMaster:: OOD.priors.outliers: no outlier stats -- nothing to vote on.\n")
     return(invisible(list(
       consensus = data.frame(),
       per_outlier = data.frame())))
@@ -785,12 +787,12 @@ OOD.priors.outliers <- function(ood_result, top_k = 3L,
 #' @param observed numeric vector or 1-row data.frame of observed stats, same
 #'   as passed to \code{OOD.pretrain()} / \code{OOD.posttrain()}.
 #' @param reftable data.frame of simulated stats (the reference table).
-#' @param max_stats integer — maximum number of outlier stats to plot
+#' @param max_stats integer -- maximum number of outlier stats to plot
 #'   (default 24). Most extreme first.
-#' @param ncol integer — number of histograms per row in the grid (default 4).
-#' @param pdf_file character or NULL — if provided, writes the plot to this
+#' @param ncol integer -- number of histograms per row in the grid (default 4).
+#' @param pdf_file character or NULL -- if provided, writes the plot to this
 #'   PDF file. Otherwise plots to the active device.
-#' @param pdf_width,pdf_height numeric — PDF dimensions if \code{pdf_file} given.
+#' @param pdf_width,pdf_height numeric -- PDF dimensions if \code{pdf_file} given.
 #'
 #' @return Invisibly returns the outlier data.frame (sorted by extremity, truncated).
 #' @export

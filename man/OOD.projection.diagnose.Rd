@@ -2,8 +2,7 @@
 % Please edit documentation in R/OOD.projection.R
 \name{OOD.projection.diagnose}
 \alias{OOD.projection.diagnose}
-\title{Diagnose why the "obs projected (outliers neutralized)" arrow lands where
-it does in the chosen projection basis.}
+\title{Diagnose the projected-observation arrow location in OOD projection space}
 \usage{
 OOD.projection.diagnose(
   ood_result,
@@ -17,13 +16,13 @@ OOD.projection.diagnose(
 \arguments{
 \item{ood_result}{output of \code{OOD.pretrain()} or \code{OOD.posttrain()}.}
 
-\item{basis}{character — projection basis to diagnose. See class dispatch.}
+\item{basis}{character -- projection basis to diagnose. See class dispatch.}
 
-\item{pdf_file}{character or NULL — write the plot to this PDF.}
+\item{pdf_file}{character or NULL -- write the plot to this PDF.}
 
-\item{top_n}{integer — how many top stats to show in the loading plots.}
+\item{top_n}{integer -- how many top stats to show in the loading plots.}
 
-\item{pdf_width, pdf_height}{numeric — PDF dimensions if \code{pdf_file} given.}
+\item{pdf_width, pdf_height}{numeric -- PDF dimensions if \code{pdf_file} given.}
 }
 \value{
 Invisibly a list with:
@@ -31,7 +30,7 @@ Invisibly a list with:
   \item{nn_obs_full}{Full-component NN distance from obs to nearest sim}
   \item{nn_proj_full}{Full-component NN distance from projected obs to
     nearest sim}
-  \item{cumulative_distance}{matrix [n_comp x 2] — cumulative distance
+  \item{cumulative_distance}{matrix [n_comp x 2] -- cumulative distance
     to nearest sim as components are added one by one}
   \item{obs_pc_z, proj_pc_z}{|score| / sim component sd per component}
   \item{loadings_pc1, loadings_pc2}{outlier-stat loadings on components
@@ -40,6 +39,10 @@ Invisibly a list with:
 }
 }
 \description{
+Explains why the "obs projected (outliers neutralized)" arrow lands where
+it does in the chosen projection basis.
+}
+\details{
 Runs three complementary checks on the chosen basis:
 \enumerate{
   \item Full-component NN distance: does the projection bring obs closer
@@ -55,8 +58,7 @@ Runs three complementary checks on the chosen basis:
     Skipped for the NN-latent basis (the mapping is nonlinear; loadings
     do not exist).
 }
-}
-\details{
+
 Class-dispatched on the input:
 \itemize{
   \item \code{OOD_pretrain} accepts \code{basis} in \code{"pca"} or

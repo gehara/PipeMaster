@@ -28,10 +28,10 @@ label column.}
 
 \item{model_col}{Label column name.}
 
-\item{classes}{Character vector — subset of class names to attribute.
+\item{classes}{Character vector -- subset of class names to attribute.
 NULL = all.}
 
-\item{targets}{Character vector — subset of \code{c("centroid",
+\item{targets}{Character vector -- subset of \code{c("centroid",
 "nearest", "logit")}. Default all three.}
 
 \item{n_steps}{Integration steps for integrated gradients (default 50).}
@@ -41,9 +41,9 @@ centroid computation (default NULL = use all sims).}
 
 \item{seed}{Random seed.}
 
-\item{plot}{Logical — draw the heatmap.}
+\item{plot}{Logical -- draw the heatmap.}
 
-\item{verbose}{Logical — print progress.}
+\item{verbose}{Logical -- print progress.}
 }
 \value{
 A list of class
@@ -54,7 +54,7 @@ A list of class
   \item{obs}{numeric obs values (length n_bins)}
   \item{class_means}{K x n_bins matrix of per-class mean raw stats}
   \item{predicted_class}{best class from \code{nn.predict.classify}}
-  \item{attribution}{named list with one matrix per target — each
+  \item{attribution}{named list with one matrix per target -- each
     \code{K_used x n_bins}, attribution in z-scored input units}
   \item{nearest_idx}{(if \code{nearest} requested) named integer of
     nearest sim index per class (1-based, into the kept subsample)}
@@ -71,11 +71,11 @@ classifier.
 \details{
 Three target functions per class \eqn{k}:
 \itemize{
-  \item \strong{centroid}: \eqn{\|z(\mathbf{s}) - \bar z_k\|^2} —
+  \item \strong{centroid}: \eqn{\|z(\mathbf{s}) - \bar z_k\|^2} --
         distance to class-\eqn{k} centroid in latent space.
         Baseline = class-\eqn{k} mean SFS.
   \item \strong{nearest}: \eqn{\|z(\mathbf{s}) - z(\mathbf{s}_k^*)\|^2}
-        — distance to obs's nearest class-\eqn{k} sim in latent space.
+        -- distance to obs's nearest class-\eqn{k} sim in latent space.
         Baseline = that nearest sim.
   \item \strong{logit}: classifier's class-\eqn{k} logit (pre-softmax).
         Positive attribution = bin pushes prediction toward class

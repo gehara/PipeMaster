@@ -9,7 +9,7 @@ pls.project(pls.fit, newdata)
 \arguments{
 \item{pls.fit}{A \code{pls.fit} object from \code{pls.fit()}.}
 
-\item{newdata}{Numeric matrix or vector — new summary statistics to project.
+\item{newdata}{Numeric matrix or vector -- new summary statistics to project.
 Must have the same columns as the training stats.}
 }
 \value{

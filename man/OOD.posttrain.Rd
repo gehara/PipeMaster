@@ -17,32 +17,32 @@ OOD.posttrain(
 )
 }
 \arguments{
-\item{trained.nn}{list — output from \code{train.emulator()} or
+\item{trained.nn}{list -- output from \code{train.emulator()} or
 \code{tune.nn()}.}
 
-\item{observed}{numeric vector or 1-row data.frame — observed summary
+\item{observed}{numeric vector or 1-row data.frame -- observed summary
 statistics.}
 
-\item{reftable}{data.frame — the reference table used for training.}
+\item{reftable}{data.frame -- the reference table used for training.}
 
-\item{pretrain}{object of class \code{"OOD_pretrain"} or NULL — when
+\item{pretrain}{object of class \code{"OOD_pretrain"} or NULL -- when
 provided, the per-stat/PCA/PLS checks are reused (faster + verdict
 integrates both tiers). When NULL, posttrain runs the pre-training
 checks itself for verdict context.}
 
-\item{theta}{numeric vector or NULL — optimized parameter estimate (from
+\item{theta}{numeric vector or NULL -- optimized parameter estimate (from
 \code{emulator.optimize()}). Required for ensemble disagreement on
 forward emulator models; ignored for inverse \code{tune.nn()} models.}
 
-\item{pca.var}{numeric — PCA cumulative variance threshold (default 0.95).
+\item{pca.var}{numeric -- PCA cumulative variance threshold (default 0.95).
 Used when \code{pretrain = NULL}.}
 
-\item{pls.n.comp}{integer — number of PLS components (default 10L). Used
+\item{pls.n.comp}{integer -- number of PLS components (default 10L). Used
 when \code{pretrain = NULL}.}
 
-\item{alpha}{numeric — significance level for NN density tests (default 0.01).}
+\item{alpha}{numeric -- significance level for NN density tests (default 0.01).}
 
-\item{plot}{logical — produce diagnostic plots (default TRUE).}
+\item{plot}{logical -- produce diagnostic plots (default TRUE).}
 }
 \value{
 A list of class \code{"OOD_posttrain"} with all fields from
@@ -81,9 +81,9 @@ Two complementary checks (in addition to anything inherited from
 }
 \section{Verdict logic}{
 
-Per-stat tier (from pretrain) is primary. Secondary checks — joint NN
+Per-stat tier (from pretrain) is primary. Secondary checks -- joint NN
 density (PLS-filtered or NN-latent, whichever is richer) and ensemble
-disagreement — can downgrade pass→warn or warn→fail but never upgrade.
+disagreement -- can downgrade pass->warn or warn->fail but never upgrade.
 }
 
 \seealso{

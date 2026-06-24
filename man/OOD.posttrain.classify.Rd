@@ -65,8 +65,8 @@ A list of class \code{c("OOD_posttrain_classify", "OOD_diagnostic")}
 }
 \description{
 Companion to \code{\link{OOD.pretrain.classify}}. Uses the trained
-classifier's penultimate-layer (NN-latent) representation — the space
-in which the classifier discriminates between models — to check
+classifier's penultimate-layer (NN-latent) representation -- the space
+in which the classifier discriminates between models -- to check
 whether the observation lies inside any class's learned manifold,
 and inside the predicted class specifically.
 }

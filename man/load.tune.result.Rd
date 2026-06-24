@@ -7,7 +7,7 @@
 load.tune.result(path)
 }
 \arguments{
-\item{path}{character — directory path where files were saved.}
+\item{path}{character -- directory path where files were saved.}
 }
 \value{
 A list identical to the output of \code{tune.nn()}.

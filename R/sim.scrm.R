@@ -2,7 +2,7 @@
 #'
 #' Uses the vendored scrm C++ engine for fast coalescent simulation with
 #' recombination, combined with PipeMaster's C summary statistic functions.
-#' All computation stays in C/C++ memory — no R matrix overhead. This is
+#' All computation stays in C/C++ memory -- no R matrix overhead. This is
 #' ~5x faster than msABC for WGS-scale loci (e.g. 100kb with recombination).
 #'
 #' @param model A PipeMaster model object (from main.menu or build functions).
@@ -19,7 +19,7 @@
 #'       \itemize{
 #'         \item Fixed:  \code{list(distribution = "lognormal", median = 5.83e-9, sigma_log = 0.3)}
 #'         \item Sampled: \code{list(distribution = "lognormal", median = 5.83e-9, sigma_log_range = c(0.05, 0.5))}
-#'           — per sim, \code{sigma_log ~ Uniform(lo, hi)}; the realized value
+#'           -- per sim, \code{sigma_log ~ Uniform(lo, hi)}; the realized value
 #'             is recorded in the reftable as \code{sigma_log_mu} so it can be
 #'             treated as a learnable nuisance parameter by \code{tune.nn()}.
 #'       }
@@ -121,7 +121,7 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
     if (is.null(spec$median) || !is.numeric(spec$median) ||
         length(spec$median) != 1 || spec$median <= 0)
       stop(sprintf("%s$median must be a positive numeric scalar", name))
-    # Use exact name match — R's $ does partial-prefix matching, which would
+    # Use exact name match -- R's $ does partial-prefix matching, which would
     # treat sigma_log as matching sigma_log_range.
     has_fixed <- "sigma_log"       %in% names(spec)
     has_range <- "sigma_log_range" %in% names(spec)
@@ -464,7 +464,7 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
   #
   # The per-locus rates are i.i.d. lognormal draws. The C side reads the
   # vector in length-group order, but since the draws are exchangeable
-  # there is no per-group structure to preserve — a single rlnorm(nloci,
+  # there is no per-group structure to preserve -- a single rlnorm(nloci,
   # ...) call produces a statistically equivalent vector.
   #
   # sigma_log may be FIXED (spec$sigma_log) or SAMPLED per sim from a
@@ -472,7 +472,7 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
   # sigma_log is recorded in the reftable as sigma_log_mu / sigma_log_rec
   # so tune.nn() can treat it as a regression target if desired.
   .draw_sigma_log <- function(spec) {
-    # Use exact name lookup — avoid R's $ prefix matching.
+    # Use exact name lookup -- avoid R's $ prefix matching.
     if ("sigma_log_range" %in% names(spec)) {
       r <- spec[["sigma_log_range"]]
       runif(1, r[1], r[2])
@@ -495,7 +495,7 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
   }
 
   # Same pattern for mu. Even cheaper because mu does NOT affect the ARG
-  # (only post-hoc SegSites mutation placement) — per-locus override is
+  # (only post-hoc SegSites mutation placement) -- per-locus override is
   # essentially free.
   mu_per_locus     <- NULL
   sigma_log_mu_used <- NA_real_

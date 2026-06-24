@@ -2,7 +2,7 @@
 % Please edit documentation in R/get.data.structure.R
 \name{get.data.structure}
 \alias{get.data.structure}
-\title{Read the observed data to get the simulation parameters; base pairs and number of individuals per population.}
+\title{Read observed data and set simulation parameters (bp and samples per population)}
 \usage{
 get.data.structure(
   model,
@@ -35,7 +35,7 @@ Only chromosomes present in both chrom.sizes and the VCF are included.}
 Model object with updated gene parameters.
 }
 \description{
-Read the observed data to get the simulation parameters; base pairs and number of individuals per population.
+Read observed data and set simulation parameters (bp and samples per population)
 }
 \author{
 Marcelo Gehara

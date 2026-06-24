@@ -25,26 +25,26 @@ Mutually exclusive with \code{posterior}.}
 \code{nn.predict(method = "ABC_NN_regression")}). Mutually exclusive
 with \code{ood_result}.}
 
-\item{reftable}{data.frame — required when \code{posterior} is given,
+\item{reftable}{data.frame -- required when \code{posterior} is given,
 for extracting empirical prior bounds.}
 
-\item{K_frac}{numeric — fraction of sims to keep as nearest neighbors
+\item{K_frac}{numeric -- fraction of sims to keep as nearest neighbors
 when \code{ood_result} is given (default 0.025). Ignored in
 \code{posterior} mode.}
 
-\item{edge_threshold}{numeric — fraction of prior range considered
+\item{edge_threshold}{numeric -- fraction of prior range considered
 "near boundary" (default 0.05).}
 
-\item{basis}{character — projection basis for the in-pipeline K-NN.
+\item{basis}{character -- projection basis for the in-pipeline K-NN.
 \code{"pls"} (default) is param-aligned; \code{"pca"} is
 variance-aligned. Ignored in \code{posterior} mode.}
 
-\item{plot}{logical — produce a per-param grid showing the prior range
+\item{plot}{logical -- produce a per-param grid showing the prior range
 with accepted samples overlaid as a boxplot (default TRUE).}
 
-\item{pdf_file}{character or NULL — write the plot to this PDF.}
+\item{pdf_file}{character or NULL -- write the plot to this PDF.}
 
-\item{pdf_width, pdf_height}{numeric — PDF dimensions if \code{pdf_file}.}
+\item{pdf_width, pdf_height}{numeric -- PDF dimensions if \code{pdf_file}.}
 }
 \value{
 A list with:
@@ -52,9 +52,9 @@ A list with:
   \item{table}{data.frame: \code{param, prior_lo, prior_hi,
     neighbor_lo, neighbor_q25, neighbor_med, neighbor_q75, neighbor_hi,
     edge_pressure, med_dist_lo, med_dist_hi}}
-  \item{method}{character — short description of how \code{accepted}
+  \item{method}{character -- short description of how \code{accepted}
     was obtained}
-  \item{K}{integer — number of accepted samples used}
+  \item{K}{integer -- number of accepted samples used}
 }
 }
 \description{
@@ -73,13 +73,13 @@ Two input modes (mutually exclusive):
     \code{K_frac}, but reuses the projection that was already fit.
   \item \code{posterior =} (external): the function consumes any
     posterior object with an \code{$abc} matrix of accepted parameter
-    samples — e.g., from \code{nn.predict(method = "ABC_NN_regression")},
+    samples -- e.g., from \code{nn.predict(method = "ABC_NN_regression")},
     or any future ABC/NPE method that returns class \code{"posterior"}.
     The \code{reftable} is required to extract empirical prior bounds.
 }
 
 Prior bounds are inferred from the empirical \code{min}/\code{max} of
-each param column (assumes uniform priors — the PipeMaster default).
+each param column (assumes uniform priors -- the PipeMaster default).
 
 Boundary pressure is flagged when the median of the accepted samples
 sits within \code{edge_threshold * (prior_hi - prior_lo)} of either

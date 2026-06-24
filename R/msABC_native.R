@@ -4,7 +4,7 @@
 #' the overhead of spawning an external process via system2().
 #'
 #' @param command Character string with msABC arguments (e.g., "80 1 -I 2 40 40 -t 10 -r 5 1000").
-#'   This should NOT include the program name — just the arguments.
+#'   This should NOT include the program name -- just the arguments.
 #' @param seed Optional integer vector of length 3 for reproducible simulations.
 #'   If NULL (default), the internal seed state continues from previous calls.
 #'
@@ -24,7 +24,7 @@
 #' # Multi-population simulation
 #' run.msABC("20 1 -I 2 10 10 -t 10 -ej 1.0 1 2")
 #'
-#' # Fragment mode (multi-locus) — returns mean, variance, skewness
+#' # Fragment mode (multi-locus) -- returns mean, variance, skewness
 #' # and kurtosis of each summary statistic across loci
 #' locfile <- system.file("extdata", "example_locfile.txt", package = "PipeMaster")
 #' cmd <- paste("10 2 -t 5.0 --frag-begin --finp", locfile, "--N 10000 --frag-end")

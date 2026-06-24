@@ -1,12 +1,12 @@
 # ============================================================================
 # Torch Training Infrastructure for PipeMaster
 #
-# Custom training loop, Hyperband, save/load — all in pure R torch.
+# Custom training loop, Hyperband, save/load -- all in pure R torch.
 #
 # Functions:
-#   .torch.train.model()  — custom training loop (early stopping, LR scheduler)
-#   .torch.hyperband()    — Hyperband HP search
-#   .torch.compute.model.metrics() — R² and MPE on validation set
+#   .torch.train.model()  -- custom training loop (early stopping, LR scheduler)
+#   .torch.hyperband()    -- Hyperband HP search
+#   .torch.compute.model.metrics() -- R² and MPE on validation set
 # ============================================================================
 
 # ============================================================================
@@ -467,7 +467,7 @@
     'args <- commandArgs(trailingOnly = TRUE)',
     'task_id <- as.integer(args[1])',
     '',
-    '# Load metadata (small — no data matrices)',
+    '# Load metadata (small -- no data matrices)',
     'load("shared_search_meta.RData")',
     '',
     '# Threading env',
@@ -494,7 +494,7 @@
     '  if (cuda_is_available()) device <- "cuda"',
     '}',
     '',
-    '# Load data — bigmemory (shared mmap) or rds (per-worker copy)',
+    '# Load data -- bigmemory (shared mmap) or rds (per-worker copy)',
     'if (use_bigmemory) {',
     '  suppressPackageStartupMessages(library(bigmemory))',
     '  X_train <- attach.big.matrix("X_train.desc")',

@@ -14,21 +14,21 @@ tune.nn.sensitivity(
 )
 }
 \arguments{
-\item{tune.result}{list — output from \code{tune.nn()}.}
+\item{tune.result}{list -- output from \code{tune.nn()}.}
 
-\item{observed}{numeric vector or 1-row data.frame — observed summary stats.}
+\item{observed}{numeric vector or 1-row data.frame -- observed summary stats.}
 
-\item{ensemble_weights}{character — \code{"inv_val_loss"} (default) weights
+\item{ensemble_weights}{character -- \code{"inv_val_loss"} (default) weights
 each ensemble member by the inverse of its validation loss; \code{"uniform"}
 gives equal weight.}
 
-\item{aggregate}{character — \code{"mean"} (default), \code{"median"}, or
+\item{aggregate}{character -- \code{"mean"} (default), \code{"median"}, or
 \code{"none"} (return per-model array).}
 
-\item{device}{character — \code{"cpu"} or \code{"cuda"} (default chooses cuda
+\item{device}{character -- \code{"cpu"} or \code{"cuda"} (default chooses cuda
 when available).}
 
-\item{verbose}{logical — print progress (default TRUE).}
+\item{verbose}{logical -- print progress (default TRUE).}
 }
 \value{
 A list of class \code{"tune_nn_sensitivity"} with:
@@ -42,7 +42,7 @@ A list of class \code{"tune_nn_sensitivity"} with:
 }
 \description{
 Computes \eqn{J[j, i] = d\theta_j / dS_i} of the trained NN at one or more
-observed datasets — i.e., how each parameter prediction responds to each
+observed datasets -- i.e., how each parameter prediction responds to each
 summary statistic. Mirror of \code{emulator.sensitivity()}, which computes
 the opposite direction \eqn{dS_k / d\theta_j} for the forward emulator.
 }
@@ -52,7 +52,7 @@ Two outputs:
   \item \strong{Jacobian}: in original parameter and statistic units.
         Useful when stats and params share interpretable scales.
   \item \strong{Elasticity}: dimensionless,
-        \eqn{E[j, i] = (S_i / \theta_j) \cdot J[j, i]} — comparable across
+        \eqn{E[j, i] = (S_i / \theta_j) \cdot J[j, i]} -- comparable across
         stats with very different magnitudes.
 }
 
@@ -60,5 +60,5 @@ Ensemble averaging follows the conventions of \code{nn.predict()}:
 weights are inverse validation loss (default) or uniform.
 }
 \seealso{
-\code{\link{emulator.sensitivity}} for the forward direction.
+\code{emulator.sensitivity()} for the forward direction (keras emulator pipeline).
 }

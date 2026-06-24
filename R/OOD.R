@@ -2,9 +2,9 @@
 # Out-of-Distribution Diagnostics for PipeMaster
 #
 # Two-tier API:
-#   OOD.pretrain()  — prior-predictive coverage (no trained NN required)
+#   OOD.pretrain()  -- prior-predictive coverage (no trained NN required)
 #                     per-stat support + NN density in PCA + NN density in PLS
-#   OOD.posttrain() — model-fit + posterior fidelity (requires trained NN)
+#   OOD.posttrain() -- model-fit + posterior fidelity (requires trained NN)
 #                     NN-latent NN density + ensemble disagreement
 #                     Optionally consumes an OOD.pretrain() result to reuse
 #                     the per-stat / PCA / PLS context for verdict and plots.
@@ -322,7 +322,7 @@
   if (!is.null(param.cols)) {
     missing_params <- setdiff(param.cols, colnames(reftable))
     if (length(missing_params) > 0) {
-      warning(sprintf("param.cols not found in reftable: %s — PLS check skipped",
+      warning(sprintf("param.cols not found in reftable: %s -- PLS check skipped",
                       paste(missing_params, collapse = ", ")))
       param.cols <- NULL
     } else {
@@ -340,7 +340,7 @@
 }
 
 # Verdict: tier-based on per-stat outlier fraction; secondary checks (joint
-# NN density + ensemble disagreement) can downgrade pass→warn or warn→fail
+# NN density + ensemble disagreement) can downgrade pass->warn or warn->fail
 # but never upgrade.
 .ood.combine.verdict <- function(per_stat_tier, secondary_ok) {
   if (per_stat_tier == "fail") return("fail")
@@ -350,21 +350,21 @@
 
 
 # ---------------------------------------------------------------------------
-# Public: OOD.pretrain() — prior-predictive coverage check
+# Public: OOD.pretrain() -- prior-predictive coverage check
 # ---------------------------------------------------------------------------
 
 #' Pre-training Out-of-Distribution Diagnostic (Prior-Predictive Coverage)
 #'
 #' Evaluates whether the observed summary statistics are reachable under the
 #' prior predictive distribution, before any model is trained. Operates on
-#' the reftable (prior-predictive sims) and observed stats alone — no neural
+#' the reftable (prior-predictive sims) and observed stats alone -- no neural
 #' network required.
 #'
 #' Three complementary checks:
 #' \itemize{
 #'   \item \strong{Per-stat support} (marginal): each stat is classified as
 #'     \code{ok} (obs inside sim range), \code{outlier} (obs strictly outside
-#'     sim range — model cannot produce this observation under the prior),
+#'     sim range -- model cannot produce this observation under the prior),
 #'     or \code{uninformative} (sims constant + obs matches constant).
 #'     Outlier fraction drives the per-stat tier:
 #'     \code{pass} (< 10\%), \code{warn} (10-25\%), \code{fail} (> 25\%).
@@ -383,22 +383,23 @@
 #' does in PCA/PLS space, and \code{OOD.outliers()} for per-outlier sim
 #' distributions.
 #'
-#' @param observed numeric vector or 1-row data.frame — observed summary
+#' @param observed numeric vector or 1-row data.frame -- observed summary
 #'   statistics. If a data.frame with named columns, those names are matched
 #'   against the reftable.
-#' @param reftable data.frame — the prior-predictive reference table.
-#' @param stat.cols character vector — stat columns in the reftable.
+#' @param reftable data.frame -- the prior-predictive reference table.
+#' @param stat.cols character vector -- stat columns in the reftable.
 #'   Required unless \code{observed} is a data.frame whose column names
 #'   identify stats.
-#' @param param.cols character vector or NULL — parameter columns in the
+#' @param param.cols character vector or NULL -- parameter columns in the
 #'   reftable. When provided, the PLS NN density check is computed.
-#' @param pca.var numeric — cumulative variance threshold for PCA (default 0.95).
-#' @param pls.n.comp integer — number of PLS components to fit (default 10,
+#' @param pca.var numeric -- cumulative variance threshold for PCA (default 0.95).
+#' @param pls.n.comp integer -- number of PLS components to fit (default 10,
 #'   capped at \code{n_params + 5} and \code{n_stats - 1}).
-#' @param alpha numeric — significance level for the NN density tests
+#' @param alpha numeric -- significance level for the NN density tests
 #'   (default 0.01). Per-stat outliers use a strict support-based criterion
 #'   (obs outside sim range) and do not depend on alpha.
-#' @param plot logical — produce diagnostic plots (default TRUE).
+#' @param plot logical -- produce diagnostic plots (default TRUE).
+#' @param verbose logical -- print progress messages (default TRUE).
 #'
 #' @return A list of class \code{"OOD_pretrain"} with:
 #' \describe{
@@ -407,7 +408,7 @@
 #'   \item{percentiles}{data.frame with stat, percentile, outlier, reason}
 #'   \item{pca_all, pca_filtered}{NN density in PCA space (all stats, and
 #'     stats minus zero-var + per-stat outliers)}
-#'   \item{pls_all, pls_filtered}{NN density in PLS space — present when
+#'   \item{pls_all, pls_filtered}{NN density in PLS space -- present when
 #'     \code{param.cols} is provided}
 #'   \item{overall}{character: \code{"pass"}, \code{"warn"}, or \code{"fail"}}
 #' }
@@ -526,7 +527,7 @@ OOD.pretrain <- function(observed, reftable, stat.cols = NULL,
 
 
 # ---------------------------------------------------------------------------
-# Public: OOD.posttrain() — model-fit + posterior fidelity
+# Public: OOD.posttrain() -- model-fit + posterior fidelity
 # ---------------------------------------------------------------------------
 
 #' Post-training Out-of-Distribution Diagnostic (Model Fit & Posterior Fidelity)
@@ -551,24 +552,24 @@ OOD.pretrain <- function(observed, reftable, stat.cols = NULL,
 #'     that the trained model is extrapolating at obs.
 #' }
 #'
-#' @param trained.nn list — output from \code{train.emulator()} or
+#' @param trained.nn list -- output from \code{train.emulator()} or
 #'   \code{tune.nn()}.
-#' @param observed numeric vector or 1-row data.frame — observed summary
+#' @param observed numeric vector or 1-row data.frame -- observed summary
 #'   statistics.
-#' @param reftable data.frame — the reference table used for training.
-#' @param pretrain object of class \code{"OOD_pretrain"} or NULL — when
+#' @param reftable data.frame -- the reference table used for training.
+#' @param pretrain object of class \code{"OOD_pretrain"} or NULL -- when
 #'   provided, the per-stat/PCA/PLS checks are reused (faster + verdict
 #'   integrates both tiers). When NULL, posttrain runs the pre-training
 #'   checks itself for verdict context.
-#' @param theta numeric vector or NULL — optimized parameter estimate (from
+#' @param theta numeric vector or NULL -- optimized parameter estimate (from
 #'   \code{emulator.optimize()}). Required for ensemble disagreement on
 #'   forward emulator models; ignored for inverse \code{tune.nn()} models.
-#' @param pca.var numeric — PCA cumulative variance threshold (default 0.95).
+#' @param pca.var numeric -- PCA cumulative variance threshold (default 0.95).
 #'   Used when \code{pretrain = NULL}.
-#' @param pls.n.comp integer — number of PLS components (default 10L). Used
+#' @param pls.n.comp integer -- number of PLS components (default 10L). Used
 #'   when \code{pretrain = NULL}.
-#' @param alpha numeric — significance level for NN density tests (default 0.01).
-#' @param plot logical — produce diagnostic plots (default TRUE).
+#' @param alpha numeric -- significance level for NN density tests (default 0.01).
+#' @param plot logical -- produce diagnostic plots (default TRUE).
 #'
 #' @return A list of class \code{"OOD_posttrain"} with all fields from
 #'   \code{OOD.pretrain()} plus:
@@ -583,9 +584,9 @@ OOD.pretrain <- function(observed, reftable, stat.cols = NULL,
 #' }
 #'
 #' @section Verdict logic:
-#' Per-stat tier (from pretrain) is primary. Secondary checks — joint NN
+#' Per-stat tier (from pretrain) is primary. Secondary checks -- joint NN
 #' density (PLS-filtered or NN-latent, whichever is richer) and ensemble
-#' disagreement — can downgrade pass→warn or warn→fail but never upgrade.
+#' disagreement -- can downgrade pass->warn or warn->fail but never upgrade.
 #'
 #' @seealso \code{\link{OOD.pretrain}}, \code{\link{OOD.projection.diagnose}}.
 #'
@@ -618,7 +619,7 @@ OOD.posttrain <- function(trained.nn, observed, reftable,
     pre <- pretrain
     # Validate stat compatibility
     if (!setequal(pre$.context$sim_cols, intersect(stat_cols, colnames(reftable))))
-      warning("pretrain stat columns differ from trained.nn stat columns — verdict may be inconsistent.")
+      warning("pretrain stat columns differ from trained.nn stat columns -- verdict may be inconsistent.")
   } else {
     pre <- OOD.pretrain(observed = observed, reftable = reftable,
                         stat.cols = stat_cols, param.cols = param.cols,
@@ -836,7 +837,7 @@ OOD.posttrain <- function(trained.nn, observed, reftable,
     for (r in seq_len(nrow(bad)))
       cat(sprintf("    %s: percentile=%.3f\n", bad$stat[r], bad$percentile[r]))
   } else if (ps$n_outliers > 20) {
-    cat(sprintf("    (%d outliers — inspect with OOD.outliers())\n", ps$n_outliers))
+    cat(sprintf("    (%d outliers -- inspect with OOD.outliers())\n", ps$n_outliers))
   }
 
   .one_density <- function(label, x, units = "PCs") {
@@ -883,7 +884,7 @@ OOD.posttrain <- function(trained.nn, observed, reftable,
 # Histogram of LOO sim NN distances with obs marked.
 .ood.panel.nn.hist <- function(nn_res, label, method, n_axis) {
   if (is.null(nn_res) || is.na(nn_res$pass)) {
-    plot.new(); title(main = sprintf("NN distance (%s) — unavailable", label))
+    plot.new(); title(main = sprintf("NN distance (%s) -- unavailable", label))
     return(invisible(NULL))
   }
   hist(nn_res$null_distribution, breaks = 50,
@@ -902,7 +903,7 @@ OOD.posttrain <- function(trained.nn, observed, reftable,
 .ood.panel.scatter <- function(density_all, density_method, density_axis_n,
                                density_x_label, n_stats) {
   if (is.null(density_all$scores) || is.na(density_all$pass)) {
-    plot.new(); title(main = sprintf("NN vs %s1 — unavailable", density_method))
+    plot.new(); title(main = sprintf("NN vs %s1 -- unavailable", density_method))
     return(invisible(NULL))
   }
   y_sim <- density_all$null_distribution
@@ -1082,9 +1083,9 @@ OOD.posttrain <- function(trained.nn, observed, reftable,
 # Wrapper so each density-row can fail gracefully when its basis isn't available
 .ood.plot.density.row <- function(label, scatter_basis, hist_all, hist_filtered) {
   if (is.null(scatter_basis$all) || is.null(scatter_basis$all$scores)) {
-    plot.new(); title(main = sprintf("%s scatter — unavailable", label))
-    plot.new(); title(main = sprintf("%s NN density (all) — unavailable", label))
-    plot.new(); title(main = sprintf("%s NN density (filtered) — unavailable", label))
+    plot.new(); title(main = sprintf("%s scatter -- unavailable", label))
+    plot.new(); title(main = sprintf("%s NN density (all) -- unavailable", label))
+    plot.new(); title(main = sprintf("%s NN density (filtered) -- unavailable", label))
     return(invisible(NULL))
   }
   .ood.panel.scatter(scatter_basis$all, scatter_basis$method,
@@ -1096,7 +1097,7 @@ OOD.posttrain <- function(trained.nn, observed, reftable,
                      scatter_basis$method, scatter_basis$axis_n)
 }
 
-# 3x3 plot for pretrain — rows: per-stat, PCA, PLS. Each row owns 3 panels.
+# 3x3 plot for pretrain -- rows: per-stat, PCA, PLS. Each row owns 3 panels.
 .ood.plot.pretrain <- function(results) {
   old_par <- par(no.readonly = TRUE)
   on.exit(par(old_par))
@@ -1127,9 +1128,9 @@ OOD.posttrain <- function(trained.nn, observed, reftable,
     .ood.plot.density.row("PLS", pls_basis,
                            results$pls_all, results$pls_filtered)
   } else {
-    plot.new(); title(main = "PLS scatter — pass param.cols to enable")
-    plot.new(); title(main = "PLS NN density (all) — pass param.cols")
-    plot.new(); title(main = "PLS NN density (filtered) — pass param.cols")
+    plot.new(); title(main = "PLS scatter -- pass param.cols to enable")
+    plot.new(); title(main = "PLS NN density (all) -- pass param.cols")
+    plot.new(); title(main = "PLS NN density (filtered) -- pass param.cols")
   }
 }
 
@@ -1158,16 +1159,16 @@ OOD.posttrain <- function(trained.nn, observed, reftable,
 
 
 # ============================================================================
-# OOD.pretrain.classify — Pre-training diagnostic for model selection
+# OOD.pretrain.classify -- Pre-training diagnostic for model selection
 #
 # Multi-model variant of OOD.pretrain(): given a stacked reftable labelled by
 # `model_col` and an observed dataset, evaluates whether each candidate model's
 # prior predictive distribution covers the observation, identifies stats that
-# are universal outliers (rejected by every model — drop them from the
+# are universal outliers (rejected by every model -- drop them from the
 # classifier feature set), and visualizes the K classes in PCA + PLS-DA space.
 #
 # Output drives:
-#   1. Feature filtering for tune.nn.classify() — drop universal-outlier stats
+#   1. Feature filtering for tune.nn.classify() -- drop universal-outlier stats
 #   2. Visual diagnostic on whether obs lands inside any model's cloud
 #   3. Per-model NN-density p-value: probability obs is plausible under model m
 # ============================================================================
@@ -1294,7 +1295,7 @@ OOD.posttrain <- function(trained.nn, observed, reftable,
 # and computes the geometric verdict per class. Z-scoring is done in
 # the global PLS-DA space so cross-class distances share a metric.
 ## Per-class Mahalanobis-to-centroid verdict in score space (PCA or PLS-DA).
-## Complements the K=1 NN-density verdict — gives a centroid distance,
+## Complements the K=1 NN-density verdict -- gives a centroid distance,
 ## which is more interpretable for "is obs at the cloud center". Reuses
 ## the standalone helpers .ood.mahalanobis.loo() and
 ## .ood.mahalanobis.obs.per.class() (Lee et al. 2018).
@@ -1385,25 +1386,25 @@ OOD.posttrain <- function(trained.nn, observed, reftable,
 #' Visualizes the four (or K) candidate models in a single PCA and a single
 #' PLS-DA projection, both colored by model_id with the observation marked.
 #'
-#' @param reftable data.frame — combined reference table with sims from all
+#' @param reftable data.frame -- combined reference table with sims from all
 #'   candidate models stacked, and a label column (`model_col`) identifying
 #'   which model each sim came from.
-#' @param model_col character — name of the label column.
-#' @param observed numeric vector or 1-row data.frame — observed summary stats.
-#' @param stat.cols character vector or NULL — feature columns. If NULL, all
+#' @param model_col character -- name of the label column.
+#' @param observed numeric vector or 1-row data.frame -- observed summary stats.
+#' @param stat.cols character vector or NULL -- feature columns. If NULL, all
 #'   non-param non-label columns are used.
-#' @param subsample integer or NULL — per-model subsample for PCA/PLS-DA
+#' @param subsample integer or NULL -- per-model subsample for PCA/PLS-DA
 #'   (default NULL = use all sims). Useful for very large reftables.
-#' @param alpha numeric — significance level for per-model NN density p-values
+#' @param alpha numeric -- significance level for per-model NN density p-values
 #'   (default 0.01).
-#' @param universal_fail_threshold numeric — fraction of universal outliers
+#' @param universal_fail_threshold numeric -- fraction of universal outliers
 #'   above which the diagnostic fails (default 0.25).
-#' @param pca.var numeric — PCA cumulative variance threshold (default 0.95).
-#' @param pls.n.comp integer or NULL — PLS-DA components (default K-1 or 2,
+#' @param pca.var numeric -- PCA cumulative variance threshold (default 0.95).
+#' @param pls.n.comp integer or NULL -- PLS-DA components (default K-1 or 2,
 #'   whichever is larger).
-#' @param seed integer — random seed for subsampling.
-#' @param plot logical — produce diagnostic plots (default TRUE).
-#' @param verbose logical — print summary (default TRUE).
+#' @param seed integer -- random seed for subsampling.
+#' @param plot logical -- produce diagnostic plots (default TRUE).
+#' @param verbose logical -- print summary (default TRUE).
 #'
 #' @return A list of class `c("OOD_pretrain_classify", "OOD_diagnostic")`
 #'   with:
@@ -1411,12 +1412,12 @@ OOD.posttrain <- function(trained.nn, observed, reftable,
 #'   \item{class_names}{character vector of K model labels}
 #'   \item{n_classes}{integer K}
 #'   \item{n_stats}{integer total stats considered}
-#'   \item{rejection}{K x n_stats logical matrix — TRUE if obs outside model k's support for stat j}
-#'   \item{rejection_count}{integer vector length n_stats — number of models rejecting each stat}
-#'   \item{universal_mask}{logical mask — stats rejected by all K models}
-#'   \item{specific_mask}{logical mask — stats rejected by 1..K-1 models}
-#'   \item{keep_mask}{logical mask — feature-set filter for tune.nn.classify (= !universal)}
-#'   \item{stat_cols}{character — original stat column names}
+#'   \item{rejection}{K x n_stats logical matrix -- TRUE if obs outside model k's support for stat j}
+#'   \item{rejection_count}{integer vector length n_stats -- number of models rejecting each stat}
+#'   \item{universal_mask}{logical mask -- stats rejected by all K models}
+#'   \item{specific_mask}{logical mask -- stats rejected by 1..K-1 models}
+#'   \item{keep_mask}{logical mask -- feature-set filter for tune.nn.classify (= !universal)}
+#'   \item{stat_cols}{character -- original stat column names}
 #'   \item{percentiles_per_model}{K x n_stats matrix of mid-rank percentiles}
 #'   \item{pca}{combined PCA: scores, score_obs, fit, n_pcs, var_explained}
 #'   \item{pls_da}{PLS-DA: scores, score_obs, fit, n_comp}
@@ -1594,7 +1595,7 @@ OOD.pretrain.classify <- function(reftable, model_col, observed,
 # ---------------------------------------------------------------------------
 
 .ood.classify.print.summary <- function(results) {
-  cat("Pre-training OOD diagnostic — model selection\n")
+  cat("Pre-training OOD diagnostic -- model selection\n")
   cat(sprintf("  Classes (K=%d): %s\n",
               results$n_classes,
               paste(results$class_names, collapse = ", ")))
@@ -1673,7 +1674,7 @@ OOD.pretrain.classify <- function(reftable, model_col, observed,
     if (length(bad_stats) <= 20L) {
       for (s in bad_stats) cat(sprintf("    %s\n", s))
     } else {
-      cat(sprintf("    (%d stats — see results$stat_cols[results$universal_mask])\n",
+      cat(sprintf("    (%d stats -- see results$stat_cols[results$universal_mask])\n",
                   length(bad_stats)))
     }
   }
@@ -1739,7 +1740,7 @@ OOD.pretrain.classify <- function(reftable, model_col, observed,
                           sum(results$universal_mask)),
        cex = 0.8, col = "grey40")
 
-  # ---- Row 2: PCA — Comp1 vs LOO-NN in full PC space (per class) ----
+  # ---- Row 2: PCA -- Comp1 vs LOO-NN in full PC space (per class) ----
   if (!is.null(results$pca$scores)) {
     sc <- results$pca$scores
     so <- results$pca$score_obs
@@ -1771,7 +1772,7 @@ OOD.pretrain.classify <- function(reftable, model_col, observed,
            col = c(cols, "black"), pch = c(rep(16, K), 8),
            pt.cex = c(rep(1, K), 1.6), cex = 0.7, bty = "n")
   } else {
-    plot.new(); title(main = "PCA — unavailable")
+    plot.new(); title(main = "PCA -- unavailable")
   }
 
   # 5: per-model PCA NN distance bars (d_obs)
@@ -1814,7 +1815,7 @@ OOD.pretrain.classify <- function(reftable, model_col, observed,
   .ood.verdict.panel(results$per_model_nn, results$class_names,
                      "PCA per-class verdict")
 
-  # ---- Row 3: PLS-DA — Comp1 vs LOO-NN in full PLS space (per class) ----
+  # ---- Row 3: PLS-DA -- Comp1 vs LOO-NN in full PLS space (per class) ----
   if (!is.null(results$pls_da$scores) && ncol(results$pls_da$scores) >= 2L) {
     sc <- results$pls_da$scores
     so <- results$pls_da$score_obs
@@ -1855,12 +1856,12 @@ OOD.pretrain.classify <- function(reftable, model_col, observed,
     .ood.verdict.panel(results$per_model_plsda, results$class_names,
                        "PLS-DA per-class verdict")
   } else {
-    plot.new(); title(main = "PLS-DA — unavailable")
+    plot.new(); title(main = "PLS-DA -- unavailable")
     plot.new(); plot.new()
   }
 
   # ============================================================================
-  # Page 2 — Mahalanobis-to-centroid verdicts + 2D (Comp1 vs Comp2) scatters.
+  # Page 2 -- Mahalanobis-to-centroid verdicts + 2D (Comp1 vs Comp2) scatters.
   # Complements page 1's K=1 NN-density view (local density) with a centroid-
   # distance view (Mahalanobis), and exposes the second PC/PLS axis the
   # page-1 scatter hides.
@@ -1889,7 +1890,7 @@ OOD.pretrain.classify <- function(reftable, model_col, observed,
              col = "black", pch = 21, bg = cols[cn],
              cex = 2.4, lwd = 1.4)
     }
-    ## obs (single point — same in all classes)
+    ## obs (single point -- same in all classes)
     points(so[1, 1], so[1, 2], pch = 8, col = "red",
            cex = 2.6, lwd = 2.5)
     legend("topright", legend = c(results$class_names, "centroid", "obs"),
@@ -1899,7 +1900,7 @@ OOD.pretrain.classify <- function(reftable, model_col, observed,
            pt.cex = c(rep(1, K), 1.6, 1.6),
            cex = 0.7, bty = "n")
   } else {
-    plot.new(); title(main = "PCA Comp1 vs Comp2 — unavailable")
+    plot.new(); title(main = "PCA Comp1 vs Comp2 -- unavailable")
   }
 
   ## per-class Mahalanobis-to-centroid bar (PCA space)
@@ -1943,7 +1944,7 @@ OOD.pretrain.classify <- function(reftable, model_col, observed,
            pt.cex = c(rep(1, K), 1.6, 1.6),
            cex = 0.7, bty = "n")
   } else {
-    plot.new(); title(main = "PLS-DA Comp1 vs Comp2 — unavailable")
+    plot.new(); title(main = "PLS-DA Comp1 vs Comp2 -- unavailable")
   }
 
   d_mahal_pls <- vapply(results$per_model_plsda_mahal,
@@ -2023,7 +2024,7 @@ summary.OOD_pretrain_classify <- function(object, ...) {
 
 
 # ============================================================================
-# OOD.posttrain.classify — Post-training diagnostic for model selection
+# OOD.posttrain.classify -- Post-training diagnostic for model selection
 #
 # Companion to OOD.pretrain.classify(): uses the trained classifier's
 # penultimate-layer activations (NN-latent space) to ask whether the
@@ -2116,8 +2117,8 @@ summary.OOD_pretrain_classify <- function(object, ...) {
 #' Post-training Out-of-Distribution Diagnostic for Model Selection
 #'
 #' Companion to \code{\link{OOD.pretrain.classify}}. Uses the trained
-#' classifier's penultimate-layer (NN-latent) representation — the space
-#' in which the classifier discriminates between models — to check
+#' classifier's penultimate-layer (NN-latent) representation -- the space
+#' in which the classifier discriminates between models -- to check
 #' whether the observation lies inside any class's learned manifold,
 #' and inside the predicted class specifically.
 #'
@@ -2631,14 +2632,14 @@ summary.OOD_posttrain_classify <- function(object, ...) {
 
 
 # ============================================================================
-# OOD.attribute.classify — per-bin attribution explaining classifier OOD
+# OOD.attribute.classify -- per-bin attribution explaining classifier OOD
 #
 # Forensic follow-up to OOD.posttrain.classify: when obs lies outside every
 # class's latent cloud, attribution tells us *which* SFS bins drive the
 # extrapolation under three target functions per class:
-#   (a) centroid — distance from obs to class-k centroid in latent space
-#   (b) nearest  — distance from obs to its nearest class-k sim in latent
-#   (c) logit    — class-k logit (pre-softmax) at obs
+#   (a) centroid -- distance from obs to class-k centroid in latent space
+#   (b) nearest  -- distance from obs to its nearest class-k sim in latent
+#   (c) logit    -- class-k logit (pre-softmax) at obs
 #
 # Method: integrated gradients (Sundararajan et al. 2017) in the classifier's
 # z-scored augmented input space (raw stats + log1p|stats|). Per-target
@@ -2697,11 +2698,11 @@ summary.OOD_posttrain_classify <- function(object, ...) {
 #'
 #' Three target functions per class \eqn{k}:
 #' \itemize{
-#'   \item \strong{centroid}: \eqn{\|z(\mathbf{s}) - \bar z_k\|^2} —
+#'   \item \strong{centroid}: \eqn{\|z(\mathbf{s}) - \bar z_k\|^2} --
 #'         distance to class-\eqn{k} centroid in latent space.
 #'         Baseline = class-\eqn{k} mean SFS.
 #'   \item \strong{nearest}: \eqn{\|z(\mathbf{s}) - z(\mathbf{s}_k^*)\|^2}
-#'         — distance to obs's nearest class-\eqn{k} sim in latent space.
+#'         -- distance to obs's nearest class-\eqn{k} sim in latent space.
 #'         Baseline = that nearest sim.
 #'   \item \strong{logit}: classifier's class-\eqn{k} logit (pre-softmax).
 #'         Positive attribution = bin pushes prediction toward class
@@ -2717,16 +2718,16 @@ summary.OOD_posttrain_classify <- function(object, ...) {
 #' @param reftable Reference table containing classifier features +
 #'   label column.
 #' @param model_col Label column name.
-#' @param classes Character vector — subset of class names to attribute.
+#' @param classes Character vector -- subset of class names to attribute.
 #'   NULL = all.
-#' @param targets Character vector — subset of \code{c("centroid",
+#' @param targets Character vector -- subset of \code{c("centroid",
 #'   "nearest", "logit")}. Default all three.
 #' @param n_steps Integration steps for integrated gradients (default 50).
 #' @param subsample Per-class subsample for nearest-sim search and
 #'   centroid computation (default NULL = use all sims).
 #' @param seed Random seed.
-#' @param plot Logical — draw the heatmap.
-#' @param verbose Logical — print progress.
+#' @param plot Logical -- draw the heatmap.
+#' @param verbose Logical -- print progress.
 #'
 #' @return A list of class
 #'   \code{c("OOD_attribution_classify", "OOD_diagnostic")} with:
@@ -2736,7 +2737,7 @@ summary.OOD_posttrain_classify <- function(object, ...) {
 #'   \item{obs}{numeric obs values (length n_bins)}
 #'   \item{class_means}{K x n_bins matrix of per-class mean raw stats}
 #'   \item{predicted_class}{best class from \code{nn.predict.classify}}
-#'   \item{attribution}{named list with one matrix per target — each
+#'   \item{attribution}{named list with one matrix per target -- each
 #'     \code{K_used x n_bins}, attribution in z-scored input units}
 #'   \item{nearest_idx}{(if \code{nearest} requested) named integer of
 #'     nearest sim index per class (1-based, into the kept subsample)}

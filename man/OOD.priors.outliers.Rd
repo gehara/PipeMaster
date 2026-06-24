@@ -19,23 +19,23 @@ OOD.priors.outliers(
 \item{ood_result}{output of \code{OOD.pretrain()} (or \code{OOD.posttrain()})
 that was called with \code{param.cols} so \code{P_sim} was stashed.}
 
-\item{top_k}{integer — number of top-correlated params per outlier stat
+\item{top_k}{integer -- number of top-correlated params per outlier stat
 that get a vote (default 3).}
 
-\item{corr_threshold}{numeric — minimum \code{|corr|} for a param to vote
+\item{corr_threshold}{numeric -- minimum \code{|corr|} for a param to vote
 (default 0.2). Params with weaker signal than this are ignored even if
 in the top-k.}
 
-\item{ambiguous_threshold}{numeric — when \code{|net| / total <
+\item{ambiguous_threshold}{numeric -- when \code{|net| / total <
 ambiguous_threshold}, the consensus is reported as \code{"ambiguous"}
 rather than HI/LO (default 0.3).}
 
-\item{plot}{logical — produce a per-param visual (default TRUE):
-side-by-side diverging "net" bars (HI − LO) and "total" bars.}
+\item{plot}{logical -- produce a per-param visual (default TRUE):
+side-by-side diverging "net" bars (HI - LO) and "total" bars.}
 
-\item{pdf_file}{character or NULL — write the plot to this PDF.}
+\item{pdf_file}{character or NULL -- write the plot to this PDF.}
 
-\item{pdf_width, pdf_height}{numeric — PDF dimensions if \code{pdf_file}.}
+\item{pdf_width, pdf_height}{numeric -- PDF dimensions if \code{pdf_file}.}
 }
 \value{
 A list with:
@@ -52,13 +52,13 @@ For each outlier statistic (obs strictly outside sim support), finds the
 top-K most-correlated parameters in the reftable and translates each
 \code{(corr sign x outlier direction)} pair into a vote to widen that
 parameter's HI or LO bound. Aggregates votes into a per-parameter
-consensus table — the actionable answer to "if I want to keep these
+consensus table -- the actionable answer to "if I want to keep these
 outlier stats, which priors should I widen and in which direction?"
 }
 \details{
 Complementary to \code{OOD.priors.bestfit()}, which uses joint K-NN-of-obs
 (rejection ABC) boundary pressure (one signal averaged over all stats).
-This function is per-outlier-stat marginal — different signal, different
+This function is per-outlier-stat marginal -- different signal, different
 failure mode. Use both.
 
 Caveat: marginal correlations miss param interactions. Strong when one

@@ -351,7 +351,7 @@ grid.search <- function(model, observed, grid = NULL, n_points = 10, n_reps = 10
 #'
 #' @description Narrows model priors to the productive parameter region identified
 #'   by \code{\link{grid.search}}. For each parameter, the new uniform prior spans
-#'   the min–max range of the top grid cells (by distance), with optional padding
+#'   the min--max range of the top grid cells (by distance), with optional padding
 #'   in log space. This is the recommended step between grid search and full ABC.
 #'
 #' @param model A PipeMaster model object (with \code{model$flags}).
@@ -445,7 +445,7 @@ update.priors.from.grid <- function(model, grid.results, tol = 0.05, padding = 0
 #'   The total number of simulations is \code{n_points * n_reps}. Unlike
 #'   \code{\link{sim.sumstat}} where total = nsim.blocks * block.size * ncores,
 #'   here \code{block.size} and \code{ncores} only control chunking and
-#'   parallelization — they do not affect the total count.
+#'   parallelization -- they do not affect the total count.
 #'
 #' @param model A model object built by main.menu.gui() with data structure set
 #'   via get.data.structure().

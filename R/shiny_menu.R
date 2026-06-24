@@ -412,7 +412,7 @@ main.menu.gui <- function(input = NULL) {
       return(invisible(NULL))
     }
 
-    # Use msABC.commander() for parameter sampling — same code path as simulations
+    # Use msABC.commander() for parameter sampling -- same code path as simulations
     model <- tryCatch(assemble_model(rv), error = function(e) NULL)
     if (is.null(model)) {
       plot.new(); text(0.5, 0.5, "Model not ready", col = "white", cex = 1.5)
@@ -499,7 +499,7 @@ main.menu.gui <- function(input = NULL) {
     }
 
     # ====================================================================
-    # Parse the ms command string to build events — this is what the
+    # Parse the ms command string to build events -- this is what the
     # simulator actually sees, guaranteeing the plot matches exactly
     # ====================================================================
     Ne0 <- 100000
@@ -883,7 +883,7 @@ main.menu.gui <- function(input = NULL) {
       abline(h = t_ev, col = adjustcolor(th$annot, 0.2), lty = 3, lwd = 0.5)
     }
 
-    # Migration arrows — draw from parsed ms command migration events
+    # Migration arrows -- draw from parsed ms command migration events
     if (length(mig_events) > 0) {
       # Build a map of when each population is alive (as a leaf, before any merge)
       # Each pop is alive from t=0 to its first merge event (as src or tgt)
@@ -1113,7 +1113,7 @@ main.menu.gui <- function(input = NULL) {
         if (seg_h < y_max * 0.05) next
         par_name <- NULL
         if (seg$en_seq == 0) {
-          # Base Ne — find in rv$n by pop
+          # Base Ne -- find in rv$n by pop
           if (!is.null(rv$n)) {
             idx <- which(rv$n[, 3] == seg$pop)
             if (length(idx) == 1) par_name <- rv$n[idx, 1]
@@ -2008,7 +2008,7 @@ main.menu.gui <- function(input = NULL) {
         if (is.numeric(rv$use_alpha) || isTRUE(rv$use_alpha[1]))
           shiny::updateCheckboxInput(session, "check_use_alpha", value = TRUE)
 
-        # Mark template as loaded — prevents tree validation from overwriting
+        # Mark template as loaded -- prevents tree validation from overwriting
         rv$template_loaded <- TRUE
         if (!is.null(rv$n) && rv$n[1, 6] == "normal")
           shiny::updateSelectInput(session, "select_ne_dist", selected = "normal")
@@ -2031,7 +2031,7 @@ main.menu.gui <- function(input = NULL) {
 
     # Validate & apply tree
     shiny::observeEvent(input$btn_validate_tree, {
-      # If a template was just loaded, skip the rebuild — template already set everything
+      # If a template was just loaded, skip the rebuild -- template already set everything
       if (isTRUE(rv$template_loaded)) {
         rv$template_loaded <- FALSE
         shiny::showNotification("Model loaded from template.", type = "message")
@@ -2078,7 +2078,7 @@ main.menu.gui <- function(input = NULL) {
         rv$m <- NULL
       }
 
-      # Note: size_conds and mig_conds are preserved — they are independent
+      # Note: size_conds and mig_conds are preserved -- they are independent
       # of tree topology. Only time_conds are auto-regenerated from the tree.
 
       # Auto-generate join ordering conditions from tree topology.
@@ -2124,7 +2124,7 @@ main.menu.gui <- function(input = NULL) {
       rv$model_name <- input$txt_model_name
     })
 
-    # Dynamic population name inputs — only re-renders when npops changes
+    # Dynamic population name inputs -- only re-renders when npops changes
     output$ui_pop_names <- shiny::renderUI({
       np <- rv$npops
       if (is.null(np) || np < 1) return(NULL)
@@ -2173,7 +2173,7 @@ main.menu.gui <- function(input = NULL) {
     })
 
     # Model structure plot (reactive to structural changes)
-    # Structure tab plot — only updates on Validate & Apply Tree button
+    # Structure tab plot -- only updates on Validate & Apply Tree button
     plot_structure_trigger <- shiny::reactiveVal(0)
     shiny::observeEvent(input$btn_validate_tree, {
       plot_structure_trigger(plot_structure_trigger() + 1)
@@ -2357,7 +2357,7 @@ main.menu.gui <- function(input = NULL) {
 
       shiny::showNotification(
         paste(length(sel), "node(s) removed.",
-              if (is.null(rv$ej)) "All nodes removed — pure island model."
+              if (is.null(rv$ej)) "All nodes removed -- pure island model."
               else paste(nrow(rv$ej), "node(s) remaining.")),
         type = "message")
     })
@@ -2585,7 +2585,7 @@ main.menu.gui <- function(input = NULL) {
       }
       if (length(sel) >= nrow(rv$m)) {
         shiny::showNotification(
-          "Cannot remove all migration parameters — at least one is needed.",
+          "Cannot remove all migration parameters -- at least one is needed.",
           type = "error", duration = 5)
         return()
       }
@@ -3237,7 +3237,7 @@ main.menu.gui <- function(input = NULL) {
         nsamp <- input$num_prior_samples
         if (is.null(nsamp) || nsamp < 10) nsamp <- 1000
 
-        # Sample via msABC.commander() — same code path as simulations
+        # Sample via msABC.commander() -- same code path as simulations
         model <- tryCatch(assemble_model(rv), error = function(e) NULL)
         if (is.null(model)) {
           output$plot_priors <- shiny::renderPlot({

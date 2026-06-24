@@ -54,7 +54,7 @@ one.snp.per.locus <- function(path.to.vcf = NULL, path.to.phylip = NULL,
   input_path <- if (!is.null(path.to.vcf)) path.to.vcf else path.to.phylip
   input_type <- if (!is.null(path.to.vcf)) "VCF" else "PHYLIP"
 
-  if (verbose) cat(sprintf("PipeMaster:: one.snp.per.locus — input: %s (%s)\n",
+  if (verbose) cat(sprintf("PipeMaster:: one.snp.per.locus -- input: %s (%s)\n",
                             input_path, input_type))
   t0 <- proc.time()
 
@@ -259,7 +259,7 @@ observed.sumstats <- function(model, path.to.phylip = NULL, path.to.vcf = NULL,
          "  set variable_samples = TRUE to compute sumstats without SFS.")
 
   if (!uniform_samples && variable_samples)
-    cat("PipeMaster:: WARNING: Variable sample sizes — computing sumstats only (no SFS).\n",
+    cat("PipeMaster:: WARNING: Variable sample sizes -- computing sumstats only (no SFS).\n",
         "  Use optimize.sfs.model() to downsample to uniform sizes for SFS.\n")
 
   pop_sizes_vec <- as.integer(pop_sizes_mat[1, ])
@@ -271,7 +271,7 @@ observed.sumstats <- function(model, path.to.phylip = NULL, path.to.vcf = NULL,
 
   t_total <- proc.time()
   if(verbose) {
-    cat(sprintf("PipeMaster:: observed.sumstats — input: %s (%s)\n", input_path, input_type))
+    cat(sprintf("PipeMaster:: observed.sumstats -- input: %s (%s)\n", input_path, input_type))
     cat(sprintf("PipeMaster::   samples: %d, populations: %d\n",
                 nrow(pop.assign), length(unique(pop.assign[,2]))))
   }
@@ -337,7 +337,7 @@ observed.sumstats <- function(model, path.to.phylip = NULL, path.to.vcf = NULL,
 
     unlink(tmpdir, recursive = TRUE)
     elapsed <- (proc.time() - t_total)[3]
-    if(verbose) cat(sprintf("PipeMaster:: Finished — %d summary statistics in %.1f sec (no SFS)\n",
+    if(verbose) cat(sprintf("PipeMaster:: Finished -- %d summary statistics in %.1f sec (no SFS)\n",
                             ncol(observed), elapsed))
     setwd(WD)
     return(observed)
@@ -444,7 +444,7 @@ observed.sumstats <- function(model, path.to.phylip = NULL, path.to.vcf = NULL,
   unlink(tmpdir, recursive = TRUE)
 
   elapsed <- (proc.time() - t_total)[3]
-  if(verbose) cat(sprintf(" done\nPipeMaster:: Finished — %d sumstats + %d SFS bins in %.1f sec\n",
+  if(verbose) cat(sprintf(" done\nPipeMaster:: Finished -- %d sumstats + %d SFS bins in %.1f sec\n",
                           length(stat_names), length(sfs.names), elapsed))
 
   setwd(WD)

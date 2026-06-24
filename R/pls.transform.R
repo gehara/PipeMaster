@@ -5,24 +5,24 @@
 #' between stats and parameters, keeping the most informative dimensions
 #' for inference. Implements NIPALS algorithm (no external dependencies).
 #'
-#' @param stats Numeric matrix (n x p) — summary statistics (predictors).
-#' @param params Numeric matrix (n x q) — parameters (response). Used to
+#' @param stats Numeric matrix (n x p) -- summary statistics (predictors).
+#' @param params Numeric matrix (n x q) -- parameters (response). Used to
 #'   find the projection directions. Not needed for \code{pls.project()}.
-#' @param n.comp Integer — number of PLS components to retain (default 20).
-#' @param scale Logical — center and scale stats before PLS (default TRUE).
-#' @param max.rows Integer — maximum rows for NIPALS fitting (default 10000).
+#' @param n.comp Integer -- number of PLS components to retain (default 20).
+#' @param scale Logical -- center and scale stats before PLS (default TRUE).
+#' @param max.rows Integer -- maximum rows for NIPALS fitting (default 10000).
 #'   When \code{nrow(stats) > max.rows}, a random subsample is used for
 #'   fitting. Centering/scaling parameters are computed from the full data.
 #'   This avoids excessive memory use on large reftables.
 #'
 #' @return A list with class \code{"pls.fit"}:
 #' \describe{
-#'   \item{projection}{matrix (p x n.comp) — projection from stat space to PLS space}
-#'   \item{center}{numeric (p) — column means used for centering}
-#'   \item{scale}{numeric (p) — column SDs used for scaling (1 if scale=FALSE)}
-#'   \item{n.comp}{integer — number of components retained}
-#'   \item{scores}{matrix (n x n.comp) — training scores (stats projected)}
-#'   \item{var.explained}{numeric (n.comp) — fraction of X variance per component}
+#'   \item{projection}{matrix (p x n.comp) -- projection from stat space to PLS space}
+#'   \item{center}{numeric (p) -- column means used for centering}
+#'   \item{scale}{numeric (p) -- column SDs used for scaling (1 if scale=FALSE)}
+#'   \item{n.comp}{integer -- number of components retained}
+#'   \item{scores}{matrix (n x n.comp) -- training scores (stats projected)}
+#'   \item{var.explained}{numeric (n.comp) -- fraction of X variance per component}
 #' }
 #'
 #' @details
@@ -158,7 +158,7 @@ pls.fit <- function(stats, params, n.comp = 20L, scale = TRUE, max.rows = 10000L
 
   # Y-loadings per component, with param-name rownames so callers can map
   # each PLS component back to the params it predicts. In normalized
-  # (NIPALS-internal) units — sign and relative magnitude across params at
+  # (NIPALS-internal) units -- sign and relative magnitude across params at
   # a given component are interpretable; absolute scale is not.
   Y_names <- colnames(params)
   if (is.null(Y_names)) Y_names <- paste0("Y", seq_len(q))
@@ -188,7 +188,7 @@ pls.fit <- function(stats, params, n.comp = 20L, scale = TRUE, max.rows = 10000L
 #' Project new data into PLS component space
 #'
 #' @param pls.fit A \code{pls.fit} object from \code{pls.fit()}.
-#' @param newdata Numeric matrix or vector — new summary statistics to project.
+#' @param newdata Numeric matrix or vector -- new summary statistics to project.
 #'   Must have the same columns as the training stats.
 #'
 #' @return Numeric matrix (n x n.comp) of PLS scores, or named vector if

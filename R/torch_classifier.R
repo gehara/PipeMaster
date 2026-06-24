@@ -6,15 +6,15 @@
 # the Huber loss with cross-entropy.
 #
 # Public API:
-#   tune.nn.classify(reftable, model_col, ...)   — train classifier
-#   nn.predict.classify(classifier, observed, ...) — predict class probs on obs
+#   tune.nn.classify(reftable, model_col, ...)   -- train classifier
+#   nn.predict.classify(classifier, observed, ...) -- predict class probs on obs
 #
 # Internal helpers (.torch.* convention):
-#   .prep.classify.sumstat()   — feature/label/split prep for sumstat backbone
-#   .torch.classify.train()    — training loop with CE loss + accuracy
-#   .torch.classify.hyperband()— Hyperband HP search using CE loss
-#   .torch.classify.metrics()  — accuracy + per-class precision/recall on val
-#   .torch.classify.predict()  — forward pass → softmax probabilities
+#   .prep.classify.sumstat()   -- feature/label/split prep for sumstat backbone
+#   .torch.classify.train()    -- training loop with CE loss + accuracy
+#   .torch.classify.hyperband()-- Hyperband HP search using CE loss
+#   .torch.classify.metrics()  -- accuracy + per-class precision/recall on val
+#   .torch.classify.predict()  -- forward pass → softmax probabilities
 #
 # S3 class "model_selection" with plot/summary/print methods.
 # ============================================================================
@@ -60,7 +60,7 @@
 }
 
 # ----------------------------------------------------------------------------
-# Data prep (sumstat backbone — z-scored stats + log1p augmentation)
+# Data prep (sumstat backbone -- z-scored stats + log1p augmentation)
 # ----------------------------------------------------------------------------
 
 #' @keywords internal
@@ -309,7 +309,7 @@
 }
 
 # ----------------------------------------------------------------------------
-# Validation metrics — accuracy + per-class precision/recall + confusion matrix
+# Validation metrics -- accuracy + per-class precision/recall + confusion matrix
 # ----------------------------------------------------------------------------
 
 #' @keywords internal
@@ -358,7 +358,7 @@
     'args <- commandArgs(trailingOnly = TRUE)',
     'task_id <- as.integer(args[1])',
     '',
-    '# Load metadata (small — no data matrices)',
+    '# Load metadata (small -- no data matrices)',
     'load("shared_search_meta.RData")',
     '',
     '# Threading env',
@@ -379,13 +379,13 @@
     'torch::torch_set_num_threads(as.integer(n_threads))',
     'torch::torch_set_num_interop_threads(1L)',
     '',
-    '# GPU setup — CUDA_VISIBLE_DEVICES pre-set by parent in the worker env',
+    '# GPU setup -- CUDA_VISIBLE_DEVICES pre-set by parent in the worker env',
     'device <- "cpu"',
     'if (Sys.getenv("CUDA_VISIBLE_DEVICES", "-1") != "-1") {',
     '  if (cuda_is_available()) device <- "cuda"',
     '}',
     '',
-    '# Load data — bigmemory (shared mmap) or rds (per-worker copy)',
+    '# Load data -- bigmemory (shared mmap) or rds (per-worker copy)',
     'if (use_bigmemory) {',
     '  suppressPackageStartupMessages(library(bigmemory))',
     '  X_train <- attach.big.matrix("X_train.desc")[,]',
@@ -467,22 +467,22 @@
 #'   uses the same ResNet search space as the regression `tune.nn()`.
 #' @param exclude.cols Additional column names to exclude from features.
 #' @param val.frac Fraction of sims for validation (stratified per class).
-#' @param n_searches Integer — number of independent Hyperband searches to run
+#' @param n_searches Integer -- number of independent Hyperband searches to run
 #'   (default 1L). Mirrors `tune.nn(n_searches=)`: each search runs a full
 #'   independent Hyperband with its own seed; the best across all searches is
 #'   returned. With `cores > 1`, searches run in parallel via Rscript workers.
-#' @param cores Integer — maximum number of concurrent search workers
+#' @param cores Integer -- maximum number of concurrent search workers
 #'   (default 1L). Ignored when `n_searches = 1`. Per-worker RAM scales with
 #'   the data size; bigmemory (if available) shares the data via mmap.
-#' @param gpus Integer — number of GPUs to distribute searches across
+#' @param gpus Integer -- number of GPUs to distribute searches across
 #'   (default 0L, CPU only). With `gpus > 0`, the first
 #'   `min(n_searches, gpu.threshold*gpus)` workers are pinned to GPUs
 #'   round-robin via `CUDA_VISIBLE_DEVICES`. With `n_searches = 1`, the single
 #'   search uses CUDA directly if available.
-#' @param gpu.threshold Integer — maximum concurrent searches per GPU
+#' @param gpu.threshold Integer -- maximum concurrent searches per GPU
 #'   (default 4L). Total GPU searches = `min(n_searches, gpu.threshold*gpus)`;
 #'   excess searches run on CPU. Ignored when `gpus = 0`.
-#' @param greedy Logical — thread allocation policy across concurrent workers
+#' @param greedy Logical -- thread allocation policy across concurrent workers
 #'   (default TRUE). Passed through to `.compute.threads.per.worker()`.
 #' @param seed Random seed.
 #' @param verbose Print progress.
@@ -515,7 +515,7 @@ tune.nn.classify <- function(reftable, model_col,
   ss <- if (is.null(search_space)) .default.search.space("sumstat") else search_space
 
   if (verbose)
-    cat(sprintf("PipeMaster:: tune.nn.classify — Hyperband ResNet (cross-entropy)\n"))
+    cat(sprintf("PipeMaster:: tune.nn.classify -- Hyperband ResNet (cross-entropy)\n"))
 
   data <- .prep.classify.sumstat(reftable, model_col, exclude.cols, val.frac, seed)
   reftable <- NULL
@@ -530,7 +530,7 @@ tune.nn.classify <- function(reftable, model_col,
   }
 
   # ==========================================================================
-  # Sequential mode (single search, no workers) — preserves old behavior
+  # Sequential mode (single search, no workers) -- preserves old behavior
   # ==========================================================================
   if (n_searches <= 1L || n_concurrent <= 1L) {
 
@@ -600,7 +600,7 @@ tune.nn.classify <- function(reftable, model_col,
     }
     .save_bigmatrix(data$X_train, "X_train")
     .save_bigmatrix(data$X_val,   "X_val")
-    # Y_train / Y_val are integer vectors — store as 1-col double matrices
+    # Y_train / Y_val are integer vectors -- store as 1-col double matrices
     .save_bigmatrix(matrix(as.numeric(data$Y_train), ncol = 1L), "Y_train")
     .save_bigmatrix(matrix(as.numeric(data$Y_val),   ncol = 1L), "Y_val")
 

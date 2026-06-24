@@ -5,17 +5,17 @@
 # emulator pipeline.
 #
 # Modules:
-#   .MCDropout         — always-on dropout (for MC dropout inference)
-#   .ResBlock          — single residual block (dense → BN → dense → BN + skip)
-#   .PipeMasterResNet  — full ResNet for sumstat / emulator
-#   .ConvBlock1D       — conv1d → BN → ReLU (+ optional residual)
-#   .PipeMasterCNN1D   — full 1D CNN for single-pop SFS
-#   .ConvBlock2D       — conv2d → BN → ReLU (+ optional residual)
-#   .PipeMasterCNN2D   — full 2D CNN for joint SFS
+#   .MCDropout         -- always-on dropout (for MC dropout inference)
+#   .ResBlock          -- single residual block (dense → BN → dense → BN + skip)
+#   .PipeMasterResNet  -- full ResNet for sumstat / emulator
+#   .ConvBlock1D       -- conv1d → BN → ReLU (+ optional residual)
+#   .PipeMasterCNN1D   -- full 1D CNN for single-pop SFS
+#   .ConvBlock2D       -- conv2d → BN → ReLU (+ optional residual)
+#   .PipeMasterCNN2D   -- full 2D CNN for joint SFS
 #
 # Builders:
-#   .build.nn.torch()  — unified architecture dispatcher
-#   .torch.predict()   — forward-pass wrapper, returns R matrix
+#   .build.nn.torch()  -- unified architecture dispatcher
+#   .torch.predict()   -- forward-pass wrapper, returns R matrix
 #
 # ============================================================================
 
@@ -221,7 +221,7 @@
   },
 
   forward = function(x) {
-    # x shape: [N, n_bins, 1] from R — transpose to [N, 1, n_bins] for conv1d
+    # x shape: [N, n_bins, 1] from R -- transpose to [N, 1, n_bins] for conv1d
     if (x$dim() == 3L && x$size(3) == 1L)
       x <- x$permute(c(1L, 3L, 2L))
 
@@ -334,7 +334,7 @@
   },
 
   forward = function(x) {
-    # x shape from R: [N, dim1, dim2, 1] — permute to [N, 1, dim1, dim2]
+    # x shape from R: [N, dim1, dim2, 1] -- permute to [N, 1, dim1, dim2]
     if (x$dim() == 4L && x$size(4) == 1L)
       x <- x$permute(c(1L, 4L, 2L, 3L))
 

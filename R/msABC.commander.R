@@ -61,7 +61,7 @@ msABC.commander<-function(model,use.alpha=NULL,arg){
   ej_lookup <- list()  # keyed by "X_Y" -> row in time.pars
   if (length(ej_rows) > 0) {
     for (er in ej_rows) {
-      # ej column 3 has the pair "X Y" — extract from time.pars
+      # ej column 3 has the pair "X Y" -- extract from time.pars
       # But time.pars is rbind(ej, en$time, em$time), so ej rows still have col 3
       ej_pair_str <- time.pars[er, 3]
       ej_pair <- strsplit(ej_pair_str, " ")[[1]]

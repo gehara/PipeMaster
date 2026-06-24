@@ -27,7 +27,7 @@ Converts a pyRAD/ipyrad \code{.alleles} file (per-locus
              \code{<ntax> <nchar>} followed by one tab-delimited
              \code{name<TAB>sequence} line per allele. Per-locus
              allele counts may vary across loci (samples absent from a
-             locus are simply skipped — the PipeMaster PHYLIP parser
+             locus are simply skipped -- the PipeMaster PHYLIP parser
              re-orders by \code{pop.assign} and drops missing samples).
              Gaps (\code{-}) and Ns are preserved; \code{observed.sumstats}
              masks them from SNP calling.

@@ -21,23 +21,23 @@ nn.predict(
 )
 }
 \arguments{
-\item{tune.result}{list — output from \code{tune.nn()}.}
+\item{tune.result}{list -- output from \code{tune.nn()}.}
 
 \item{observed}{named numeric vector or 1-row data.frame of observed summary
 statistics (or SFS bins).}
 
-\item{reftable}{data.frame — original reference table (required for
+\item{reftable}{data.frame -- original reference table (required for
 \code{"bootstrap"} and \code{"ABC_NN_regression"} methods).}
 
-\item{param.cols}{character vector — parameter column names (required when
+\item{param.cols}{character vector -- parameter column names (required when
 reftable is provided).}
 
-\item{type}{character — architecture type: \code{"sumstat"}, \code{"sfs1d"},
+\item{type}{character -- architecture type: \code{"sumstat"}, \code{"sfs1d"},
 or \code{"sfs2d"}. If NULL, uses the type stored in tune.result.}
 
-\item{sfs.dims}{integer vector — for 2D CNN only. If NULL, uses tune.result.}
+\item{sfs.dims}{integer vector -- for 2D CNN only. If NULL, uses tune.result.}
 
-\item{method}{character — one or more of:
+\item{method}{character -- one or more of:
 \describe{
   \item{\code{"point"}}{Fast point estimate. No retraining or resampling.
     \code{reftable} and \code{param.cols} not required.}
@@ -47,7 +47,7 @@ or \code{"sfs2d"}. If NULL, uses the type stored in tune.result.}
     weights them by proximity of their summary statistics to observed data
     via an Epanechnikov kernel, and samples \code{n_boot} residuals to add
     to the point estimate. Fast (single forward pass, no retraining).
-    Note: this is NOT a Bayesian posterior — it is a frequentist prediction
+    Note: this is NOT a Bayesian posterior -- it is a frequentist prediction
     interval centered on the point estimate.}
   \item{\code{"ABC_NN_regression"}}{ABC with neural network regression
     adjustment (Beaumont et al. 2002). Produces a proper Bayesian posterior
@@ -59,32 +59,32 @@ or \code{"sfs2d"}. If NULL, uses the type stored in tune.result.}
     is the trained neural network. Fast (single forward pass, no retraining).}
 }}
 
-\item{n_boot}{integer — number of residual bootstrap samples (default 1000).}
+\item{n_boot}{integer -- number of residual bootstrap samples (default 1000).}
 
-\item{tolerance}{numeric — ABC acceptance tolerance as a quantile of pairwise
+\item{tolerance}{numeric -- ABC acceptance tolerance as a quantile of pairwise
 distances (default 0.01, i.e. closest 1\% of reftable). Only used for
 \code{"ABC_NN_regression"}.}
 
-\item{pls}{logical — project summary statistics into PLS space before
+\item{pls}{logical -- project summary statistics into PLS space before
 computing distances for \code{"bootstrap"} and \code{"ABC_NN_regression"}
 (default FALSE). Recommended when the number of statistics exceeds ~30.
 The NN prediction still uses the full feature space; only the distance
 computation (acceptance/kernel weighting) uses the PLS projection.}
 
-\item{n.pls}{integer — number of PLS components (default 20). Should be
+\item{n.pls}{integer -- number of PLS components (default 20). Should be
 at least equal to the number of free parameters.}
 
-\item{seed}{integer — random seed (default 42).}
+\item{seed}{integer -- random seed (default 42).}
 
-\item{verbose}{logical — print progress (default TRUE).}
+\item{verbose}{logical -- print progress (default TRUE).}
 }
 \value{
 An object of class \code{"posterior"} (a list) with:
 \describe{
-  \item{point_estimate}{named numeric vector — inverse-transformed point
+  \item{point_estimate}{named numeric vector -- inverse-transformed point
     prediction from best model}
   \item{bootstrap}{matrix of bootstrap samples (n_boot x n_params), or NULL.
-    Locally-weighted residual bootstrap — prediction intervals, not a
+    Locally-weighted residual bootstrap -- prediction intervals, not a
     Bayesian posterior.}
   \item{abc}{matrix of regression-adjusted ABC posterior samples
     (n_accepted x n_params), or NULL. Proper Bayesian posterior.}

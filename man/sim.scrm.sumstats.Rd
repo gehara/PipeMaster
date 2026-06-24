@@ -39,7 +39,7 @@ Default is 32.}
     \itemize{
       \item Fixed:  \code{list(distribution = "lognormal", median = 5.83e-9, sigma_log = 0.3)}
       \item Sampled: \code{list(distribution = "lognormal", median = 5.83e-9, sigma_log_range = c(0.05, 0.5))}
-        — per sim, \code{sigma_log ~ Uniform(lo, hi)}; the realized value
+        -- per sim, \code{sigma_log ~ Uniform(lo, hi)}; the realized value
           is recorded in the reftable as \code{sigma_log_mu} so it can be
           treated as a learnable nuisance parameter by \code{tune.nn()}.
     }
@@ -87,7 +87,7 @@ Invisibly returns the output file path. Writes results to
 \description{
 Uses the vendored scrm C++ engine for fast coalescent simulation with
 recombination, combined with PipeMaster's C summary statistic functions.
-All computation stays in C/C++ memory — no R matrix overhead. This is
+All computation stays in C/C++ memory -- no R matrix overhead. This is
 ~5x faster than msABC for WGS-scale loci (e.g. 100kb with recombination).
 }
 \details{

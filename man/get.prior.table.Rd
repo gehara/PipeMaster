@@ -2,7 +2,7 @@
 % Please edit documentation in R/visualization.tools.R
 \name{get.prior.table}
 \alias{get.prior.table}
-\title{Get a table with prior distributions.}
+\title{Get a table with prior distributions}
 \usage{
 get.prior.table(model)
 }

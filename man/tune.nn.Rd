@@ -25,65 +25,65 @@ tune.nn(
 )
 }
 \arguments{
-\item{reftable}{data.frame — output of \code{sim.sumstats()} or
+\item{reftable}{data.frame -- output of \code{sim.sumstats()} or
 \code{sim.scrm.sumstats()} containing both parameter and statistic columns.}
 
-\item{param.cols}{character vector — names of parameter columns (targets to predict).}
+\item{param.cols}{character vector -- names of parameter columns (targets to predict).}
 
-\item{type}{character — architecture type: \code{"sumstat"} (ResNet),
+\item{type}{character -- architecture type: \code{"sumstat"} (ResNet),
 \code{"sfs1d"} (1D CNN), \code{"sfs2d"} (2D CNN), or \code{"emulator"}
 (forward-direction ResNet).}
 
-\item{sfs.dims}{integer vector — for \code{type = "sfs2d"} only:
+\item{sfs.dims}{integer vector -- for \code{type = "sfs2d"} only:
 \code{c(dim1, dim2)} of the joint SFS matrix.}
 
-\item{max_epochs}{integer — maximum epochs for Hyperband (default 500).}
+\item{max_epochs}{integer -- maximum epochs for Hyperband (default 500).}
 
-\item{eta}{numeric — Hyperband halving factor (default 3).}
+\item{eta}{numeric -- Hyperband halving factor (default 3).}
 
-\item{search_space}{named list — overrides default HP ranges. NULL uses
+\item{search_space}{named list -- overrides default HP ranges. NULL uses
 architecture-specific defaults.}
 
-\item{exclude.cols}{character vector — additional column names to exclude
+\item{exclude.cols}{character vector -- additional column names to exclude
 from features (e.g., other parameter columns not in \code{param.cols}).
 Required when estimating a single parameter from a reftable that contains
 multiple parameter columns, to prevent other parameters from leaking into
 the feature set. Default NULL.}
 
-\item{val.frac}{numeric — validation fraction (default 0.1).}
+\item{val.frac}{numeric -- validation fraction (default 0.1).}
 
-\item{n_searches}{integer — number of independent Hyperband searches to run
+\item{n_searches}{integer -- number of independent Hyperband searches to run
 (default 1). Each search explores a different population of random HP
 configurations. Higher values improve the chance of finding a good
 architecture. With \code{cores > 1}, searches run in parallel via
 separate Rscript workers; otherwise sequentially.}
 
-\item{cores}{integer — maximum number of concurrent search workers
+\item{cores}{integer -- maximum number of concurrent search workers
 (default 1). Ignored when \code{n_searches = 1}. When \pkg{bigmemory} is
 available, training data is shared across workers via mmap-backed
 matrices (~3 GB resident per worker); otherwise each worker loads a
 full copy.}
 
-\item{gpus}{integer — number of GPUs to distribute searches across
+\item{gpus}{integer -- number of GPUs to distribute searches across
 (default 0, CPU-only). Searches are assigned to GPUs round-robin, up to
 \code{gpu.threshold} per GPU; remaining searches run CPU-only. When
 \code{n_searches = 1}, CUDA is used directly if available.}
 
-\item{gpu.threshold}{integer — maximum searches per GPU (default 4).
+\item{gpu.threshold}{integer -- maximum searches per GPU (default 4).
 Total GPU searches = \code{min(n_searches, gpu.threshold * gpus)};
 excess run on CPU. Ignored when \code{gpus = 0}.}
 
-\item{greedy}{logical — thread-allocation policy across concurrent workers
+\item{greedy}{logical -- thread-allocation policy across concurrent workers
 (default TRUE).}
 
-\item{top_k}{integer — number of top models to keep from parallel searches
+\item{top_k}{integer -- number of top models to keep from parallel searches
 (default 1). When \code{top_k > 1} and \code{n_searches > 1}, the best K
 models (by validation loss) are retained; \code{nn.predict()} then uses
 a proximity-weighted ensemble.}
 
-\item{seed}{integer — random seed (default 42).}
+\item{seed}{integer -- random seed (default 42).}
 
-\item{verbose}{logical — print progress (default TRUE).}
+\item{verbose}{logical -- print progress (default TRUE).}
 }
 \value{
 A list with:

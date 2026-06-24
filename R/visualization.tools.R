@@ -50,7 +50,7 @@ plot.priors <- function(model, nsamples=1000, mu.rates=NULL){
   }
 }
 
-#' Get a table with prior distributions.
+#' Get a table with prior distributions
 #' @description This function makes a table with the parameters of the model and respective prior distribution.
 #' @param model A model object.
 #' @return A data frame with 4 columns: parameter name, first parameter of prior distribution, second parameter of prior distribution, prior distribution.

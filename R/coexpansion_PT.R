@@ -12,8 +12,8 @@
 #' @param path Path to the directory to write the simulations. Default is the working directory.
 #' @details To simulate the model of Chan et al. (2014), the Threshold model and the Narrow Coexpansion Time model use the sim.coexp function.
 #' @details See references for more details.
-#' @references Gehara M., Garda A.A., Werneck F.P. et al. (2017) Estimating synchronous demographic changes across populations using hABC and its application for a herpetological community from northeastern Brazil. Molecular Ecology, 26, 4756–4771.
-#' @references Chan Y.L., Schanzenbach D., & Hickerson M.J. (2014) Detecting concerted demographic response across community assemblages using hierarchical approximate Bayesian computation. Molecular Biology and Evolution, 31, 2501–2515.
+#' @references Gehara M., Garda A.A., Werneck F.P. et al. (2017) Estimating synchronous demographic changes across populations using hABC and its application for a herpetological community from northeastern Brazil. Molecular Ecology, 26, 4756--4771.
+#' @references Chan Y.L., Schanzenbach D., & Hickerson M.J. (2014) Detecting concerted demographic response across community assemblages using hierarchical approximate Bayesian computation. Molecular Biology and Evolution, 31, 2501--2515.
 #' @noRd
 sim.coexpPT<-function(nsims,
                     var.zeta,

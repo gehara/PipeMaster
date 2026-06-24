@@ -459,7 +459,7 @@ ms.to.DNAbin<-function(ms.output, bp.length){
 #'              \code{<ntax> <nchar>} followed by one tab-delimited
 #'              \code{name<TAB>sequence} line per allele. Per-locus
 #'              allele counts may vary across loci (samples absent from a
-#'              locus are simply skipped — the PipeMaster PHYLIP parser
+#'              locus are simply skipped -- the PipeMaster PHYLIP parser
 #'              re-orders by \code{pop.assign} and drops missing samples).
 #'              Gaps (\code{-}) and Ns are preserved; \code{observed.sumstats}
 #'              masks them from SNP calling.
@@ -490,7 +490,7 @@ alleles2phylip <- function(path.to.alleles, output, verbose = TRUE) {
     stop("Missing input: ", path.to.alleles)
 
   t0 <- proc.time()
-  if (verbose) cat(sprintf("PipeMaster:: alleles2phylip — reading %s\n",
+  if (verbose) cat(sprintf("PipeMaster:: alleles2phylip -- reading %s\n",
                             path.to.alleles))
   lines <- readLines(path.to.alleles, warn = FALSE)
 

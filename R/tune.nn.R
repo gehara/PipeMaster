@@ -6,49 +6,49 @@
 #' (summary statistics), 1D CNN (single-population SFS), and 2D CNN
 #' (joint SFS) architectures.
 #'
-#' @param reftable data.frame — output of \code{sim.sumstats()} or
+#' @param reftable data.frame -- output of \code{sim.sumstats()} or
 #'   \code{sim.scrm.sumstats()} containing both parameter and statistic columns.
-#' @param param.cols character vector — names of parameter columns (targets to predict).
-#' @param type character — architecture type: \code{"sumstat"} (ResNet),
+#' @param param.cols character vector -- names of parameter columns (targets to predict).
+#' @param type character -- architecture type: \code{"sumstat"} (ResNet),
 #'   \code{"sfs1d"} (1D CNN), \code{"sfs2d"} (2D CNN), or \code{"emulator"}
 #'   (forward-direction ResNet).
-#' @param sfs.dims integer vector — for \code{type = "sfs2d"} only:
+#' @param sfs.dims integer vector -- for \code{type = "sfs2d"} only:
 #'   \code{c(dim1, dim2)} of the joint SFS matrix.
-#' @param max_epochs integer — maximum epochs for Hyperband (default 500).
-#' @param eta numeric — Hyperband halving factor (default 3).
-#' @param search_space named list — overrides default HP ranges. NULL uses
+#' @param max_epochs integer -- maximum epochs for Hyperband (default 500).
+#' @param eta numeric -- Hyperband halving factor (default 3).
+#' @param search_space named list -- overrides default HP ranges. NULL uses
 #'   architecture-specific defaults.
-#' @param exclude.cols character vector — additional column names to exclude
+#' @param exclude.cols character vector -- additional column names to exclude
 #'   from features (e.g., other parameter columns not in \code{param.cols}).
 #'   Required when estimating a single parameter from a reftable that contains
 #'   multiple parameter columns, to prevent other parameters from leaking into
 #'   the feature set. Default NULL.
-#' @param val.frac numeric — validation fraction (default 0.1).
-#' @param n_searches integer — number of independent Hyperband searches to run
+#' @param val.frac numeric -- validation fraction (default 0.1).
+#' @param n_searches integer -- number of independent Hyperband searches to run
 #'   (default 1). Each search explores a different population of random HP
 #'   configurations. Higher values improve the chance of finding a good
 #'   architecture. With \code{cores > 1}, searches run in parallel via
 #'   separate Rscript workers; otherwise sequentially.
-#' @param cores integer — maximum number of concurrent search workers
+#' @param cores integer -- maximum number of concurrent search workers
 #'   (default 1). Ignored when \code{n_searches = 1}. When \pkg{bigmemory} is
 #'   available, training data is shared across workers via mmap-backed
 #'   matrices (~3 GB resident per worker); otherwise each worker loads a
 #'   full copy.
-#' @param gpus integer — number of GPUs to distribute searches across
+#' @param gpus integer -- number of GPUs to distribute searches across
 #'   (default 0, CPU-only). Searches are assigned to GPUs round-robin, up to
 #'   \code{gpu.threshold} per GPU; remaining searches run CPU-only. When
 #'   \code{n_searches = 1}, CUDA is used directly if available.
-#' @param gpu.threshold integer — maximum searches per GPU (default 4).
+#' @param gpu.threshold integer -- maximum searches per GPU (default 4).
 #'   Total GPU searches = \code{min(n_searches, gpu.threshold * gpus)};
 #'   excess run on CPU. Ignored when \code{gpus = 0}.
-#' @param greedy logical — thread-allocation policy across concurrent workers
+#' @param greedy logical -- thread-allocation policy across concurrent workers
 #'   (default TRUE).
-#' @param top_k integer — number of top models to keep from parallel searches
+#' @param top_k integer -- number of top models to keep from parallel searches
 #'   (default 1). When \code{top_k > 1} and \code{n_searches > 1}, the best K
 #'   models (by validation loss) are retained; \code{nn.predict()} then uses
 #'   a proximity-weighted ensemble.
-#' @param seed integer — random seed (default 42).
-#' @param verbose logical — print progress (default TRUE).
+#' @param seed integer -- random seed (default 42).
+#' @param verbose logical -- print progress (default TRUE).
 #'
 #' @return A list with:
 #' \describe{
@@ -384,8 +384,8 @@ tune.nn <- function(reftable, param.cols,
 #' When multiple models are present (from \code{top_k > 1}), each model is saved
 #' to a separate file under \code{models/}.
 #'
-#' @param tune.result list — output from \code{tune.nn()}.
-#' @param path character — directory path where files will be saved (created if needed).
+#' @param tune.result list -- output from \code{tune.nn()}.
+#' @param path character -- directory path where files will be saved (created if needed).
 #'
 #' @export
 save.tune.result <- function(tune.result, path) {
@@ -441,7 +441,7 @@ save.tune.result <- function(tune.result, path) {
 #' saved before \code{top_k} support, falls back to wrapping the single
 #' best model in a length-1 list.
 #'
-#' @param path character — directory path where files were saved.
+#' @param path character -- directory path where files were saved.
 #'
 #' @return A list identical to the output of \code{tune.nn()}.
 #'
@@ -454,7 +454,7 @@ load.tune.result <- function(path) {
   result <- readRDS(rds_file)
   if (!is.null(result$backend) && result$backend != "torch")
     stop("Saved tune.result has backend='", result$backend,
-         "' — only torch is supported. Retrain with current PipeMaster.")
+         "' -- only torch is supported. Retrain with current PipeMaster.")
 
   best_pt <- file.path(path, "best_model.pt")
   if (!file.exists(best_pt))
@@ -490,7 +490,7 @@ load.tune.result <- function(path) {
 }
 
 # ============================================================================
-# nn.predict — Posterior estimation via neural network
+# nn.predict -- Posterior estimation via neural network
 # ============================================================================
 
 #' Posterior Estimation via Neural Network Uncertainty Quantification
@@ -504,17 +504,17 @@ load.tune.result <- function(path) {
 #' each model is weighted by how well it predicts validation samples near the
 #' observed data point.
 #'
-#' @param tune.result list — output from \code{tune.nn()}.
+#' @param tune.result list -- output from \code{tune.nn()}.
 #' @param observed named numeric vector or 1-row data.frame of observed summary
 #'   statistics (or SFS bins).
-#' @param reftable data.frame — original reference table (required for
+#' @param reftable data.frame -- original reference table (required for
 #'   \code{"bootstrap"} and \code{"ABC_NN_regression"} methods).
-#' @param param.cols character vector — parameter column names (required when
+#' @param param.cols character vector -- parameter column names (required when
 #'   reftable is provided).
-#' @param type character — architecture type: \code{"sumstat"}, \code{"sfs1d"},
+#' @param type character -- architecture type: \code{"sumstat"}, \code{"sfs1d"},
 #'   or \code{"sfs2d"}. If NULL, uses the type stored in tune.result.
-#' @param sfs.dims integer vector — for 2D CNN only. If NULL, uses tune.result.
-#' @param method character — one or more of:
+#' @param sfs.dims integer vector -- for 2D CNN only. If NULL, uses tune.result.
+#' @param method character -- one or more of:
 #'   \describe{
 #'     \item{\code{"point"}}{Fast point estimate. No retraining or resampling.
 #'       \code{reftable} and \code{param.cols} not required.}
@@ -524,7 +524,7 @@ load.tune.result <- function(path) {
 #'       weights them by proximity of their summary statistics to observed data
 #'       via an Epanechnikov kernel, and samples \code{n_boot} residuals to add
 #'       to the point estimate. Fast (single forward pass, no retraining).
-#'       Note: this is NOT a Bayesian posterior — it is a frequentist prediction
+#'       Note: this is NOT a Bayesian posterior -- it is a frequentist prediction
 #'       interval centered on the point estimate.}
 #'     \item{\code{"ABC_NN_regression"}}{ABC with neural network regression
 #'       adjustment (Beaumont et al. 2002). Produces a proper Bayesian posterior
@@ -535,26 +535,26 @@ load.tune.result <- function(path) {
 #'       \eqn{\theta_{adj} = \theta_i - (g(S_i) - g(S_{obs}))}, where \eqn{g}
 #'       is the trained neural network. Fast (single forward pass, no retraining).}
 #'   }
-#' @param n_boot integer — number of residual bootstrap samples (default 1000).
-#' @param tolerance numeric — ABC acceptance tolerance as a quantile of pairwise
+#' @param n_boot integer -- number of residual bootstrap samples (default 1000).
+#' @param tolerance numeric -- ABC acceptance tolerance as a quantile of pairwise
 #'   distances (default 0.01, i.e. closest 1\% of reftable). Only used for
 #'   \code{"ABC_NN_regression"}.
-#' @param pls logical — project summary statistics into PLS space before
+#' @param pls logical -- project summary statistics into PLS space before
 #'   computing distances for \code{"bootstrap"} and \code{"ABC_NN_regression"}
 #'   (default FALSE). Recommended when the number of statistics exceeds ~30.
 #'   The NN prediction still uses the full feature space; only the distance
 #'   computation (acceptance/kernel weighting) uses the PLS projection.
-#' @param n.pls integer — number of PLS components (default 20). Should be
+#' @param n.pls integer -- number of PLS components (default 20). Should be
 #'   at least equal to the number of free parameters.
-#' @param seed integer — random seed (default 42).
-#' @param verbose logical — print progress (default TRUE).
+#' @param seed integer -- random seed (default 42).
+#' @param verbose logical -- print progress (default TRUE).
 #'
 #' @return An object of class \code{"posterior"} (a list) with:
 #' \describe{
-#'   \item{point_estimate}{named numeric vector — inverse-transformed point
+#'   \item{point_estimate}{named numeric vector -- inverse-transformed point
 #'     prediction from best model}
 #'   \item{bootstrap}{matrix of bootstrap samples (n_boot x n_params), or NULL.
-#'     Locally-weighted residual bootstrap — prediction intervals, not a
+#'     Locally-weighted residual bootstrap -- prediction intervals, not a
 #'     Bayesian posterior.}
 #'   \item{abc}{matrix of regression-adjusted ABC posterior samples
 #'     (n_accepted x n_params), or NULL. Proper Bayesian posterior.}
@@ -694,7 +694,7 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
     colnames(abc_samples) <- param_names
   }
 
-  # Clip to prior range — use reftable parameter columns as bounds
+  # Clip to prior range -- use reftable parameter columns as bounds
   if (!is.null(reftable) && !is.null(param_names)) {
     for (j in seq_along(param_names)) {
       p <- param_names[j]
@@ -786,7 +786,7 @@ print.posterior <- function(x, ...) {
   if (!is.null(x$abc))
     methods <- c(methods, sprintf("ABC-NN regression (%d samples)", nrow(x$abc)))
   if (length(methods) == 0) methods <- "point only"
-  cat(sprintf("posterior object — %s\n", paste(methods, collapse = " + ")))
+  cat(sprintf("posterior object -- %s\n", paste(methods, collapse = " + ")))
   cat("Point estimate:\n")
   print(round(x$point_estimate, 2))
   cat("\nUse summary() for posterior quantiles, density() for density objects.\n")
@@ -853,7 +853,7 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 
   sample_methods <- intersect(methods, all_methods)
 
-  # Near-square panel grid — avoids tall/slim panels when n_params is small.
+  # Near-square panel grid -- avoids tall/slim panels when n_params is small.
   # (Old behaviour: ncol = min(n_params, 5), producing 1xN or 2xN strips.)
   ncol <- max(1L, ceiling(sqrt(n_params)))
   nrow <- ceiling(n_params / ncol)
@@ -1297,7 +1297,7 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     boot_matrix[, j] <- point_est[j] + residuals[idx, j]
 
   if (verbose)
-    cat(sprintf("PipeMaster:: Residual bootstrap done — %d samples\n", n_boot))
+    cat(sprintf("PipeMaster:: Residual bootstrap done -- %d samples\n", n_boot))
 
   boot_matrix
 }
@@ -1386,7 +1386,7 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   # Get true parameter values for accepted rows (raw scale from reftable)
   theta_accepted <- targets_all[accepted, , drop = FALSE]
 
-  # Prepare accepted features for NN prediction — reshape for CNN if needed
+  # Prepare accepted features for NN prediction -- reshape for CNN if needed
   X_acc_z <- X_all_z[accepted, , drop = FALSE]
   if (type == "sfs1d") {
     dim(X_acc_z) <- c(nrow(X_acc_z), ncol(X_acc_z), 1L)
@@ -1411,7 +1411,7 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     abc_matrix[, j] <- theta_true_acc[, j] - (theta_hat_acc[, j] - theta_hat_obs[j])
 
   if (verbose)
-    cat(sprintf("PipeMaster:: ABC-NN regression done — %d posterior samples\n",
+    cat(sprintf("PipeMaster:: ABC-NN regression done -- %d posterior samples\n",
                 nrow(abc_matrix)))
 
   abc_matrix
@@ -1664,7 +1664,7 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     flush.console()
   }
 
-  # Poll loop — check every second, 4-way detection
+  # Poll loop -- check every second, 4-way detection
   last_progress <- Sys.time()
   while (length(active) > 0) {
     Sys.sleep(1)
@@ -1697,7 +1697,7 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
         if (retry_count[a$task_idx] < max_retries) {
           retry_count[a$task_idx] <- retry_count[a$task_idx] + 1L
           if (verbose) {
-            cat(sprintf("  [pool] %s %d CRASHED (exit %s, %.0fs) — retry %d/%d\n",
+            cat(sprintf("  [pool] %s %d CRASHED (exit %s, %.0fs) -- retry %d/%d\n",
                         task$prefix, task$id,
                         if (is.na(exit_code)) "?" else as.character(exit_code),
                         elapsed_sec,
@@ -1874,8 +1874,8 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   dir.create(results_dir)
 
   # Save data for workers. Two strategies:
-  # (a) bigmemory: file-backed matrices shared via mmap — ~0 RSS per worker
-  # (b) fallback:  .rds files — each worker loads a full copy
+  # (a) bigmemory: file-backed matrices shared via mmap -- ~0 RSS per worker
+  # (b) fallback:  .rds files -- each worker loads a full copy
   use_bigmemory <- requireNamespace("bigmemory", quietly = TRUE)
 
   if (use_bigmemory) {
@@ -1910,7 +1910,7 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     }
   }
 
-  # Save metadata only (small .RData — no data matrices)
+  # Save metadata only (small .RData -- no data matrices)
   n_features <- n_feat
   n_targets  <- n_targ
   n_bins     <- data$n_bins
@@ -2038,7 +2038,7 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
   # Per-model HP: each parallel search produces its own architecture via
   # Hyperband, so top-K models can have different unit counts / block counts.
   # .torch.save.tune.result() needs these to reconstruct the correct shapes
-  # on reload — otherwise state_dict load fails with tensor-size mismatch.
+  # on reload -- otherwise state_dict load fails with tensor-size mismatch.
   models_hp <- lapply(search_entries[keep], `[[`, "hp")
 
   if (length(models) == 0L)
@@ -2180,7 +2180,7 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 #' Sensitivity Analysis for `tune.nn()` (Inverse Jacobian)
 #'
 #' Computes \eqn{J[j, i] = d\theta_j / dS_i} of the trained NN at one or more
-#' observed datasets — i.e., how each parameter prediction responds to each
+#' observed datasets -- i.e., how each parameter prediction responds to each
 #' summary statistic. Mirror of \code{emulator.sensitivity()}, which computes
 #' the opposite direction \eqn{dS_k / d\theta_j} for the forward emulator.
 #'
@@ -2189,23 +2189,23 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 #'   \item \strong{Jacobian}: in original parameter and statistic units.
 #'         Useful when stats and params share interpretable scales.
 #'   \item \strong{Elasticity}: dimensionless,
-#'         \eqn{E[j, i] = (S_i / \theta_j) \cdot J[j, i]} — comparable across
+#'         \eqn{E[j, i] = (S_i / \theta_j) \cdot J[j, i]} -- comparable across
 #'         stats with very different magnitudes.
 #' }
 #'
 #' Ensemble averaging follows the conventions of \code{nn.predict()}:
 #' weights are inverse validation loss (default) or uniform.
 #'
-#' @param tune.result list — output from \code{tune.nn()}.
-#' @param observed numeric vector or 1-row data.frame — observed summary stats.
-#' @param ensemble_weights character — \code{"inv_val_loss"} (default) weights
+#' @param tune.result list -- output from \code{tune.nn()}.
+#' @param observed numeric vector or 1-row data.frame -- observed summary stats.
+#' @param ensemble_weights character -- \code{"inv_val_loss"} (default) weights
 #'   each ensemble member by the inverse of its validation loss; \code{"uniform"}
 #'   gives equal weight.
-#' @param aggregate character — \code{"mean"} (default), \code{"median"}, or
+#' @param aggregate character -- \code{"mean"} (default), \code{"median"}, or
 #'   \code{"none"} (return per-model array).
-#' @param device character — \code{"cpu"} or \code{"cuda"} (default chooses cuda
+#' @param device character -- \code{"cpu"} or \code{"cuda"} (default chooses cuda
 #'   when available).
-#' @param verbose logical — print progress (default TRUE).
+#' @param verbose logical -- print progress (default TRUE).
 #'
 #' @return A list of class \code{"tune_nn_sensitivity"} with:
 #' \describe{
@@ -2216,7 +2216,7 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
 #'   \item{stat_cols, param_cols, observed, ensemble_weights, aggregate}{}
 #' }
 #'
-#' @seealso \code{\link{emulator.sensitivity}} for the forward direction.
+#' @seealso \code{emulator.sensitivity()} for the forward direction (keras emulator pipeline).
 #' @export
 tune.nn.sensitivity <- function(tune.result, observed,
                                 ensemble_weights = c("inv_val_loss", "uniform"),
@@ -2263,7 +2263,7 @@ tune.nn.sensitivity <- function(tune.result, observed,
   for (k in seq_len(K)) models[[k]]$to(device = torch::torch_device(device))
 
   if (verbose)
-    cat(sprintf("PipeMaster:: tune.nn.sensitivity — %d ensemble models, weights=%s, aggregate=%s, device=%s\n",
+    cat(sprintf("PipeMaster:: tune.nn.sensitivity -- %d ensemble models, weights=%s, aggregate=%s, device=%s\n",
                 K, ensemble_weights, aggregate, device))
 
   J_list <- vector("list", K); E_list <- vector("list", K)
@@ -2321,7 +2321,7 @@ tune.nn.sensitivity <- function(tune.result, observed,
 #' @export
 print.tune_nn_sensitivity <- function(x, top = 10L, ...) {
   K <- length(x$param_cols)
-  cat(sprintf("tune.nn.sensitivity — %d params, %d stats, aggregate=%s\n",
+  cat(sprintf("tune.nn.sensitivity -- %d params, %d stats, aggregate=%s\n",
               K, length(x$stat_cols), x$aggregate))
   if (x$aggregate == "none") {
     cat("Per-model Jacobians stored in $jacobian (3D array). ",
@@ -2331,7 +2331,7 @@ print.tune_nn_sensitivity <- function(x, top = 10L, ...) {
   J <- x$jacobian; E <- x$elasticity
   for (j in seq_len(K)) {
     ord <- order(-abs(J[j, ]))[seq_len(min(top, ncol(J)))]
-    cat(sprintf("\n%s — top %d stats:\n", x$param_cols[j], length(ord)))
+    cat(sprintf("\n%s -- top %d stats:\n", x$param_cols[j], length(ord)))
     for (i in ord)
       cat(sprintf("  %-30s J=%+11.4g  E=%+8.4f\n",
                   x$stat_cols[i], J[j, i], E[j, i]))

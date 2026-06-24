@@ -7,16 +7,16 @@
 pls.fit(stats, params, n.comp = 20L, scale = TRUE, max.rows = 10000L)
 }
 \arguments{
-\item{stats}{Numeric matrix (n x p) — summary statistics (predictors).}
+\item{stats}{Numeric matrix (n x p) -- summary statistics (predictors).}
 
-\item{params}{Numeric matrix (n x q) — parameters (response). Used to
+\item{params}{Numeric matrix (n x q) -- parameters (response). Used to
 find the projection directions. Not needed for \code{pls.project()}.}
 
-\item{n.comp}{Integer — number of PLS components to retain (default 20).}
+\item{n.comp}{Integer -- number of PLS components to retain (default 20).}
 
-\item{scale}{Logical — center and scale stats before PLS (default TRUE).}
+\item{scale}{Logical -- center and scale stats before PLS (default TRUE).}
 
-\item{max.rows}{Integer — maximum rows for NIPALS fitting (default 10000).
+\item{max.rows}{Integer -- maximum rows for NIPALS fitting (default 10000).
 When \code{nrow(stats) > max.rows}, a random subsample is used for
 fitting. Centering/scaling parameters are computed from the full data.
 This avoids excessive memory use on large reftables.}
@@ -24,12 +24,12 @@ This avoids excessive memory use on large reftables.}
 \value{
 A list with class \code{"pls.fit"}:
 \describe{
-  \item{projection}{matrix (p x n.comp) — projection from stat space to PLS space}
-  \item{center}{numeric (p) — column means used for centering}
-  \item{scale}{numeric (p) — column SDs used for scaling (1 if scale=FALSE)}
-  \item{n.comp}{integer — number of components retained}
-  \item{scores}{matrix (n x n.comp) — training scores (stats projected)}
-  \item{var.explained}{numeric (n.comp) — fraction of X variance per component}
+  \item{projection}{matrix (p x n.comp) -- projection from stat space to PLS space}
+  \item{center}{numeric (p) -- column means used for centering}
+  \item{scale}{numeric (p) -- column SDs used for scaling (1 if scale=FALSE)}
+  \item{n.comp}{integer -- number of components retained}
+  \item{scores}{matrix (n x n.comp) -- training scores (stats projected)}
+  \item{var.explained}{numeric (n.comp) -- fraction of X variance per component}
 }
 }
 \description{

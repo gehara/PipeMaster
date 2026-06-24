@@ -11,7 +11,7 @@
 #' Runs up to four tests:
 #'
 #' \itemize{
-#'   \item \strong{Test A — joint D-pi distribution} (informational):
+#'   \item \strong{Test A -- joint D-pi distribution} (informational):
 #'         Spearman correlation between per-locus Tajima's D and per-site
 #'         pi. A strong positive correlation can arise from background
 #'         selection, mutation-rate heterogeneity, or as a statistical
@@ -19,20 +19,20 @@
 #'         demography. Use \code{cds_bed} (Test D) to distinguish the first;
 #'         a neutral-coalescent simulation (planned for a future release)
 #'         to distinguish the third.
-#'   \item \strong{Test B — over-dispersion of per-locus moments}:
+#'   \item \strong{Test B -- over-dispersion of per-locus moments}:
 #'         Compares observed moments (mean / var / skew / kurt) of pi, D,
 #'         segs, and ZnS across loci to the distribution of the same
 #'         moments across simulations in a PipeMaster reference table.
 #'         Flags obs values outside the central 95\% sim band. Skipped if
 #'         \code{reftable = NULL}.
-#'   \item \strong{Test C — chromosome landscape}:
+#'   \item \strong{Test C -- chromosome landscape}:
 #'         Per-chromosome mean pi and lag-1 Spearman autocorrelation of pi
 #'         along chromosomes (sorted by start position). Significant
 #'         spatial autocorrelation indicates recombination rate
 #'         heterogeneity (which PipeMaster's uniform recombination rate
 #'         cannot reproduce). Per-chromosome outliers flag chromosome-
 #'         specific effects.
-#'   \item \strong{Test D — BGS gradient}:
+#'   \item \strong{Test D -- BGS gradient}:
 #'         Spearman correlation between per-locus pi (and D) and the
 #'         distance from each locus midpoint to the nearest interval in
 #'         \code{cds_bed}. Under residual background selection, pi rises
@@ -58,7 +58,7 @@
 #'   (data.frame with column names like \code{s_mean_pi_1},
 #'   \code{s_var_pi_1}, etc., as produced by \code{sim.scrm.sumstats()}).
 #'   If \code{NULL}, Test B is skipped.
-#' @param pop Integer population index (default \code{1}) — selects which
+#' @param pop Integer population index (default \code{1}) -- selects which
 #'   pop-specific moment columns to compare against
 #'   (\code{s_mean_pi_<pop>}, \code{s_var_pi_<pop>}, etc.).
 #' @param alpha Numeric (default \code{0.01}). Two-sided significance for

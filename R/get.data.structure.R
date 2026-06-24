@@ -1,4 +1,4 @@
-#' Read the observed data to get the simulation parameters; base pairs and number of individuals per population.
+#' Read observed data and set simulation parameters (bp and samples per population)
 #' @param model A model object generated with main.menu.gui function.
 #' @param path.to.phylip Path to a multi-locus sequential PHYLIP file.
 #'        Exactly one of path.to.phylip or path.to.vcf must be provided.

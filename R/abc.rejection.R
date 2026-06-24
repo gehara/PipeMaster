@@ -1,7 +1,7 @@
 # ============================================================================
-# ABC Rejection — standalone ABC rejection algorithm
+# ABC Rejection -- standalone ABC rejection algorithm
 #
-# abc.rejection() — accepts closest simulations to observed data
+# abc.rejection() -- accepts closest simulations to observed data
 # ============================================================================
 
 #' ABC Rejection Algorithm
@@ -11,23 +11,23 @@
 #' distance in summary statistic space, optionally normalized by standard
 #' deviation, median absolute deviation, or Mahalanobis distance.
 #'
-#' @param reftable data.frame or character path — reference table from
+#' @param reftable data.frame or character path -- reference table from
 #'   \code{sim.sumstat()} or \code{sim.sumstats()} containing parameter
 #'   and summary statistic columns. If a file path, read with
 #'   \code{read.table(header = TRUE)}.
-#' @param observed numeric vector or 1-row data.frame — observed summary
+#' @param observed numeric vector or 1-row data.frame -- observed summary
 #'   statistics.
-#' @param param.cols character vector — names of parameter columns.
-#' @param tol numeric — tolerance (acceptance fraction, default 0.01).
-#' @param distance character — distance metric: \code{"sd"} (default),
+#' @param param.cols character vector -- names of parameter columns.
+#' @param tol numeric -- tolerance (acceptance fraction, default 0.01).
+#' @param distance character -- distance metric: \code{"sd"} (default),
 #'   \code{"mad"}, or \code{"mahalanobis"}.
-#' @param pls logical — if TRUE, project summary statistics into PLS
+#' @param pls logical -- if TRUE, project summary statistics into PLS
 #'   component space before computing distances (default FALSE).
 #'   Recommended when the number of statistics is large (>100).
-#' @param n.pls integer — number of PLS components to retain (default 20).
+#' @param n.pls integer -- number of PLS components to retain (default 20).
 #'   Ignored if \code{pls = FALSE}.
-#' @param prior data.frame or NULL — prior samples for plotting (optional).
-#' @param verbose logical — print progress (default TRUE).
+#' @param prior data.frame or NULL -- prior samples for plotting (optional).
+#' @param verbose logical -- print progress (default TRUE).
 #'
 #' @return An object of class \code{"posterior"} with:
 #' \describe{
