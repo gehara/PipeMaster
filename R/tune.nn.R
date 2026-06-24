@@ -793,6 +793,7 @@ print.posterior <- function(x, ...) {
   invisible(x)
 }
 
+#' @importFrom stats density
 #' @export
 density.posterior <- function(x, method = NULL, ...) {
   param_names <- x$param_names
