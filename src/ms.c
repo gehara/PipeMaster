@@ -44,7 +44,9 @@ static int msABC_jmpbuf_set = 0;
 /*this should be the same in data_sumstat.c*/
 #define MISSING '2'
 /* the minimum number of sequences that some statistics (e.g. Tajima's D) require */
-#define MINSEQ 2
+#define MINSEQ 2 /* min sequences/pop for a statistic. Pairwise (%shared/%private/%fixed/Fst)
+                    and per-pop Depaulis-Veuille stats use >= MINSEQ (was > MINSEQ), matching the
+                    within-pop convention, so n=2-haplotype pops are included in pairwise stats. */
 unsigned maxsites = SITESINC ;
 /* flag variable referenced by streec.c */
 int flag;
@@ -1894,7 +1896,7 @@ int msABC_main(int argc, char** argv){
 		  for(npopi=0; npopi<pars.cp.npop-1; npopi++){
 		    for(npopj=npopi+1; npopj<pars.cp.npop; npopj++){
 		      /* pp20100422 if there is no sample take care of the denominator */
-		      if( (pars.cp.config)[npopi] > MINSEQ && (pars.cp.config)[npopj] > MINSEQ &&
+		      if( (pars.cp.config)[npopi] >= MINSEQ && (pars.cp.config)[npopj] >= MINSEQ &&
 			  !isnan(shared[npopi][npopj]) ){
 			ave_shared[npopi][npopj] += shared[npopi][npopj];
 			var_shared[npopi][npopj] += shared[npopi][npopj]*shared[npopi][npopj];
@@ -1937,7 +1939,7 @@ int msABC_main(int argc, char** argv){
 		  for(npopi=0; npopi<pars.cp.npop-1; npopi++){
 		    /* pp20100425 if there is no sample take care of the denominator */
 		    for(npopj=npopi+1; npopj<pars.cp.npop; npopj++){
-		      if( (pars.cp.config)[npopi] > MINSEQ && (pars.cp.config)[npopj] > MINSEQ
+		      if( (pars.cp.config)[npopi] >= MINSEQ && (pars.cp.config)[npopj] >= MINSEQ
 			  && !isnan(private[npopi][npopj]) ){
 			ave_private[npopi][npopj] += private[npopi][npopj];
 			var_private[npopi][npopj] += private[npopi][npopj]*private[npopi][npopj];
@@ -1980,7 +1982,7 @@ int msABC_main(int argc, char** argv){
 		  for(npopi=0; npopi<pars.cp.npop-1; npopi++){
 		    /* pp20100425 if there is no sample take care of the denominator */
 		    for(npopj=npopi+1; npopj<pars.cp.npop; npopj++){
-		      if( (pars.cp.config)[npopi] > MINSEQ&& (pars.cp.config)[npopj] > MINSEQ
+		      if( (pars.cp.config)[npopi] >= MINSEQ&& (pars.cp.config)[npopj] >= MINSEQ
 			  && !isnan(fixed_dif[npopi][npopj])){
 			ave_fixed_dif[npopi][npopj] += fixed_dif[npopi][npopj];
 			var_fixed_dif[npopi][npopj] += fixed_dif[npopi][npopj]*fixed_dif[npopi][npopj];
@@ -2011,7 +2013,7 @@ int msABC_main(int argc, char** argv){
 		         has <= MINSEQ samples in a locfile run. */
 		      pop1=Fst_pops[ ipop ];
 		      pop2=Fst_pops[ jpop ];
-		      if( (pars.cp.config)[ipop] > MINSEQ && (pars.cp.config)[jpop] > MINSEQ ){
+		      if( (pars.cp.config)[ipop] >= MINSEQ && (pars.cp.config)[jpop] >= MINSEQ ){
 			pairwiseFstcalculations(
 						pop1, pop2,
 						weights,
@@ -2165,7 +2167,7 @@ int msABC_main(int argc, char** argv){
 		
 		if(sstats.pristats == 1 && pars.cp.npop > 1 && (sstats.pridvstat)  ){
 		  for(ipop=0; ipop<pars.cp.npop; ipop++){
-		    if((pars.cp.config)[ipop] > MINSEQ){
+		    if((pars.cp.config)[ipop] >= MINSEQ){
 		      dvstat(list, pars.cp.nsam, segsites, samples_b[ipop], samples_e[ipop], &pridvk[ipop], &pridvh[ipop]);
 		      
 		      priave_dvk[ipop] += sstats_weights[ii] * pridvk[ipop];
