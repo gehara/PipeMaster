@@ -846,7 +846,9 @@ nn.predict.classify <- function(classifier, observed,
       stop("observed must be a single row (one observed dataset)")
     setNames(as.numeric(observed[1, ]), colnames(observed))
   } else if (!is.null(names(observed))) {
-    as.numeric(observed)
+    # Keep the names -- as.numeric() alone drops them, and colnames() below
+    # cannot recover them for a plain vector. Matches OOD.R:2236 / :2825.
+    setNames(as.numeric(observed), names(observed))
   } else {
     stop("observed must have named entries (statistic names)")
   }

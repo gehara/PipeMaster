@@ -19,15 +19,21 @@ get.data.structure(
 \item{path.to.phylip}{Path to a multi-locus sequential PHYLIP file.
 Exactly one of path.to.phylip or path.to.vcf must be provided.}
 
-\item{path.to.vcf}{Path to a VCF file (whole-genome data only). The CHROM column is used to
-define loci (one locus per chromosome/scaffold). Requires chrom.sizes.}
+\item{path.to.vcf}{Path to a VCF file. One locus per chromosome/scaffold. The locus set and
+their lengths are read from the \code{##contig=<ID=...,length=...>} header
+lines, so loci that were sequenced but carry no variants are retained --
+they belong in the per-locus denominator of the summary statistics. Supply
+\code{chrom.sizes} only for VCFs written without contig headers, or to
+override them.}
 
 \item{pop.assign}{A two-column data frame with population assignment of individuals. First column
 must have the sample names, the second column the population in numbers (1, 2, etc.).}
 
 \item{chrom.sizes}{A two-column data frame with chromosome/scaffold names in the first column and
-total callable base pairs in the second column. Required when using VCF input.
-Only chromosomes present in both chrom.sizes and the VCF are included.}
+total callable base pairs in the second column. Optional: needed only when the
+VCF has no \code{##contig} header lines, or to override them. When supplied it
+defines the callable set as given -- contigs are no longer intersected with
+those carrying variants.}
 
 \item{verbose}{Logical. If TRUE prints progress messages. Default is TRUE.}
 }

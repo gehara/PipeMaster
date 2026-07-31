@@ -367,7 +367,11 @@ observed.sumstats <- function(model, path.to.phylip = NULL, path.to.vcf = NULL,
     i <- i + 2L  # skip positions line
 
     if (ss == 0) {
-      haplist[[loc]] <- NULL
+      # Leave a NULL placeholder -- compute_sumstats treats NULL entries as
+      # monomorphic loci and uses length(haplist) as the per-locus denominator.
+      # haplist[[loc]] <- NULL would DELETE the element and shrink the list,
+      # deflating that denominator and inflating every moment statistic.
+      haplist[loc] <- list(NULL)
       next
     }
 
