@@ -48,6 +48,20 @@ static int msABC_jmpbuf_set = 0;
                     and per-pop Depaulis-Veuille stats use >= MINSEQ (was > MINSEQ), matching the
                     within-pop convention, so n=2-haplotype pops are included in pairwise stats. */
 unsigned maxsites = SITESINC ;
+
+/* Forward declarations for the two void K&R-style functions defined later in
+ * this file. Both are called before their definitions (ordran() at ~5356 in
+ * locate(), ranvec() at ~7277 in ordran()), so without these the compiler
+ * implicitly declares them as returning int, and int-vs-void is a hard
+ * "conflicting types" error -- which -Wno-implicit-function-declaration does
+ * NOT suppress. Apple clang 17 (C23 default) rejects this; GCC tolerates it.
+ * A prototype is compatible with a K&R definition when the parameter types
+ * are unchanged by default argument promotion, as int and double[] are.
+ * The other implicitly-declared functions here return int or double, matching
+ * the implicit assumption, so they stay warnings. */
+void ordran(int n, double pbuf[]);
+void ranvec(int n, double pbuf[]);
+
 /* flag variable referenced by streec.c */
 int flag;
 /* a variable that stores the greatest sample size among loci */
