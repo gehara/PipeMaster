@@ -95,3 +95,9 @@ Rplots.pdf
 Rplots*.pdf
 nohup.out
 *.bak
+
+# Tutorial working output
+ponabe_output/
+
+# R CMD check artifacts
+*.Rcheck/
