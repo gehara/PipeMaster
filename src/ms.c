@@ -1786,8 +1786,8 @@ int msABC_main(int argc, char** argv){
 			  prikurt_tajimasD[ipop] += pritajd[ipop]*pritajd[ipop]*pritajd[ipop]*pritajd[ipop];
 			}
 		    }
-		    else if(pritruesegsites[ipop] == 0) // Tajimas' D isn't defined
-		      sstats_popden_weights[ii][ipop] -= sstats_weights[ii];
+//PM-HARMONISED-20260811 		    else if(pritruesegsites[ipop] == 0) // Tajimas' D isn't defined
+//PM-HARMONISED-20260811 		      sstats_popden_weights[ii][ipop] -= sstats_weights[ii];
 		    
 		  }
 		}
@@ -1811,9 +1811,9 @@ int msABC_main(int argc, char** argv){
 		    kurt_tajimasD += tajd*tajd*tajd*tajd;
 		  }
 		}
-		else if(truesegsites == 0){
-		  sstats_denominator_weights[ii] -= sstats_weights[ii];
-		}
+//PM-HARMONISED-20260811 		else if(truesegsites == 0){
+//PM-HARMONISED-20260811 		  sstats_denominator_weights[ii] -= sstats_weights[ii];
+//PM-HARMONISED-20260811 		}
 
 		break;
 		/*
@@ -1832,8 +1832,8 @@ int msABC_main(int argc, char** argv){
 			priskew_ZnS[ipop] += prizns[ipop] * prizns[ipop] * prizns[ipop];
 			prikurt_ZnS[ipop] += prizns[ipop] * prizns[ipop] * prizns[ipop] * prizns[ipop];
 		      }
-		    else if(pritruesegsites[ipop] <= 1)
-		      sstats_popden_weights[ii][ipop] -= sstats_weights[ii];
+//PM-HARMONISED-20260811 		    else if(pritruesegsites[ipop] <= 1)
+//PM-HARMONISED-20260811 		      sstats_popden_weights[ii][ipop] -= sstats_weights[ii];
 		  }
 		}
 
@@ -1843,8 +1843,8 @@ int msABC_main(int argc, char** argv){
 		  skew_ZnS += zns*zns*zns;
 		  kurt_ZnS += zns*zns*zns*zns;
 		}
-		else
-		  sstats_denominator_weights[ii] -= sstats_weights[ii];
+//PM-HARMONISED-20260811 		else
+//PM-HARMONISED-20260811 		  sstats_denominator_weights[ii] -= sstats_weights[ii];
 
 		break;
 		
@@ -1881,8 +1881,8 @@ int msABC_main(int argc, char** argv){
 		   kurt_fst += fst * fst * fst * fst;
 		   //printf("Fst is %e\n", fst_hbk);
 		 }
-		 else
-		   sstats_denominator_weights[ii] -= sstats_weights[ii];
+//PM-HARMONISED-20260811 		 else
+//PM-HARMONISED-20260811 		   sstats_denominator_weights[ii] -= sstats_weights[ii];
 		 break;
 	       case 6: //shared polymorphism between populations
 		 if(pars.cp.npop > 1 ){
@@ -1910,21 +1910,21 @@ int msABC_main(int argc, char** argv){
 		  for(npopi=0; npopi<pars.cp.npop-1; npopi++){
 		    for(npopj=npopi+1; npopj<pars.cp.npop; npopj++){
 		      /* pp20100422 if there is no sample take care of the denominator */
-		      if( (pars.cp.config)[npopi] >= MINSEQ && (pars.cp.config)[npopj] >= MINSEQ &&
-			  !isnan(shared[npopi][npopj]) ){
+		      if( (pars.cp.config)[npopi] >= MINSEQ && (pars.cp.config)[npopj] >= MINSEQ ){  /* PM-HARMONISED-20260811: MINSEQ (population-level) still decrements; isnan (per-locus) contributes 0, denominator untouched. */
+			  if( !isnan(shared[npopi][npopj]) ){
 			ave_shared[npopi][npopj] += shared[npopi][npopj];
 			var_shared[npopi][npopj] += shared[npopi][npopj]*shared[npopi][npopj];
 			skew_shared[npopi][npopj] += shared[npopi][npopj]*shared[npopi][npopj]*shared[npopi][npopj];
 			kurt_shared[npopi][npopj] += shared[npopi][npopj]*shared[npopi][npopj]*shared[npopi][npopj]*shared[npopi][npopj];
-		      }
+		      } }
 		      else
 			sstats_popdenpair_weights[ii][npopi][npopj] -= sstats_weights[ii];
 		    }
 		  }
 		 }
-		 else{
-		   sstats_denominator_weights[ii] -= sstats_weights[ii];
-		 }
+//PM-HARMONISED-20260811 		 else{
+//PM-HARMONISED-20260811 		   sstats_denominator_weights[ii] -= sstats_weights[ii];
+//PM-HARMONISED-20260811 		 }
 		 break;
 
 	      case 7: // Proportion of private polymorphisms between two populations
@@ -1953,21 +1953,21 @@ int msABC_main(int argc, char** argv){
 		  for(npopi=0; npopi<pars.cp.npop-1; npopi++){
 		    /* pp20100425 if there is no sample take care of the denominator */
 		    for(npopj=npopi+1; npopj<pars.cp.npop; npopj++){
-		      if( (pars.cp.config)[npopi] >= MINSEQ && (pars.cp.config)[npopj] >= MINSEQ
-			  && !isnan(private[npopi][npopj]) ){
+		      if( (pars.cp.config)[npopi] >= MINSEQ && (pars.cp.config)[npopj] >= MINSEQ ){  /* PM-HARMONISED-20260811: MINSEQ (population-level) still decrements; isnan (per-locus) contributes 0, denominator untouched. */
+			  if( !isnan(private[npopi][npopj]) ){
 			ave_private[npopi][npopj] += private[npopi][npopj];
 			var_private[npopi][npopj] += private[npopi][npopj]*private[npopi][npopj];
 			skew_private[npopi][npopj] += private[npopi][npopj]*private[npopi][npopj]*private[npopi][npopj];
 			kurt_private[npopi][npopj] += private[npopi][npopj]*private[npopi][npopj]*private[npopi][npopj]*private[npopi][npopj];
-		      }
+		      } }
 		      else
 			sstats_popdenpair_weights[ii][npopi][npopj] -= sstats_weights[ii];
 		    }
 		  }
 		}
-		else{
-		  sstats_denominator_weights[ii] -= sstats_weights[ii];
-		}
+//PM-HARMONISED-20260811 		else{
+//PM-HARMONISED-20260811 		  sstats_denominator_weights[ii] -= sstats_weights[ii];
+//PM-HARMONISED-20260811 		}
 		break;
 		
 	      case 8: // Proportion of fixed polymorphisms between two populations
@@ -1996,21 +1996,21 @@ int msABC_main(int argc, char** argv){
 		  for(npopi=0; npopi<pars.cp.npop-1; npopi++){
 		    /* pp20100425 if there is no sample take care of the denominator */
 		    for(npopj=npopi+1; npopj<pars.cp.npop; npopj++){
-		      if( (pars.cp.config)[npopi] >= MINSEQ&& (pars.cp.config)[npopj] >= MINSEQ
-			  && !isnan(fixed_dif[npopi][npopj])){
+		      if( (pars.cp.config)[npopi] >= MINSEQ && (pars.cp.config)[npopj] >= MINSEQ ){  /* PM-HARMONISED-20260811: MINSEQ (population-level) still decrements; isnan (per-locus) contributes 0, denominator untouched. */
+			  if( !isnan(fixed_dif[npopi][npopj]) ){
 			ave_fixed_dif[npopi][npopj] += fixed_dif[npopi][npopj];
 			var_fixed_dif[npopi][npopj] += fixed_dif[npopi][npopj]*fixed_dif[npopi][npopj];
 			skew_fixed_dif[npopi][npopj] += fixed_dif[npopi][npopj]*fixed_dif[npopi][npopj]*fixed_dif[npopi][npopj];
 			kurt_fixed_dif[npopi][npopj] += fixed_dif[npopi][npopj]*fixed_dif[npopi][npopj]*fixed_dif[npopi][npopj]*fixed_dif[npopi][npopj];
-		      }
+		      } }
 		      else
 			sstats_popdenpair_weights[ii][npopi][npopj] -= sstats_weights[ii];
 		    }
 		  }
 		}
-		else{
-		  sstats_denominator_weights[ii] -= sstats_weights[ii];
-		}
+//PM-HARMONISED-20260811 		else{
+//PM-HARMONISED-20260811 		  sstats_denominator_weights[ii] -= sstats_weights[ii];
+//PM-HARMONISED-20260811 		}
 		
 		break;
 	      case 9: // Pairwise Fst
@@ -2051,7 +2051,7 @@ int msABC_main(int argc, char** argv){
 			}
 			else{
 			
-			  sstats_popdenpair_weights[ii][pop1][pop2] -= sstats_weights[ii];
+//PM-HARMONISED-20260811 			  sstats_popdenpair_weights[ii][pop1][pop2] -= sstats_weights[ii];
 			}
 		      }
 		      else
@@ -2061,9 +2061,9 @@ int msABC_main(int argc, char** argv){
 		    pairwise_calculations_done = 1;
 		  }
 		}
-		else{
-		  sstats_denominator_weights[ii] -= sstats_weights[ii];
-		}
+//PM-HARMONISED-20260811 		else{
+//PM-HARMONISED-20260811 		  sstats_denominator_weights[ii] -= sstats_weights[ii];
+//PM-HARMONISED-20260811 		}
 		
 		break;		  
 		
@@ -2182,7 +2182,8 @@ int msABC_main(int argc, char** argv){
 		if(sstats.pristats == 1 && pars.cp.npop > 1 && (sstats.pridvstat)  ){
 		  for(ipop=0; ipop<pars.cp.npop; ipop++){
 		    if((pars.cp.config)[ipop] >= MINSEQ){
-		      dvstat(list, pars.cp.nsam, segsites, samples_b[ipop], samples_e[ipop], &pridvk[ipop], &pridvh[ipop]);
+		      if( segsites > 0 ){  /* PM-HARMONISED-20260811: monomorphic locus contributes 0 nhap (was 1); stays in the denominator */
+		        dvstat(list, pars.cp.nsam, segsites, samples_b[ipop], samples_e[ipop], &pridvk[ipop], &pridvh[ipop]);
 		      
 		      priave_dvk[ipop] += sstats_weights[ii] * pridvk[ipop];
 		      priave_dvh[ipop] += sstats_weights[ii] * pridvh[ipop];
@@ -2193,14 +2194,14 @@ int msABC_main(int argc, char** argv){
 		      priskew_dvh[ipop] += pridvh[ipop] * pridvh[ipop] * pridvh[ipop];
 		      prikurt_dvk[ipop] += pridvk[ipop] * pridvk[ipop] * pridvk[ipop] * pridvk[ipop];
 		      prikurt_dvh[ipop] += pridvh[ipop] * pridvh[ipop] * pridvh[ipop] * pridvh[ipop];
-		    }
+		    } }
 		    else{
 		      sstats_popden_weights[ii][ipop] -= sstats_weights[ii];
 		    }
 		  }
 		  
 		}
-		if( dvstat(list, pars.cp.nsam, segsites, 0, pars.cp.nsam, &dvk, &dvh)){
+		if( segsites > 0 && dvstat(list, pars.cp.nsam, segsites, 0, pars.cp.nsam, &dvk, &dvh)){  /* PM-HARMONISED-20260811: monomorphic locus contributes 0 nhap (was 1); stays in the denominator */
 		  ave_dvk += sstats_weights[ii] * dvk;
 		  ave_dvh += sstats_weights[ii] * dvh;
 		  var_dvk += dvk*dvk;
@@ -7676,7 +7677,13 @@ int check_conditional_timeevents(int nof_resampling, int** conditional_timeevent
 
 
 double varstat( double sumsq, double ave, double den){
-  return (sumsq/den - ave*ave)/(den - 1)* den;
+  /* PM-HARMONISED-20260811: population variance (divide by n), matching
+     compute_sumstats.c:506 and scrm_stats.cpp:522. Was Bessel-corrected
+     ((sumsq/den - ave*ave)/(den-1)*den), which made msABC's s_var_* differ
+     from the observed and scrm paths by a factor n/(n-1). skewstat() and
+     kurtstat() already used the uncorrected m2, so ms.c was also
+     internally inconsistent. */
+  return sumsq/den - ave*ave;
 }
 
 double skewstat(double sum3, double sum2, double ave, double den) {
