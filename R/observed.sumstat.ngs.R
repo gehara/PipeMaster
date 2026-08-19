@@ -199,11 +199,16 @@ phylip_to_ms_file <- function(filepath, pop.assign, output_file, verbose = FALSE
 #'         matching the non-parameter columns of \code{sim.sumstats()}.
 #' @author Marcelo Gehara
 #' @note This function does not work on Windows systems.
+#' @param skip.sfs Logical. If TRUE, skip the site frequency spectrum and
+#'   return only the summary statistics. The joint SFS has prod(config + 1)
+#'   bins, allocated and accumulated per locus, which dominates runtime for
+#'   designs with many populations. Default FALSE (unchanged behaviour).
 #' @export
 observed.sumstats <- function(model, path.to.phylip = NULL, path.to.vcf = NULL,
                           pop.assign,
                           one.snp = FALSE,
                           monomorphic = FALSE, variable_samples = FALSE,
+                          skip.sfs = FALSE,
                           verbose = TRUE) {
   WD <- getwd()
 
@@ -402,6 +407,7 @@ observed.sumstats <- function(model, path.to.phylip = NULL, path.to.vcf = NULL,
                      as.integer(pop_sizes_vec),
                      as.integer(npop),
                      FALSE,  # skip_zns = FALSE for observed data
+                     as.logical(skip.sfs),
                      PACKAGE = "PipeMaster")
   if(verbose) cat(sprintf(" done (%.1f sec)\n", (proc.time() - t0)[3]))
 

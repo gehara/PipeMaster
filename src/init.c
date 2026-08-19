@@ -25,17 +25,20 @@ extern SEXP obs_sfs_vcf_call(SEXP vcf_path, SEXP sample_pop_map,
 extern SEXP scrm_stats_call(SEXP args_sexp, SEXP config_sexp,
                              SEXP npop_sexp, SEXP skip_zns_sexp,
                              SEXP rec_rates_sexp,
-                             SEXP mu_rates_sexp);
+                             SEXP mu_rates_sexp,
+                             SEXP skip_sfs_sexp);
 extern SEXP scrm_stats_multi_call(SEXP args_vec_sexp, SEXP config_sexp,
                                    SEXP npop_sexp, SEXP skip_zns_sexp,
                                    SEXP total_nloci_sexp,
                                    SEXP rec_rates_sexp,
-                                   SEXP mu_rates_sexp);
+                                   SEXP mu_rates_sexp,
+                                   SEXP skip_sfs_sexp);
 
 /* Declared in compute_sumstats.c */
 extern SEXP compute_sumstats_call(SEXP hapmat_sexp, SEXP config_sexp, SEXP npop_sexp);
 extern SEXP compute_sumstats_batch_call(SEXP haplist_sexp, SEXP config_sexp,
-                                         SEXP npop_sexp, SEXP skip_zns_sexp);
+                                         SEXP npop_sexp, SEXP skip_zns_sexp,
+                                         SEXP skip_sfs_sexp);
 
 /* Declared in read_tsv.c */
 extern SEXP read_tsv_call(SEXP filename_sexp, SEXP col_indices_sexp,
@@ -59,10 +62,10 @@ static const R_CallMethodDef CallEntries[] = {
     {"vcf_to_ms_call",       (DL_FUNC) &vcf_to_ms_call,       5},
     {"vcf_one_snp_call",     (DL_FUNC) &vcf_one_snp_call,     2},
     {"phylip_one_snp_call",  (DL_FUNC) &phylip_one_snp_call,  2},
-    {"scrm_stats_call",             (DL_FUNC) &scrm_stats_call,             6},
-    {"scrm_stats_multi_call",       (DL_FUNC) &scrm_stats_multi_call,       7},
+    {"scrm_stats_call",             (DL_FUNC) &scrm_stats_call,             7},
+    {"scrm_stats_multi_call",       (DL_FUNC) &scrm_stats_multi_call,       8},
     {"compute_sumstats_call",       (DL_FUNC) &compute_sumstats_call,       3},
-    {"compute_sumstats_batch_call", (DL_FUNC) &compute_sumstats_batch_call, 4},
+    {"compute_sumstats_batch_call", (DL_FUNC) &compute_sumstats_batch_call, 5},
     {"read_tsv_call",               (DL_FUNC) &read_tsv_call,               4},
     {NULL, NULL, 0}
 };

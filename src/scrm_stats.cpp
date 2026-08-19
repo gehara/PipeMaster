@@ -87,13 +87,40 @@ static int nstat_total(int npop) {
  * Convert scrm SegSites haplotype data to char** list format
  * and compute stats + SFS for one locus.
  */
+/* PM-SFSLEN-20260819: the joint SFS has prod(config[p]+1) bins, which was
+ * computed into a 32-bit int and overflowed silently for high-npop designs:
+ *   10 pops x  8 haps -> 9^10  = 3,486,784,401 -> wraps NEGATIVE (-808,182,895)
+ *                        -> calloc(huge size_t) -> NULL -> memset segfaults
+ *   10 pops x 10 haps -> 11^10 = 25,937,424,601 -> wraps to 167,620,825
+ *                        -> array of the wrong length, bins silently dropped,
+ *                           returned spectrum meaningless, no warning
+ * Accumulate in 64 bits and refuse to allocate past a ceiling. Erroring beats
+ * returning a plausible-looking wrong answer. Callers that do not need the
+ * spectrum should pass skip_sfs = TRUE, which bypasses this entirely. */
+#define PM_SFS_MAX_BINS 50000000LL   /* 50M bins = 400 MB per array */
+
+static long long pm_sfs_len(int nsam, int *config, int npop, const char *who) {
+    if (npop == 1) return (long long)nsam - 1;
+    long long n = 1;
+    for (int p = 0; p < npop; p++) {
+        n *= (long long)(config[p] + 1);
+        if (n > PM_SFS_MAX_BINS) {
+            Rf_error("%s: joint SFS would need > %lld bins across %d populations "
+                     "(%lld and still multiplying). This exceeds the %lld-bin limit "
+                     "and would overflow. Use skip.sfs = TRUE, or fewer populations.",
+                     who, PM_SFS_MAX_BINS, npop, n, PM_SFS_MAX_BINS);
+        }
+    }
+    return n;
+}
+
 static void process_locus(SegSites *ss, int nsam, int nsegsites,
                            int *config, int npop, int skip_zns,
                            double *stat_out, int nstats,
-                           double *sfs_out, int sfs_len) {
+                           double *sfs_out, long long sfs_len) {
 
     memset(stat_out, 0, nstats * sizeof(double));
-    memset(sfs_out, 0, sfs_len * sizeof(double));
+    if (sfs_out != NULL) memset(sfs_out, 0, (size_t)sfs_len * sizeof(double));
 
     if (nsegsites == 0) return;
 
@@ -248,8 +275,15 @@ static void process_locus(SegSites *ss, int nsam, int nsegsites,
     free(pop_tajd); free(pop_zns);
     free(pop_nhap); free(pop_hd);
 
-    /* === SFS === */
-    if (npop == 1) {
+    /* === SFS ===
+     * PM-SKIPSFS-20260819: sfs_out == NULL means the caller asked for
+     * skip_sfs. The whole block is bypassed, not just the store -- the joint
+     * branch below is O(nsegsites * npop) with a per-site allele recount, and
+     * the per-locus memset/accumulate around it is O(prod(config+1)), which
+     * dominates everything else for high npop. */
+    if (sfs_out == NULL) {
+        /* nothing to do */
+    } else if (npop == 1) {
         /* 1D folded SFS */
         for (int s = 0; s < nsegsites; s++) {
             int freq = almap[s];
@@ -362,7 +396,8 @@ static SEXP make_stat_names(int npop) {
 extern "C" SEXP scrm_stats_call(SEXP args_sexp, SEXP config_sexp,
                                   SEXP npop_sexp, SEXP skip_zns_sexp,
                                   SEXP rec_rates_sexp,
-                                  SEXP mu_rates_sexp) {
+                                  SEXP mu_rates_sexp,
+                                  SEXP skip_sfs_sexp) {
 
     if (!isString(args_sexp) || Rf_length(args_sexp) != 1)
         Rf_error("scrm_stats: 'args' must be a single character string");
@@ -370,6 +405,8 @@ extern "C" SEXP scrm_stats_call(SEXP args_sexp, SEXP config_sexp,
     const char *args_cstr = CHAR(STRING_ELT(args_sexp, 0));
     int npop = asInteger(npop_sexp);
     int skip_zns = asLogical(skip_zns_sexp);
+    int skip_sfs = asLogical(skip_sfs_sexp);
+    if (skip_sfs == NA_LOGICAL) skip_sfs = 0;
 
     if (!isInteger(config_sexp) || Rf_length(config_sexp) != npop)
         Rf_error("scrm_stats: 'config' must be integer vector of length npop");
@@ -431,15 +468,15 @@ extern "C" SEXP scrm_stats_call(SEXP args_sexp, SEXP config_sexp,
     double *sum4 = (double *)calloc(nstats, sizeof(double));
     double *locus_stats = (double *)calloc(nstats, sizeof(double));
 
-    int sfs_len;
-    if (npop == 1) {
-        sfs_len = nsam - 1;
-    } else {
-        sfs_len = 1;
-        for (int p = 0; p < npop; p++) sfs_len *= (config[p] + 1);
+    long long sfs_len = skip_sfs ? 0 : pm_sfs_len(nsam, config, npop, "scrm_stats");
+    double *sfs_accum = NULL, *locus_sfs = NULL;
+    if (!skip_sfs) {
+        sfs_accum = (double *)calloc((size_t)sfs_len, sizeof(double));
+        locus_sfs = (double *)calloc((size_t)sfs_len, sizeof(double));
+        if (sfs_accum == NULL || locus_sfs == NULL)
+            Rf_error("scrm_stats: could not allocate %lld SFS bins (%.2f GB each). "
+                     "Use skip.sfs = TRUE.", sfs_len, sfs_len * 8.0 / (1024*1024*1024));
     }
-    double *sfs_accum = (double *)calloc(sfs_len, sizeof(double));
-    double *locus_sfs = (double *)calloc(sfs_len, sizeof(double));
 
     /* Get RNG state from R */
     GetRNGstate();
@@ -498,8 +535,9 @@ extern "C" SEXP scrm_stats_call(SEXP args_sexp, SEXP config_sexp,
             }
 
             /* Accumulate SFS */
-            for (int k = 0; k < sfs_len; k++)
-                sfs_accum[k] += locus_sfs[k];
+            if (!skip_sfs)
+                for (long long k = 0; k < sfs_len; k++)
+                    sfs_accum[k] += locus_sfs[k];
         }
 
         forest.clear();
@@ -564,8 +602,9 @@ extern "C" SEXP scrm_stats_call(SEXP args_sexp, SEXP config_sexp,
     SET_VECTOR_ELT(result, 0, stats_sexp);
 
     /* SFS vector */
-    SEXP sfs_sexp = PROTECT(allocVector(REALSXP, sfs_len));
-    memcpy(REAL(sfs_sexp), sfs_accum, sfs_len * sizeof(double));
+    SEXP sfs_sexp = PROTECT(allocVector(REALSXP, (R_xlen_t)sfs_len));
+    if (!skip_sfs)
+        memcpy(REAL(sfs_sexp), sfs_accum, (size_t)sfs_len * sizeof(double));
     SET_VECTOR_ELT(result, 1, sfs_sexp);
 
     /* Cleanup */
@@ -593,7 +632,8 @@ extern "C" SEXP scrm_stats_multi_call(SEXP args_vec_sexp, SEXP config_sexp,
                                        SEXP npop_sexp, SEXP skip_zns_sexp,
                                        SEXP total_nloci_sexp,
                                        SEXP rec_rates_sexp,
-                                       SEXP mu_rates_sexp) {
+                                       SEXP mu_rates_sexp,
+                                       SEXP skip_sfs_sexp) {
 
     if (!isString(args_vec_sexp))
         Rf_error("scrm_stats_multi: 'args_vec' must be a character vector");
@@ -601,6 +641,8 @@ extern "C" SEXP scrm_stats_multi_call(SEXP args_vec_sexp, SEXP config_sexp,
     int n_groups = Rf_length(args_vec_sexp);
     int npop = asInteger(npop_sexp);
     int skip_zns = asLogical(skip_zns_sexp);
+    int skip_sfs = asLogical(skip_sfs_sexp);
+    if (skip_sfs == NA_LOGICAL) skip_sfs = 0;
     int total_nloci = asInteger(total_nloci_sexp);
 
     if (!isInteger(config_sexp) || Rf_length(config_sexp) != npop)
@@ -651,15 +693,15 @@ extern "C" SEXP scrm_stats_multi_call(SEXP args_vec_sexp, SEXP config_sexp,
     double *sum4 = (double *)calloc(nstats, sizeof(double));
     double *locus_stats = (double *)calloc(nstats, sizeof(double));
 
-    int sfs_len;
-    if (npop == 1) {
-        sfs_len = nsam - 1;
-    } else {
-        sfs_len = 1;
-        for (int p = 0; p < npop; p++) sfs_len *= (config[p] + 1);
+    long long sfs_len = skip_sfs ? 0 : pm_sfs_len(nsam, config, npop, "scrm_stats");
+    double *sfs_accum = NULL, *locus_sfs = NULL;
+    if (!skip_sfs) {
+        sfs_accum = (double *)calloc((size_t)sfs_len, sizeof(double));
+        locus_sfs = (double *)calloc((size_t)sfs_len, sizeof(double));
+        if (sfs_accum == NULL || locus_sfs == NULL)
+            Rf_error("scrm_stats: could not allocate %lld SFS bins (%.2f GB each). "
+                     "Use skip.sfs = TRUE.", sfs_len, sfs_len * 8.0 / (1024*1024*1024));
     }
-    double *sfs_accum = (double *)calloc(sfs_len, sizeof(double));
-    double *locus_sfs = (double *)calloc(sfs_len, sizeof(double));
 
     /* Get RNG state from R */
     GetRNGstate();
@@ -726,8 +768,9 @@ extern "C" SEXP scrm_stats_multi_call(SEXP args_vec_sexp, SEXP config_sexp,
                     sum3[k] += v * v * v;
                     sum4[k] += v * v * v * v;
                 }
-                for (int k = 0; k < sfs_len; k++)
-                    sfs_accum[k] += locus_sfs[k];
+                if (!skip_sfs)
+                    for (long long k = 0; k < sfs_len; k++)
+                        sfs_accum[k] += locus_sfs[k];
             }
 
             forest.clear();
@@ -792,8 +835,9 @@ extern "C" SEXP scrm_stats_multi_call(SEXP args_vec_sexp, SEXP config_sexp,
     setAttrib(stats_sexp, R_NamesSymbol, agg_names);
     SET_VECTOR_ELT(result, 0, stats_sexp);
 
-    SEXP sfs_sexp = PROTECT(allocVector(REALSXP, sfs_len));
-    memcpy(REAL(sfs_sexp), sfs_accum, sfs_len * sizeof(double));
+    SEXP sfs_sexp = PROTECT(allocVector(REALSXP, (R_xlen_t)sfs_len));
+    if (!skip_sfs)
+        memcpy(REAL(sfs_sexp), sfs_accum, (size_t)sfs_len * sizeof(double));
     SET_VECTOR_ELT(result, 1, sfs_sexp);
 
     /* Cleanup */

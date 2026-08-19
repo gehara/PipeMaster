@@ -32,6 +32,13 @@
 #'   sigma_log)} for fixed dispersion OR \code{list(..., sigma_log_range =
 #'   c(lo, hi))} for sampled dispersion. Realized \code{sigma_log_rec} is
 #'   recorded in the reftable.
+#' @param skip.sfs Logical. If TRUE, skip the site frequency spectrum entirely
+#'   and return a zero-length \code{sfs}. The joint SFS has
+#'   \code{prod(config + 1)} bins, which is allocated, zeroed and accumulated
+#'   PER LOCUS regardless of how many are non-zero, so it dominates runtime for
+#'   designs with many populations (10 populations x 10 haplotypes is 2.6e10
+#'   bins). Default FALSE, so existing behaviour is unchanged. Summary
+#'   statistics are bit-identical either way.
 #' @param skip.zns Logical. If TRUE (default), skip ZnS computation
 #'   (O(segsites^2), very slow for large loci).
 #' @param ncores Number of parallel worker processes.
@@ -100,6 +107,7 @@
 sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
                            mu.rates, rec.rates,
                            skip.zns = TRUE,
+                           skip.sfs = FALSE,
                            ncores = 1, path = ".", output.name = "scrm",
                            variable_samples = FALSE,
                            append.sims = FALSE, verbose = TRUE,
@@ -259,7 +267,7 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
 
   # Write header (build column names deterministically, no sim needed)
   if (!append.sims || !file.exists(outfile)) {
-    col_names <- .scrm.col.names(model, npop, config)
+    col_names <- .scrm.col.names(model, npop, config, skip.sfs)
     writeLines(paste(col_names, collapse = "\t"), outfile)
   }
 
@@ -280,7 +288,7 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
     .pm.register.parent(pid_file, worker_pids_env)
 
     worker_nsims <- nsim.blocks * batch.size
-    save(model, worker_nsims, batch.size, skip.zns,
+    save(model, worker_nsims, batch.size, skip.zns, skip.sfs,
          mu.rates, rec.rates, output.name, variable_samples,
          file = file.path(abs_path, ".PM_scrm_worker_params.RData"))
 
@@ -297,6 +305,7 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
       'sim.scrm.sumstats(model = model, nsims = worker_nsims,',
       '               batch.size = batch.size, mu.rates = mu.rates,',
       '               rec.rates = rec.rates, skip.zns = skip.zns,',
+      '               skip.sfs = skip.sfs,',
       '               output.name = output.name,',
       '               path = worker_dir, variable_samples = variable_samples,',
       '               ncores = 1, append.sims = TRUE,',
@@ -429,7 +438,7 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
       block_results <- vector("list", batch.size)
       for (i in 1:batch.size) {
         block_results[[i]] <- .scrm.run.one(model, base_cmds, config, npop,
-                                            skip.zns, mu.rates, rec.rates)
+                                            skip.zns, mu.rates, rec.rates, skip.sfs)
       }
 
       block_mat <- do.call(rbind, block_results)
@@ -463,7 +472,8 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
 # base_cmds: character vector of scrm commands (one per length group)
 # rec.rates: scalar (back-compat) or list(distribution, median, sigma_log)
 .scrm.run.one <- function(model, base_cmds, config, npop,
-                          skip.zns, mu.rates, rec.rates = NULL) {
+                          skip.zns, mu.rates, rec.rates = NULL,
+                          skip.sfs = FALSE) {
   nloci <- nrow(model$loci)
 
   # Sample parameters from priors
@@ -553,12 +563,14 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
     # Uniform length: use original single-command call
     result <- .Call("scrm_stats_call", scrm_cmds, config, as.integer(npop),
                     as.logical(skip.zns), rec_per_locus_c, mu_per_locus_c,
+                    as.logical(skip.sfs),
                     PACKAGE = "PipeMaster")
   } else {
     # Variable lengths: use multi-command call with shared accumulators
     result <- .Call("scrm_stats_multi_call", scrm_cmds, config, as.integer(npop),
                     as.logical(skip.zns), as.integer(nloci),
                     rec_per_locus_c, mu_per_locus_c,
+                    as.logical(skip.sfs),
                     PACKAGE = "PipeMaster")
   }
 
@@ -583,7 +595,11 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
   # C code already folds per-site to minor allele; trim to correct length
   sfs_vec <- result$sfs
   nsam <- sum(config)
-  if (npop == 1) {
+  if (length(sfs_vec) == 0L) {
+    # skip.sfs = TRUE: C returned a zero-length sfs; emit no SFS columns.
+    # The header builder below must agree, so it takes skip.sfs too.
+    sfs_vec <- numeric(0)
+  } else if (npop == 1) {
     # 1-pop: C output is length nsam-1 but only first floor(nsam/2) bins populated
     sfs_len <- floor(nsam / 2)
     sfs_vec <- sfs_vec[1:sfs_len]
@@ -600,7 +616,7 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
 
 
 # Internal: build column names deterministically (no simulation needed)
-.scrm.col.names <- function(model, npop, config) {
+.scrm.col.names <- function(model, npop, config, skip.sfs = FALSE) {
   # Parameter names from model
   size_pars <- rbind(model$flags$n, model$flags$en$size)
   mig_pars <- rbind(model$flags$m, model$flags$em$size)
@@ -635,7 +651,9 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
   stat_names <- unlist(lapply(prefixes, function(p) paste0(p, base_stat_names)))
 
   # SFS names (folded, matching sim.sumstats() convention)
-  if (npop == 1) {
+  if (isTRUE(skip.sfs)) {
+    sfs_names <- character(0)
+  } else if (npop == 1) {
     sfs_len <- floor(nsam / 2)
     sfs_names <- paste0("sfs_", seq(0, sfs_len - 1))
   } else {

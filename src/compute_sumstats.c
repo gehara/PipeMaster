@@ -33,9 +33,9 @@ int seg_sites(int* almap, int n, int segsites);
  * ================================================================ */
 static void compute_sfs(char **list, int nsam, int nsegsites,
                          int *config, int npop,
-                         double *sfs, int sfs_len) {
+                         double *sfs, long long sfs_len) {
 
-    memset(sfs, 0, sfs_len * sizeof(double));
+    memset(sfs, 0, (size_t)sfs_len * sizeof(double));
 
     if (nsegsites <= 0) return;
 
@@ -340,6 +340,28 @@ static SEXP make_stat_names(int npop) {
  * Single-locus entry point.
  * Returns: list(stats = named_numeric, sfs = numeric)
  * ================================================================ */
+/* PM-SFSLEN-20260819: see the matching note in scrm_stats.cpp. prod(config+1)
+ * was computed as a 32-bit int and overflowed silently for high-npop designs
+ * (10 pops x 8 haps wraps NEGATIVE; 10 pops x 10 haps wraps to a wrong
+ * positive length). Accumulate in 64 bits and refuse rather than return
+ * garbage. */
+#define PM_SFS_MAX_BINS 50000000LL   /* 50M bins = 400 MB per array */
+
+static long long pm_sfs_len(int nsam, int *config, int npop, const char *who) {
+    if (npop == 1) return (long long)nsam - 1;
+    long long n = 1;
+    int p;
+    for (p = 0; p < npop; p++) {
+        n *= (long long)(config[p] + 1);
+        if (n > PM_SFS_MAX_BINS)
+            Rf_error("%s: joint SFS would need > %lld bins across %d populations "
+                     "(%lld and still multiplying). Exceeds the %lld-bin limit and "
+                     "would overflow. Use skip.sfs = TRUE, or fewer populations.",
+                     who, PM_SFS_MAX_BINS, npop, n, PM_SFS_MAX_BINS);
+    }
+    return n;
+}
+
 SEXP compute_sumstats_call(SEXP hapmat_sexp, SEXP config_sexp, SEXP npop_sexp) {
 
     if (!isInteger(hapmat_sexp) || !isMatrix(hapmat_sexp))
@@ -369,14 +391,10 @@ SEXP compute_sumstats_call(SEXP hapmat_sexp, SEXP config_sexp, SEXP npop_sexp) {
     compute_locus_stats(list, nsam, nsegsites, config, npop, 0, stat_vals);
 
     /* Compute SFS */
-    int sfs_len;
-    if (npop == 1) {
-        sfs_len = nsam - 1;
-    } else {
-        sfs_len = 1;
-        for (int p = 0; p < npop; p++) sfs_len *= (config[p] + 1);
-    }
-    double *sfs_vals = (double *)calloc(sfs_len, sizeof(double));
+    long long sfs_len = pm_sfs_len(nsam, config, npop, "compute_sumstats");
+    double *sfs_vals = (double *)calloc((size_t)sfs_len, sizeof(double));
+    if (sfs_vals == NULL)
+        Rf_error("compute_sumstats: could not allocate %lld SFS bins", sfs_len);
     compute_sfs(list, nsam, nsegsites, config, npop, sfs_vals, sfs_len);
 
     free_list(list, nsam);
@@ -396,8 +414,8 @@ SEXP compute_sumstats_call(SEXP hapmat_sexp, SEXP config_sexp, SEXP npop_sexp) {
     SET_VECTOR_ELT(result, 0, stats_sexp);
 
     /* SFS vector */
-    SEXP sfs_sexp = PROTECT(allocVector(REALSXP, sfs_len));
-    memcpy(REAL(sfs_sexp), sfs_vals, sfs_len * sizeof(double));
+    SEXP sfs_sexp = PROTECT(allocVector(REALSXP, (R_xlen_t)sfs_len));
+    memcpy(REAL(sfs_sexp), sfs_vals, (size_t)sfs_len * sizeof(double));
     SET_VECTOR_ELT(result, 1, sfs_sexp);
 
     free(stat_vals);
@@ -418,7 +436,8 @@ SEXP compute_sumstats_call(SEXP hapmat_sexp, SEXP config_sexp, SEXP npop_sexp) {
  * )
  * ================================================================ */
 SEXP compute_sumstats_batch_call(SEXP haplist_sexp, SEXP config_sexp,
-                                  SEXP npop_sexp, SEXP skip_zns_sexp) {
+                                  SEXP npop_sexp, SEXP skip_zns_sexp,
+                                  SEXP skip_sfs_sexp) {
 
     if (!isNewList(haplist_sexp))
         Rf_error("compute_sumstats_batch: 'haplist' must be a list");
@@ -426,6 +445,8 @@ SEXP compute_sumstats_batch_call(SEXP haplist_sexp, SEXP config_sexp,
     int nloci = length(haplist_sexp);
     int npop = asInteger(npop_sexp);
     int skip_zns = asLogical(skip_zns_sexp);
+    int skip_sfs = asLogical(skip_sfs_sexp);
+    if (skip_sfs == NA_LOGICAL) skip_sfs = 0;
     if (!isInteger(config_sexp) || length(config_sexp) != npop)
         Rf_error("compute_sumstats_batch: 'config' must be integer vector of length npop");
     int *config = INTEGER(config_sexp);
@@ -444,15 +465,16 @@ SEXP compute_sumstats_batch_call(SEXP haplist_sexp, SEXP config_sexp,
     double *locus_stats = (double *)calloc(nstats, sizeof(double));
 
     /* SFS accumulator */
-    int sfs_len;
-    if (npop == 1) {
-        sfs_len = nsam - 1;
-    } else {
-        sfs_len = 1;
-        for (int p = 0; p < npop; p++) sfs_len *= (config[p] + 1);
+    long long sfs_len = skip_sfs ? 0 : pm_sfs_len(nsam, config, npop, "compute_sumstats_batch");
+    double *sfs_accum = NULL, *locus_sfs = NULL;
+    if (!skip_sfs) {
+        sfs_accum = (double *)calloc((size_t)sfs_len, sizeof(double));
+        locus_sfs = (double *)calloc((size_t)sfs_len, sizeof(double));
+        if (sfs_accum == NULL || locus_sfs == NULL)
+            Rf_error("compute_sumstats_batch: could not allocate %lld SFS bins "
+                     "(%.2f GB each). Use skip.sfs = TRUE.",
+                     sfs_len, sfs_len * 8.0 / (1024*1024*1024));
     }
-    double *sfs_accum = (double *)calloc(sfs_len, sizeof(double));
-    double *locus_sfs = (double *)calloc(sfs_len, sizeof(double));
 
     /* Process each locus */
     for (int loc = 0; loc < nloci; loc++) {
@@ -488,9 +510,11 @@ SEXP compute_sumstats_batch_call(SEXP haplist_sexp, SEXP config_sexp,
         }
 
         /* SFS */
-        compute_sfs(list, nsam, loc_segs, config, npop, locus_sfs, sfs_len);
-        for (int k = 0; k < sfs_len; k++)
-            sfs_accum[k] += locus_sfs[k];
+        if (!skip_sfs) {
+            compute_sfs(list, nsam, loc_segs, config, npop, locus_sfs, sfs_len);
+            for (long long k = 0; k < sfs_len; k++)
+                sfs_accum[k] += locus_sfs[k];
+        }
 
         free_list(list, nsam);
 
@@ -551,8 +575,9 @@ SEXP compute_sumstats_batch_call(SEXP haplist_sexp, SEXP config_sexp,
     SET_VECTOR_ELT(result, 0, stats_sexp);
 
     /* SFS */
-    SEXP sfs_sexp = PROTECT(allocVector(REALSXP, sfs_len));
-    memcpy(REAL(sfs_sexp), sfs_accum, sfs_len * sizeof(double));
+    SEXP sfs_sexp = PROTECT(allocVector(REALSXP, (R_xlen_t)sfs_len));
+    if (!skip_sfs)
+        memcpy(REAL(sfs_sexp), sfs_accum, (size_t)sfs_len * sizeof(double));
     SET_VECTOR_ELT(result, 1, sfs_sexp);
 
     /* Cleanup */
