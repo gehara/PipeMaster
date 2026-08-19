@@ -60,7 +60,11 @@
 #' For WGS-scale simulations (many long loci with recombination), this function
 #' is significantly faster than \code{sim.sumstats()} because:
 #' \itemize{
-#'   \item scrm uses the SMC' approximation, which is O(n*L) instead of O(n*L*rho)
+#'   \item scrm walks the sequence updating a local tree, rather than building
+#'     the full ARG up front. The SMC' approximation window is set with
+#'     \code{-l 500r} (500 recombination events, scrm's own default). Our loci
+#'     carry rho = 4*Ne*r*L of order 40-400, below that window, so the result
+#'     is effectively exact; the window only bites for much longer loci.
 #'   \item Summary statistics are computed in C directly from scrm's in-memory data
 #'   \item No R matrix allocation or text parsing overhead
 #' }
@@ -208,7 +212,29 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
       pop_str <- paste(c("-I", npop, config), collapse = " ")
       cmd <- paste(cmd, pop_str)
     }
-    cmd <- paste(cmd, "-l", group_nloci[g])
+    # PM-FIX-20260819: scrm's -l sets the SMC' approximation window. The plain
+    # form is a length in BASE PAIRS (param.cc:314 -> set_window_length_seq);
+    # a trailing "r" makes it a count of RECOMBINATION EVENTS
+    # (param.cc:313 -> set_window_length_rec).
+    #
+    # This previously passed `-l group_nloci[g]` -- the LOCUS COUNT -- as a
+    # base-pair window, so the accuracy/speed dial was set by an unrelated
+    # quantity:
+    #   * pseudo-WGS (one group of 10,000 loci)  -> 10,000 bp window on 100 kb
+    #   * real WGS   (thousands of length groups) -> 1-127 bp windows, varying
+    #     BETWEEN GROUPS WITHIN ONE MODEL, on loci of 1 kb - 18 Mb
+    # Measured effect: first moments are unaffected (s_mean_* shifts < 0.01%),
+    # but s_var_* moves up to 5.8% (z = 33) between 10,000 and 50,000 bp
+    # windows, so the bp window was not in the saturated regime even for the
+    # pseudo-WGS cells.
+    #
+    # scrm's own default is set_window_length_rec(500) (model.cc:40), i.e. 500
+    # recombination events -- scale-free, so it adapts to any Ne, rec rate and
+    # locus length instead of depending on how many loci happen to be
+    # simulated. Our loci carry rho = 4*Ne*r*L of order 40-400 events, well
+    # under 500, so the whole locus is retained and the ARG is effectively
+    # exact. Passed explicitly rather than relying on the vendored default.
+    cmd <- paste(cmd, "-l", "500r")
     base_cmds[g] <- cmd
   }
 
