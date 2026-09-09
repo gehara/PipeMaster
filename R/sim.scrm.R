@@ -14,7 +14,13 @@
 #'   (a) A single numeric value: applied uniformly to all loci, all sims (back-compat default).
 #'   (b) A list with distribution spec for per-locus per-sim sampling. The
 #'       distribution must be \code{"lognormal"} (the only currently supported
-#'       shape); \code{median} is fixed across sims; the dispersion parameter
+#'       shape). The location is either \code{median} (fixed across sims) or
+#'       \code{median_range = c(lo, hi)}, drawn per sim from a LOG-uniform prior
+#'       and recorded in the reftable as \code{median_mu} / \code{median_rec};
+#'       give exactly one. Note \code{meanlog = log(median)}, so the MEAN
+#'       per-locus rate is \code{median * exp(sigma_log^2/2)} -- with a fixed
+#'       median the mean rate is unestimable and \code{sigma_log} is the only
+#'       parameter that can raise it. The dispersion parameter
 #'       \code{sigma_log} can be either FIXED or SAMPLED per sim:
 #'       \itemize{
 #'         \item Fixed:  \code{list(distribution = "lognormal", median = 5.83e-9, sigma_log = 0.3)}
@@ -39,6 +45,40 @@
 #'   designs with many populations (10 populations x 10 haplotypes is 2.6e10
 #'   bins). Default FALSE, so existing behaviour is unchanged. Summary
 #'   statistics are bit-identical either way.
+#' @param stat.config Integer vector of per-population sample sizes used for
+#'   SUMMARY STATISTIC calculation, or NULL (default). Must sum to the total
+#'   number of haplotypes. NULL means the statistics follow the simulated deme
+#'   structure in \code{model$I} -- the previous behaviour, unchanged.
+#'
+#'   The demography is always simulated on all \code{npop} demes of
+#'   \code{model$I}; this argument controls only how the resulting haplotypes
+#'   are partitioned when statistics are computed, so that models with different
+#'   population structures emit identical, directly comparable statistic
+#'   vectors:
+#'   \itemize{
+#'     \item \code{-I 1 50} with \code{stat.config = c(28,20,2)} -- splits 1 into 3
+#'     \item \code{-I 3 28 20 2} with \code{stat.config = c(28,20,2)} -- identity
+#'     \item \code{-I 7 12 4 6 6 12 8 2} with \code{stat.config = c(28,20,2)} -- pools 7 into 3
+#'   }
+#'   All three then produce the same columns and can be compared by
+#'   \code{tune.nn.classify()} or \code{OOD.pretrain.classify()}. The first is
+#'   the way to build a genuinely panmictic null: simulate one population and
+#'   summarise it as three, rather than faking panmixia with joins at t = 0.
+#'
+#'   Haplotypes are assigned in order: the first \code{stat.config[1]}
+#'   haplotypes to statistics population 1, and so on. scrm emits haplotypes in
+#'   \code{-I} deme order, so pooling demes requires them to be ADJACENT in
+#'   \code{model$I}; a \code{stat.config} whose boundaries cut through a deme
+#'   is allowed (it is what the panmictic null needs) but reported, since it is
+#'   otherwise usually a mistake.
+#'
+#'   The observed data needs no counterpart argument: pass
+#'   \code{observed.sumstats()} a \code{pop.assign} with the pooled
+#'   populations and a model whose \code{I} carries the pooled sample sizes.
+#'
+#'   Affects the joint SFS too -- its dimensions follow \code{stat.config}, so
+#'   this is also the way to keep \code{prod(config + 1)} tractable for
+#'   many-deme designs.
 #' @param skip.zns Logical. If TRUE (default), skip ZnS computation
 #'   (O(segsites^2), very slow for large loci).
 #' @param ncores Number of parallel worker processes.
@@ -108,6 +148,7 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
                            mu.rates, rec.rates,
                            skip.zns = TRUE,
                            skip.sfs = FALSE,
+                           stat.config = NULL,
                            ncores = 1, path = ".", output.name = "scrm",
                            variable_samples = FALSE,
                            append.sims = FALSE, verbose = TRUE,
@@ -124,15 +165,39 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
   .validate_rate_spec <- function(spec, name) {
     if (!is.list(spec) || is.null(spec$distribution)) {
       if (!is.numeric(spec) || length(spec) != 1)
-        stop(sprintf("%s must be a single numeric value OR a list with ",
-                     "$distribution + $median + (sigma_log XOR sigma_log_range)", name))
+        stop(sprintf(paste("%s must be a single numeric value OR a list with",
+                           "$distribution + (median XOR median_range) +",
+                           "(sigma_log XOR sigma_log_range)"), name))
       return(invisible(NULL))
     }
     if (!(spec$distribution %in% c("lognormal")))
       stop(sprintf("%s$distribution: only 'lognormal' is currently supported", name))
-    if (is.null(spec$median) || !is.numeric(spec$median) ||
-        length(spec$median) != 1 || spec$median <= 0)
-      stop(sprintf("%s$median must be a positive numeric scalar", name))
+    # PM-MEDIAN-20260903: the median may be FIXED (spec$median) or SAMPLED per
+    # sim from a log-uniform prior (spec$median_range = c(lo, hi)). Exactly one.
+    # Rationale: with meanlog pinned to log(median), the MEAN per-locus rate is
+    # median * exp(sigma_log^2/2), so a fixed median leaves the mean rate
+    # unestimable and sigma_log is the only lever that can raise it -- which is
+    # why sigma_log_rec pinned at its prior ceiling on PonAbe real WGS.
+    # PM-MEANSPEC-20260905: the location may be given as a MEDIAN or as a MEAN,
+    # fixed or sampled -- exactly one of median / median_range / mean / mean_range.
+    # With meanlog = log(median) the realised MEAN is median*exp(sigma^2/2), so a
+    # median spec lets sigma silently rescale the rate (measured 1.69x at
+    # sigma ~ U(0.05,1.60)) and hence every Ne, since Ne scales as 1/mu. A mean
+    # spec sets meanlog = log(mean) - sigma^2/2 instead, so sigma becomes pure
+    # dispersion and the mean rate is whatever was asked for.
+    locs <- c("median","median_range","mean","mean_range")
+    have <- locs[locs %in% names(spec)]
+    if (length(have) != 1)
+      stop(sprintf("%s must specify exactly one of median / median_range / mean / mean_range (got %d)",
+                   name, length(have)))
+    v <- spec[[have]]
+    if (grepl("_range$", have)) {
+      if (!is.numeric(v) || length(v) != 2 || v[1] <= 0 || v[2] < v[1])
+        stop(sprintf("%s$%s must be c(lo, hi) with 0 < lo <= hi", name, have))
+    } else {
+      if (!is.numeric(v) || length(v) != 1 || v <= 0)
+        stop(sprintf("%s$%s must be a positive numeric scalar", name, have))
+    }
     # Use exact name match -- R's $ does partial-prefix matching, which would
     # treat sigma_log as matching sigma_log_range.
     has_fixed <- "sigma_log"       %in% names(spec)
@@ -168,6 +233,37 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
   pop_cols <- 4:(3 + npop)
   config <- as.integer(model$I[1, pop_cols])
   nsam <- sum(config)
+
+  # Statistics population structure. The demography is simulated on all `npop`
+  # demes; `stat_config` controls only how the emitted haplotypes are
+  # partitioned when statistics are computed, so that models with different
+  # population structures produce identical, comparable statistic vectors.
+  # It can pool demes (7 -> 3), split a single population (1 -> 3), or be the
+  # identity. See the stat.config documentation.
+  if (is.null(stat.config)) {
+    stat_config <- config
+    stat_npop   <- npop
+  } else {
+    stat_config <- as.integer(stat.config)
+    if (anyNA(stat_config) || length(stat_config) < 1L || any(stat_config < 1L))
+      stop("stat.config must be a vector of positive integers.")
+    if (sum(stat_config) != nsam)
+      stop(sprintf(paste0("stat.config must sum to the total number of haplotypes.\n",
+                          "  stat.config sums to %d, model$I has %d haplotypes (%s)."),
+                   sum(stat_config), nsam, paste(config, collapse = " + ")))
+    stat_npop <- length(stat_config)
+    # Boundaries that cut through a simulated deme are legitimate (that is what
+    # a panmictic null needs) but are usually an arithmetic slip, so report them.
+    if (npop > 1L && stat_npop > 1L) {
+      deme_edges <- cumsum(config)[-npop]
+      stat_edges <- cumsum(stat_config)[-stat_npop]
+      if (!all(stat_edges %in% deme_edges))
+        cat(sprintf(paste0("PipeMaster:: NOTE: stat.config boundaries (%s) do not align with\n",
+                           "  deme boundaries (%s); at least one deme is split across statistics\n",
+                           "  populations. Intended for panmictic nulls -- check if not.\n"),
+                    paste(stat_edges, collapse = ", "), paste(deme_edges, collapse = ", ")))
+    }
+  }
   nloci <- nrow(model$loci)
   locus_lengths <- as.numeric(model$loci[, 2])
   uniform_len <- length(unique(locus_lengths)) == 1
@@ -196,11 +292,22 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
   # because scrm's parser requires -r to be valid syntactically.
   # The C side overrides per-locus via Model::setRecombinationRate
   # before each tree build, so the placeholder value is unused.
-  rec_scalar_for_args <- if (rec_is_distribution) rec.rates$median
+  # PM-MEDIAN-20260903: with median_range the spec has no $median, so take the
+  # geometric centre of the range. This is a PLACEHOLDER only -- the C side
+  # overrides it per locus -- but it must be a valid scalar: a NULL here makes
+  # rho_g numeric(0) and silently mangles every per-group scrm command.
+  .placeholder_rate <- function(spec) {
+    for (k in c("median_range","mean_range"))
+      if (k %in% names(spec)) return(exp(mean(log(spec[[k]]))))
+    for (k in c("median","mean"))
+      if (k %in% names(spec)) return(spec[[k]])
+    stop("no location field in rate spec")
+  }
+  rec_scalar_for_args <- if (rec_is_distribution) .placeholder_rate(rec.rates)
                          else                     rec.rates
   # Same idea for mu: -t needs a scalar placeholder; per-locus override
   # happens on the C side via Model::setMutationRate before each locus.
-  mu_scalar_for_args  <- if (mu_is_distribution)  mu.rates$median
+  mu_scalar_for_args  <- if (mu_is_distribution)  .placeholder_rate(mu.rates)
                          else                     mu.rates
 
   # Build per-group scrm commands (one group per unique locus length)
@@ -263,11 +370,15 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
       cat(sprintf("PipeMaster:: scrm engine: %d sims, %d loci (%d length groups, %d-%d bp), %d pops\n",
                   total_sims, nloci, n_groups, as.integer(min(unique_lens)), as.integer(max(unique_lens)), npop))
     }
+    if (!identical(stat_config, config))
+      cat(sprintf("PipeMaster::   %d demes simulated (%s), statistics on %d populations (%s)\n",
+                  npop, paste(config, collapse = " "),
+                  stat_npop, paste(stat_config, collapse = " ")))
   }
 
   # Write header (build column names deterministically, no sim needed)
   if (!append.sims || !file.exists(outfile)) {
-    col_names <- .scrm.col.names(model, npop, config, skip.sfs)
+    col_names <- .scrm.col.names(model, stat_npop, stat_config, skip.sfs)
     writeLines(paste(col_names, collapse = "\t"), outfile)
   }
 
@@ -288,7 +399,7 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
     .pm.register.parent(pid_file, worker_pids_env)
 
     worker_nsims <- nsim.blocks * batch.size
-    save(model, worker_nsims, batch.size, skip.zns, skip.sfs,
+    save(model, worker_nsims, batch.size, skip.zns, skip.sfs, stat.config,
          mu.rates, rec.rates, output.name, variable_samples,
          file = file.path(abs_path, ".PM_scrm_worker_params.RData"))
 
@@ -305,7 +416,7 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
       'sim.scrm.sumstats(model = model, nsims = worker_nsims,',
       '               batch.size = batch.size, mu.rates = mu.rates,',
       '               rec.rates = rec.rates, skip.zns = skip.zns,',
-      '               skip.sfs = skip.sfs,',
+      '               skip.sfs = skip.sfs, stat.config = stat.config,',
       '               output.name = output.name,',
       '               path = worker_dir, variable_samples = variable_samples,',
       '               ncores = 1, append.sims = TRUE,',
@@ -438,7 +549,8 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
       block_results <- vector("list", batch.size)
       for (i in 1:batch.size) {
         block_results[[i]] <- .scrm.run.one(model, base_cmds, config, npop,
-                                            skip.zns, mu.rates, rec.rates, skip.sfs)
+                                            skip.zns, mu.rates, rec.rates, skip.sfs,
+                                            stat_config, stat_npop)
       }
 
       block_mat <- do.call(rbind, block_results)
@@ -473,7 +585,12 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
 # rec.rates: scalar (back-compat) or list(distribution, median, sigma_log)
 .scrm.run.one <- function(model, base_cmds, config, npop,
                           skip.zns, mu.rates, rec.rates = NULL,
-                          skip.sfs = FALSE) {
+                          skip.sfs = FALSE,
+                          stat_config = NULL, stat_npop = NULL) {
+  # config/npop drive the simulation (the -I flag); stat_config/stat_npop drive
+  # the statistic calculation. They differ whenever stat.config was supplied.
+  if (is.null(stat_config)) stat_config <- config
+  if (is.null(stat_npop))   stat_npop   <- length(stat_config)
   nloci <- nrow(model$loci)
 
   # Sample parameters from priors
@@ -507,6 +624,25 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
   # uniform prior (spec$sigma_log_range = c(lo, hi)). The realized
   # sigma_log is recorded in the reftable as sigma_log_mu / sigma_log_rec
   # so tune.nn() can treat it as a regression target if desired.
+  # PM-MEDIAN-20260903: log-uniform draw of the median rate when median_range is
+  # given (a rate is a scale parameter, so the prior is uniform on log scale).
+  # Returns the fixed median unchanged otherwise, so the value recorded in the
+  # reftable is always the median actually used.
+  .draw_median <- function(spec, sigma_log) {
+    # returns the MEDIAN of the lognormal actually used, i.e. exp(meanlog)
+    if ("median_range" %in% names(spec)) {
+      r <- spec[["median_range"]]; exp(runif(1, log(r[1]), log(r[2])))
+    } else if ("median" %in% names(spec)) {
+      spec[["median"]]
+    } else {
+      # mean spec: meanlog = log(mean) - sigma^2/2  =>  median = mean*exp(-sigma^2/2)
+      m <- if ("mean_range" %in% names(spec)) {
+             r <- spec[["mean_range"]]; exp(runif(1, log(r[1]), log(r[2])))
+           } else spec[["mean"]]
+      m * exp(-sigma_log^2 / 2)
+    }
+  }
+
   .draw_sigma_log <- function(spec) {
     # Use exact name lookup -- avoid R's $ prefix matching.
     if ("sigma_log_range" %in% names(spec)) {
@@ -519,12 +655,15 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
 
   rec_per_locus    <- NULL
   sigma_log_rec_used <- NA_real_
-  mean_rec_rate <- if (is.list(rec.rates)) rec.rates$median else
+  median_rec_used <- if (is.list(rec.rates)) NA_real_ else
+                     if (is.numeric(rec.rates)) rec.rates else NA_real_
+  mean_rec_rate <- if (is.list(rec.rates)) NA_real_ else
                    if (is.numeric(rec.rates)) rec.rates else NA_real_
   sd_rec_rate <- 0
   if (is.list(rec.rates) && !is.null(rec.rates$distribution)) {
     sigma_log_rec_used <- .draw_sigma_log(rec.rates)
-    rec_per_locus <- rlnorm(nloci, meanlog = log(rec.rates$median),
+    median_rec_used    <- .draw_median(rec.rates, sigma_log_rec_used)
+    rec_per_locus <- rlnorm(nloci, meanlog = log(median_rec_used),
                                    sdlog   = sigma_log_rec_used)
     mean_rec_rate <- mean(rec_per_locus)
     sd_rec_rate   <- stats::sd(rec_per_locus)
@@ -535,12 +674,15 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
   # essentially free.
   mu_per_locus     <- NULL
   sigma_log_mu_used <- NA_real_
-  mean_mu_rate <- if (is.list(mu.rates)) mu.rates$median else
+  median_mu_used <- if (is.list(mu.rates)) NA_real_ else
+                    if (is.numeric(mu.rates)) mu.rates else NA_real_
+  mean_mu_rate <- if (is.list(mu.rates)) NA_real_ else
                   if (is.numeric(mu.rates)) mu.rates else NA_real_
   sd_mu_rate <- 0
   if (is.list(mu.rates) && !is.null(mu.rates$distribution)) {
     sigma_log_mu_used <- .draw_sigma_log(mu.rates)
-    mu_per_locus <- rlnorm(nloci, meanlog = log(mu.rates$median),
+    median_mu_used    <- .draw_median(mu.rates, sigma_log_mu_used)
+    mu_per_locus <- rlnorm(nloci, meanlog = log(median_mu_used),
                                   sdlog   = sigma_log_mu_used)
     mean_mu_rate <- mean(mu_per_locus)
     sd_mu_rate   <- stats::sd(mu_per_locus)
@@ -561,13 +703,13 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
 
   if (length(scrm_cmds) == 1L) {
     # Uniform length: use original single-command call
-    result <- .Call("scrm_stats_call", scrm_cmds, config, as.integer(npop),
+    result <- .Call("scrm_stats_call", scrm_cmds, stat_config, as.integer(stat_npop),
                     as.logical(skip.zns), rec_per_locus_c, mu_per_locus_c,
                     as.logical(skip.sfs),
                     PACKAGE = "PipeMaster")
   } else {
     # Variable lengths: use multi-command call with shared accumulators
-    result <- .Call("scrm_stats_multi_call", scrm_cmds, config, as.integer(npop),
+    result <- .Call("scrm_stats_multi_call", scrm_cmds, stat_config, as.integer(stat_npop),
                     as.logical(skip.zns), as.integer(nloci),
                     rec_per_locus_c, mu_per_locus_c,
                     as.logical(skip.sfs),
@@ -587,19 +729,21 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
                mean.rate     = mean_mu_rate,
                sd.rate       = sd_mu_rate,
                sigma_log_mu  = sigma_log_mu_used,
+               median_mu     = median_mu_used,
                mean.rec.rate = mean_rec_rate,
                sd.rec.rate   = sd_rec_rate,
-               sigma_log_rec = sigma_log_rec_used)
+               sigma_log_rec = sigma_log_rec_used,
+               median_rec    = median_rec_used)
 
   # Fold and name the SFS entries
   # C code already folds per-site to minor allele; trim to correct length
   sfs_vec <- result$sfs
-  nsam <- sum(config)
+  nsam <- sum(stat_config)
   if (length(sfs_vec) == 0L) {
     # skip.sfs = TRUE: C returned a zero-length sfs; emit no SFS columns.
     # The header builder below must agree, so it takes skip.sfs too.
     sfs_vec <- numeric(0)
-  } else if (npop == 1) {
+  } else if (stat_npop == 1) {
     # 1-pop: C output is length nsam-1 but only first floor(nsam/2) bins populated
     sfs_len <- floor(nsam / 2)
     sfs_vec <- sfs_vec[1:sfs_len]
@@ -607,7 +751,7 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
   } else {
     # Multi-pop joint SFS: already folded to minor allele in C
     # Use expand.grid naming convention (sfs_0_0, sfs_1_0, ...)
-    idx_grid <- expand.grid(lapply(config, function(n) 0:n))
+    idx_grid <- expand.grid(lapply(stat_config, function(n) 0:n))
     names(sfs_vec) <- apply(idx_grid, 1, function(x) paste0("sfs_", paste(x, collapse = "_")))
   }
 
@@ -625,8 +769,8 @@ sim.scrm.sumstats <- function(model, nsims, batch.size = 32,
   par_names <- c(size_pars[, 1], time_pars[, 1])
   if (!is.null(mig_pars)) par_names <- c(par_names, mig_pars[, 1])
   par_names <- c(par_names,
-                 "mean.rate", "sd.rate", "sigma_log_mu",
-                 "mean.rec.rate", "sd.rec.rate", "sigma_log_rec")
+                 "mean.rate", "sd.rate", "sigma_log_mu", "median_mu",
+                 "mean.rec.rate", "sd.rec.rate", "sigma_log_rec", "median_rec")
 
   # Stat names: by-stat-type layout matching scrm_stats.cpp make_stat_names()
   nsam <- sum(config)
