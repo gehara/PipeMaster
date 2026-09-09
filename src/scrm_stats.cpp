@@ -241,7 +241,12 @@ static void process_locus(SegSites *ss, int nsam, int nsegsites,
                       &piT, &piS, &piB, &piD,
                       shared_mat, private_mat, fixed_mat, 0);
 
-        stat_out[si++] = Fst_HBK(piS, piT);
+        /* PM-GLOBALFST-20260909: see compute_sumstats.c -- the GLOBAL Fst needs
+         * the same isnan guard the pairwise Fst below already has, or a locus
+         * with piT == 0 makes the across-locus mean NaN. Both backends must
+         * agree or observed and simulated statistics diverge. */
+        double fst_glob = Fst_HBK(piS, piT);
+        stat_out[si++] = std::isnan(fst_glob) ? 0. : fst_glob;
         for (int i = 0; i < npop - 1; i++) {
             for (int j = i + 1; j < npop; j++) {
                 stat_out[si++] = shared_mat[i][j];

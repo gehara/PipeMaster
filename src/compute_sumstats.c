@@ -252,7 +252,14 @@ static void compute_locus_stats(char **list, int nsam, int nsegsites,
                       &piT, &piS, &piB, &piD,
                       shared_mat, private_mat, fixed_mat, 0);
 
-        out[si++] = Fst_HBK(piS, piT);
+        /* PM-GLOBALFST-20260909: guard the GLOBAL Fst against piT == 0 the same
+         * way the pairwise Fst below already is. Fst_HBK is 1 - piS/piT, so a
+         * locus with no total diversity yields NaN, which then poisons the mean
+         * across loci. The 2026-05-26 pairwise-Fst fix added the guard ten lines
+         * below but left this one unguarded; it surfaces for sample
+         * configurations that produce at least one such locus. */
+        double fst_glob = Fst_HBK(piS, piT);
+        out[si++] = isnan(fst_glob) ? 0. : fst_glob;
         for (int i = 0; i < npop - 1; i++) {
             for (int j = i + 1; j < npop; j++) {
                 out[si++] = shared_mat[i][j];
