@@ -1,4 +1,35 @@
 # internal function of the ms.commander
+#' Log-uniform prior sampler
+#'
+#' Draws from a log-uniform (reciprocal) distribution on \code{[min, max]}, i.e.
+#' \code{log(x)} is uniform between \code{log(min)} and \code{log(max)}. Use it
+#' as the distribution name in the sixth column of a model flag matrix, exactly
+#' like \code{"runif"}:
+#'
+#' \preformatted{
+#'   matrix(c("mig0.1_2", "-m", "1 2", "1e-5", "1e-1", "rlogunif"), nrow = 1)
+#' }
+#'
+#' Appropriate for rate parameters spanning several orders of magnitude, where a
+#' uniform prior would put nearly all of its mass in the top decade. Both bounds
+#' must be strictly positive.
+#'
+#' It lives in the package namespace rather than the caller's workspace because
+#' \code{sample.pars()} resolves the distribution name with \code{do.call()};
+#' a definition in the user's global environment is visible single-core but NOT
+#' to the independent worker processes spawned by \code{ncores > 1}, which start
+#' from a clean environment.
+#'
+#' @param n Number of draws.
+#' @param min,max Positive lower and upper bounds.
+#' @return Numeric vector of length \code{n}.
+#' @author Marcelo Gehara
+rlogunif <- function(n, min, max) {
+  if (any(min <= 0) || any(max <= 0))
+    stop("rlogunif: both bounds must be strictly positive")
+  exp(stats::runif(n, log(min), log(max)))
+}
+
 sample.pars<-function(x){
   k<-sample(nrow(x),nrow(x))
   for(i in k){
