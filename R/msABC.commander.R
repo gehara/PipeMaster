@@ -79,6 +79,8 @@ msABC.commander<-function(model,use.alpha=NULL,arg){
       if (length(join_row) == 1) as.numeric(time.pars[join_row, 4]) else Inf
     })
     anc_idx <- anc_idx[order(anc_join_times)]
+    # which Ne.anc rows already hold a COMPUTED sum (PM-SUMANC-20260912)
+    anc_done <- setNames(rep(FALSE, length(anc_idx)), as.character(anc_idx))
     for (ai in anc_idx) {
       # Extract pair from name: Ne.anc_1_2 -> c("1", "2")
       pair <- strsplit(sub("^Ne\\.anc_", "", size.pars[ai, 1]), "_")[[1]]
@@ -99,61 +101,66 @@ msABC.commander<-function(model,use.alpha=NULL,arg){
       }
 
       # Sum daughter Ne if model$sum_anc_ne is TRUE
+      #
+      # PM-SUMANC-20260912: two fixes.
+      # (1) Only Ne.anc rows ALREADY COMPUTED in an earlier iteration may be
+      #     used as a daughter's "most recent Ne". Previously any Ne.anc row
+      #     was accepted, so a row still holding its prior-sampled value could
+      #     leak in -- silently, since the result still looked plausible.
+      # (2) Joins into the SAME survivor at the SAME time are one simultaneous
+      #     merge, not a predecessor relation. They are handled as a group: the
+      #     ancestral Ne is the survivor's pre-join Ne plus ALL joining
+      #     daughters, and every row in the group receives that same total, so
+      #     the result does not depend on the order the -en flags are emitted.
       if (isTRUE(model$sum_anc_ne) && length(join_row) == 1) {
         join_time <- as.numeric(time.pars[join_row, 4])
+        survivor  <- pair[2]
 
-        # For each daughter pop, find its most recent Ne at join time
-        daughter_ne <- numeric(2)
-        for (d in 1:2) {
-          pop_id <- pair[d]
-          # Start with current Ne (Ne0.popX)
+        # every Ne.anc row that merges into this survivor at this same time
+        grp <- anc_idx[vapply(anc_idx, function(gi) {
+          gp <- strsplit(sub("^Ne\\.anc_", "", size.pars[gi, 1]), "_")[[1]]
+          gj <- ej_lookup[[paste(gp, collapse = "_")]]
+          length(gj) == 1 && gp[2] == survivor &&
+            isTRUE(all.equal(as.numeric(time.pars[gj, 4]), join_time))
+        }, logical(1))]
+
+        # most recent Ne of `pop_id` STRICTLY BEFORE join_time
+        ne_at <- function(pop_id) {
+          val <- NA_real_; best_time <- -Inf
           ne0_row <- which(size.pars[, 1] == paste0("Ne0.pop", pop_id))
-          if (length(ne0_row) == 1) {
-            daughter_ne[d] <- as.numeric(size.pars[ne0_row, 4])
-          }
-          # Track most recent Ne change time for this pop
-          best_time <- 0
-
-          # Check for Ne changes (NeJ.popX) occurring before join time
-          ne_pattern <- paste0("^Ne[0-9]+\\.pop", pop_id, "$")
-          ne_rows <- grep(ne_pattern, size.pars[, 1])
-          ne_rows <- setdiff(ne_rows, ne0_row)  # exclude Ne0
+          if (length(ne0_row) == 1) { val <- as.numeric(size.pars[ne0_row, 4]); best_time <- 0 }
+          ne_rows <- setdiff(grep(paste0("^Ne[0-9]+\\.pop", pop_id, "$"), size.pars[, 1]), ne0_row)
           for (nr in ne_rows) {
-            t_name <- paste0("t.", size.pars[nr, 1])
-            t_row <- which(time.pars[, 1] == t_name)
+            t_row <- which(time.pars[, 1] == paste0("t.", size.pars[nr, 1]))
             if (length(t_row) == 1) {
-              ne_time <- as.numeric(time.pars[t_row, 4])
-              if (ne_time <= join_time && ne_time > best_time) {
-                daughter_ne[d] <- as.numeric(size.pars[nr, 4])
-                best_time <- ne_time
+              nt <- as.numeric(time.pars[t_row, 4])
+              if (nt <= join_time && nt >= best_time) {
+                val <- as.numeric(size.pars[nr, 4]); best_time <- nt
               }
             }
           }
-
-          # Check if this pop is the surviving pop from a previous join
-          # (Ne.anc that was already overwritten in a prior iteration)
-          anc_pattern <- paste0("^Ne\\.anc_.*_", pop_id, "$")
-          anc_rows <- grep(anc_pattern, size.pars[, 1])
-          for (ar in anc_rows) {
-            if (ar == ai) next  # skip self
-            ar_pair_key <- sub("^Ne\\.anc_", "", size.pars[ar, 1])
-            ar_join_row <- ej_lookup[[ar_pair_key]]
-            if (length(ar_join_row) == 1) {
-              ar_time <- as.numeric(time.pars[ar_join_row, 4])
-              if (ar_time <= join_time && ar_time >= best_time) {
-                daughter_ne[d] <- as.numeric(size.pars[ar, 4])
-                best_time <- ar_time
-              }
+          for (ar in grep(paste0("^Ne\\.anc_.*_", pop_id, "$"), size.pars[, 1])) {
+            if (!anc_done[as.character(ar)]) next          # (1) computed rows only
+            arj <- ej_lookup[[sub("^Ne\\.anc_", "", size.pars[ar, 1])]]
+            if (length(arj) != 1) next
+            at <- as.numeric(time.pars[arj, 4])
+            if (at < join_time && at >= best_time) {       # (2) strictly earlier
+              val <- as.numeric(size.pars[ar, 4]); best_time <- at
             }
           }
+          val
         }
 
-        # Overwrite Ne.anc with sum
-        sum_ne <- sum(daughter_ne)
-        size.pars[ai, 4:5] <- sum_ne
-        # Update in parameters
-        par_ne_row <- which(parameters[, 1] == size.pars[ai, 1])
-        if (length(par_ne_row) == 1) parameters[par_ne_row, 2] <- sum_ne
+        daughters <- vapply(grp, function(gi)
+          strsplit(sub("^Ne\\.anc_", "", size.pars[gi, 1]), "_")[[1]][1], "")
+        sum_ne <- ne_at(survivor) + sum(vapply(daughters, ne_at, 0))
+
+        for (gi in grp) {
+          size.pars[gi, 4:5] <- sum_ne
+          par_ne_row <- which(parameters[, 1] == size.pars[gi, 1])
+          if (length(par_ne_row) == 1) parameters[par_ne_row, 2] <- sum_ne
+          anc_done[as.character(gi)] <- TRUE
+        }
       }
     }
   }

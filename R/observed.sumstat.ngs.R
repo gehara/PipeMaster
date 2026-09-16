@@ -426,9 +426,15 @@ observed.sumstats <- function(model, path.to.phylip = NULL, path.to.vcf = NULL,
   }
 
   # --- SFS (folded, same convention as scrm: sfs[folded-1]) ---
-  sfs_vec <- as.numeric(cs_result$sfs)
+  # PM-SKIPSFS-20260916: skip.sfs was honoured by the C call but NOT here -- the
+  # names were still built from expand.grid over pop_sizes_vec (443,625 entries
+  # at npop = 7) and appended to an empty sfs_vec, so colnames<- failed with
+  # "length of 'dimnames' [2] not equal to array extent".
+  sfs_vec <- if (isTRUE(skip.sfs)) numeric(0) else as.numeric(cs_result$sfs)
 
-  if(npop == 1) {
+  if(isTRUE(skip.sfs)) {
+    sfs.names <- character(0)
+  } else if(npop == 1) {
     sfs_len <- floor(nsam / 2)
     sfs_vec <- sfs_vec[1:sfs_len]
     sfs.names <- paste0("sfs_", seq(0, sfs_len - 1))
@@ -437,7 +443,7 @@ observed.sumstats <- function(model, path.to.phylip = NULL, path.to.vcf = NULL,
     sfs.names <- apply(idx_grid, 1, function(x) paste0("sfs_", paste(x, collapse = "_")))
   }
 
-  if(monomorphic) {
+  if(monomorphic && !isTRUE(skip.sfs)) {
     total_sites <- sum(as.numeric(model$loci[, 2]))
     mono <- total_sites - sum(sfs_vec)
     sfs_vec <- c(mono, sfs_vec)
