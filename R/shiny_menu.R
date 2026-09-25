@@ -163,8 +163,14 @@ main.menu.gui <- function(input = NULL) {
   }
 
   # Build ancestral Ne matrices for join nodes (Ne.anc_X_Y at each -ej event)
-  make_anc_ne_at_joins <- function(ej, dist = "uniform") {
+  # `skip` = pair keys ("X_Y") of joins whose survivor KEEPS its own Ne and
+  # growth: no Ne.anc_X_Y row is made for them. The absence of the row is the
+  # source of truth -- msABC.commander() then emits no -en at that join, so
+  # the survivor's size and growth curve continue through it (PM-KEEPSURV-20260925).
+  make_anc_ne_at_joins <- function(ej, dist = "uniform", skip = character(0)) {
     if (is.null(ej) || !is.matrix(ej) || nrow(ej) == 0) return(NULL)
+    ej <- ej[!(gsub(" ", "_", ej[, 3]) %in% skip), , drop = FALSE]
+    if (nrow(ej) == 0) return(NULL)
 
     n_joins <- nrow(ej)
     en_size <- matrix(nrow = n_joins, ncol = 6)
@@ -400,24 +406,17 @@ main.menu.gui <- function(input = NULL) {
   }
 
   # Custom demographic model plot (tree-like with rectangles for populations)
-  plot_model_tree <- function(rv, use_avg = TRUE, font_scale = 1.0, n_samples = 200,
-                              palette = "Tableau", bg_theme = "Dark", h_spacing = 1.5,
-                              font_family = "Palatino", plot_title = NULL,
-                              use_alpha = NULL, align_ancestors = FALSE,
-                              v_spacing = 0.25, arrow_size = 1.0,
-                              show_values = TRUE, show_params = FALSE) {
+  # ONE draw of the model, taken exactly the way a simulation step takes it
+  # (PM-PLOTDRAW-20260925). Returns list(cmd = msABC.commander() result, i.e.
+  # list(ms string, sampled-parameter matrix), averaged, model) or list(error=).
+  # The plot, the "ms Command String" window and the PDF export all use the
+  # SAME returned object, so what is drawn is what is printed.
+  # use_avg = TRUE is the opt-in "prior means" view: NOT a simulated draw.
+  sample_model_draw <- function(rv, use_avg = FALSE, n_samples = 200, use_alpha = NULL) {
     npops <- rv$npops
-    if (is.null(npops) || npops < 1) {
-      plot.new(); text(0.5, 0.5, "No populations defined", col = "white", cex = 1.5)
-      return(invisible(NULL))
-    }
-
-    # Use msABC.commander() for parameter sampling -- same code path as simulations
+    if (is.null(npops) || npops < 1) return(list(error = "No populations defined"))
     model <- tryCatch(assemble_model(rv), error = function(e) NULL)
-    if (is.null(model)) {
-      plot.new(); text(0.5, 0.5, "Model not ready", col = "white", cex = 1.5)
-      return(invisible(NULL))
-    }
+    if (is.null(model)) return(list(error = "Model not ready"))
     # Ensure loci exist (dummy if not configured yet)
     if (is.null(model$loci) || !is.matrix(model$loci) || nrow(model$loci) == 0) {
       model$loci <- matrix(c("loc1", "100", "1", "1e-8", "1e-8", "runif"), nrow = 1)
@@ -428,75 +427,96 @@ main.menu.gui <- function(input = NULL) {
       model$I <- matrix(c("I", paste(npops), as.character(npops), samp_per_pop),
                          nrow = 1)
     }
+    # Same sampler as a simulation step: msABC.commander() (conditions, Ne.anc, sums)
+    one <- function(m) tryCatch(
+      PipeMaster:::msABC.commander(m, use.alpha = use_alpha, arg = "/tmp/plot/"),
+      error = function(e) NULL)
 
-    # Sample parameters via msABC.commander (handles conditions, Ne.anc, sum)
-    # Also capture the ms command string for display
-    last_ms_cmd <- NULL
-    sample_once <- function() {
-      cmd <- tryCatch(
-        PipeMaster:::msABC.commander(model,
-          use.alpha = use_alpha, arg = "/tmp/plot/"),
-        error = function(e) NULL)
-      if (is.null(cmd)) return(NULL)
-      last_ms_cmd <<- cmd[[1]]
-      p <- cmd[[2]]
-      vals <- as.numeric(p[2, ])
-      names(vals) <- p[1, ]
-      vals
+    if (!isTRUE(use_avg)) {
+      cmd <- one(model)
+      if (is.null(cmd)) return(list(error = "Could not sample parameters"))
+      return(list(cmd = cmd, averaged = FALSE, model = model))
     }
 
-    if (use_avg) {
-      # Sample many times, average the parameter values, then generate one ms
-      # command with those averaged values (by setting priors to point-mass)
-      all_samp <- replicate(n_samples, sample_once())
-      if (is.null(all_samp) || !is.matrix(all_samp)) {
-        plot.new(); text(0.5, 0.5, "Could not sample parameters", col = "white", cex = 1.5)
-        return(invisible(NULL))
-      }
-      avg_vals <- rowMeans(all_samp)
-
-      # Create a model copy with priors fixed at averaged values
-      avg_model <- model
-      fix_pars <- function(mat, vals) {
-        if (is.null(mat) || !is.matrix(mat)) return(mat)
-        for (r in 1:nrow(mat)) {
-          nm <- mat[r, 1]
-          if (nm %in% names(vals)) {
-            mat[r, 4] <- as.character(vals[nm])
-            mat[r, 5] <- as.character(vals[nm])
-          }
+    # Prior-means view: average n_samples draws, fix the averages as point
+    # priors, clear conditions, and build one ms command from them.
+    all_samp <- replicate(n_samples, {
+      c1 <- one(model)
+      if (is.null(c1)) NULL else setNames(as.numeric(c1[[2]][2, ]), c1[[2]][1, ])
+    })
+    if (is.null(all_samp) || !is.matrix(all_samp))
+      return(list(error = "Could not sample parameters"))
+    avg_vals <- rowMeans(all_samp)
+    avg_model <- model
+    fix_pars <- function(mat, vals) {
+      if (is.null(mat) || !is.matrix(mat)) return(mat)
+      for (r in 1:nrow(mat)) {
+        nm <- mat[r, 1]
+        if (nm %in% names(vals)) {
+          mat[r, 4] <- as.character(vals[nm])
+          mat[r, 5] <- as.character(vals[nm])
         }
-        mat
       }
-      avg_model$flags$n  <- fix_pars(avg_model$flags$n, avg_vals)
-      avg_model$flags$m  <- fix_pars(avg_model$flags$m, avg_vals)
-      avg_model$flags$ej <- fix_pars(avg_model$flags$ej, avg_vals)
-      if (!is.null(avg_model$flags$en)) {
-        avg_model$flags$en$size <- fix_pars(avg_model$flags$en$size, avg_vals)
-        avg_model$flags$en$time <- fix_pars(avg_model$flags$en$time, avg_vals)
-      }
-      if (!is.null(avg_model$flags$em)) {
-        avg_model$flags$em$size <- fix_pars(avg_model$flags$em$size, avg_vals)
-        avg_model$flags$em$time <- fix_pars(avg_model$flags$em$time, avg_vals)
-      }
-      # Clear conditions (values already at averages, no need to resample)
-      avg_model$conds <- list()
-      avg_cmd <- tryCatch(
-        PipeMaster:::msABC.commander(avg_model,
-          use.alpha = use_alpha, arg = "/tmp/plot/"),
-        error = function(e) NULL)
-      if (!is.null(avg_cmd)) last_ms_cmd <- avg_cmd[[1]]
-    } else {
-      cond_vals <- sample_once()
-      if (is.null(cond_vals)) {
-        plot.new(); text(0.5, 0.5, "Could not sample parameters", col = "white", cex = 1.5)
-        return(invisible(NULL))
-      }
+      mat
     }
-    if (is.null(last_ms_cmd)) {
-      plot.new(); text(0.5, 0.5, "Could not generate ms command", col = "white", cex = 1.5)
+    avg_model$flags$n  <- fix_pars(avg_model$flags$n, avg_vals)
+    avg_model$flags$m  <- fix_pars(avg_model$flags$m, avg_vals)
+    avg_model$flags$ej <- fix_pars(avg_model$flags$ej, avg_vals)
+    if (!is.null(avg_model$flags$en)) {
+      avg_model$flags$en$size <- fix_pars(avg_model$flags$en$size, avg_vals)
+      avg_model$flags$en$time <- fix_pars(avg_model$flags$en$time, avg_vals)
+    }
+    if (!is.null(avg_model$flags$em)) {
+      avg_model$flags$em$size <- fix_pars(avg_model$flags$em$size, avg_vals)
+      avg_model$flags$em$time <- fix_pars(avg_model$flags$em$time, avg_vals)
+    }
+    avg_model$conds <- list()
+    avg_cmd <- one(avg_model)
+    if (is.null(avg_cmd)) return(list(error = "Could not generate ms command"))
+    list(cmd = avg_cmd, averaged = TRUE, model = avg_model, n_samples = n_samples)
+  }
+
+  # Text for the "ms Command String" window, built from the SAME draw as the plot
+  format_model_draw <- function(draw) {
+    if (is.null(draw)) return("")
+    if (!is.null(draw$error)) return(paste("No draw:", draw$error))
+    p <- draw$cmd[[2]]
+    param_str <- paste(sprintf("  %-18s = %s", p[1, ], p[2, ]), collapse = "\n")
+    cond_lines <- character(0)
+    for (ctype in c("size", "time", "mig")) {
+      cl <- draw$model$conds[[ctype]]
+      if (is.null(cl) || length(cl) == 0) next
+      for (cc in cl) cond_lines <- c(cond_lines, sprintf("  %s %s %s", cc$param1, cc$op, cc$param2))
+    }
+    cond_str <- if (length(cond_lines) > 0)
+      paste0("\n\nConditions:\n", paste(cond_lines, collapse = "\n")) else ""
+    head <- if (isTRUE(draw$averaged))
+      sprintf(paste0("PRIOR MEANS over %d draws -- NOT a simulated draw.\n",
+                     "Untick 'Average of priors' to see a draw exactly as a simulation step makes it.\n\n",
+                     "ms command (prior means):\n"), draw$n_samples)
+      else "ms command (the draw shown in the plot; a simulation step samples the same way):\n"
+    paste0(head, draw$cmd[[1]], "\n\nSampled parameters:\n", param_str, cond_str)
+  }
+
+  plot_model_tree <- function(rv, use_avg = FALSE, font_scale = 1.0, n_samples = 200,
+                              palette = "Tableau", bg_theme = "Dark", h_spacing = 1.5,
+                              font_family = "Palatino", plot_title = NULL,
+                              use_alpha = NULL, align_ancestors = FALSE,
+                              v_spacing = 0.25, arrow_size = 1.0,
+                              show_values = TRUE, show_params = FALSE, draw = NULL) {
+    npops <- rv$npops
+    if (is.null(npops) || npops < 1) {
+      plot.new(); text(0.5, 0.5, "No populations defined", col = "white", cex = 1.5)
       return(invisible(NULL))
     }
+    # Draw from a given draw, or take one now (PM-PLOTDRAW-20260925)
+    if (is.null(draw)) draw <- sample_model_draw(rv, use_avg = use_avg,
+                                                 n_samples = n_samples, use_alpha = use_alpha)
+    if (!is.null(draw$error)) {
+      plot.new(); text(0.5, 0.5, draw$error, col = "white", cex = 1.5)
+      return(invisible(draw))
+    }
+    last_ms_cmd <- draw$cmd[[1]]
 
     # ====================================================================
     # Parse the ms command string to build events -- this is what the
@@ -504,6 +524,14 @@ main.menu.gui <- function(input = NULL) {
     # ====================================================================
     Ne0 <- 100000
     ms_scalar <- 4 * Ne0
+    # Migration labels in the units of the SAMPLED parameter (PM-PLOTDRAW-20260925):
+    # ms.string.generator writes M = Nm*4/(Ne_recv/Ne0) ("Nm", also the default
+    # when mig_scale is absent) or M = m*4*Ne0 ("m"); invert exactly that.
+    mig_scale_plot <- if (!is.null(draw$model$mig_scale)) draw$model$mig_scale else "Nm"
+    ms_to_par <- function(M, ne_recv) {
+      if (identical(mig_scale_plot, "m")) M / ms_scalar else M * ne_recv / Ne0 / 4
+    }
+    mig_log <- list()
 
     # Parse ms command into tokens
     ms_tokens <- strsplit(trimws(last_ms_cmd), "\\s+")[[1]]
@@ -559,10 +587,10 @@ main.menu.gui <- function(input = NULL) {
         pop2 <- as.integer(ms_tokens[i + 2])
         rate_ms <- as.numeric(ms_tokens[i + 3])
         # ms -m i j M: present-day migration, convert back to 4Nm using Ne at time 0
-        rate_4Nm <- rate_ms * ne_current[pop1] / Ne0
+        rate_par <- ms_to_par(rate_ms, ne_current[pop1])
         # ms -m i j: fraction of pop i from pop j → migrants move from j to i
         mig_events[[length(mig_events) + 1]] <- list(
-          from = pop2, to = pop1, rate = rate_4Nm, time = 0)
+          from = pop2, to = pop1, rate = rate_par, time = 0)
         i <- i + 4
       } else if (tok == "-em" && i + 4 <= length(ms_tokens)) {
         time_coal <- as.numeric(ms_tokens[i + 1])
@@ -576,10 +604,10 @@ main.menu.gui <- function(input = NULL) {
         for (h in ne_history) {
           if (h$pop == pop1 && h$time_coal <= time_coal) ne_recv <- h$ne
         }
-        rate_4Nm <- rate_ms * ne_recv / Ne0
+        rate_par <- ms_to_par(rate_ms, ne_recv)
         # ms -em t i j: same convention as -m
         mig_events[[length(mig_events) + 1]] <- list(
-          from = pop2, to = pop1, rate = rate_4Nm, time = time_coal * ms_scalar)
+          from = pop2, to = pop1, rate = rate_par, time = time_coal * ms_scalar)
         i <- i + 5
       } else if (tok == "-g" && i + 2 <= length(ms_tokens)) {
         pop <- as.integer(ms_tokens[i + 1])
@@ -636,7 +664,27 @@ main.menu.gui <- function(input = NULL) {
       } else if (ev$type == "join") {
         s <- as.character(ev$src)
         g <- as.character(ev$tgt)
-        if (alive[s] && alive[g]) {
+        # Survivor KEEPS its Ne at this join (PM-KEEPSURV-20260925): no -en on the
+        # survivor at the join time, and the survivor is not itself merged away
+        # at that same instant (a same-time cascade keeps the usual drawing).
+        # Its segment then continues unbroken at its own x, so an exponential
+        # growth curve runs through the join instead of being cut there.
+        keep_surv <- !any(vapply(events, function(e2)
+          (e2$type == "ne_change" && as.character(e2$pop) == g &&
+             isTRUE(all.equal(e2$time, ev$time))) ||
+          (e2$type == "join" && as.character(e2$src) == g &&
+             isTRUE(all.equal(e2$time, ev$time))), logical(1)))
+        if (alive[s] && alive[g] && keep_surv) {
+          segs[[length(segs) + 1]] <- list(
+            pop = s, x = x_pos[s], t0 = last_t[s], t1 = ev$time, ne = cur_ne[s],
+            en_seq = cur_en_seq[s])
+          merges[[length(merges) + 1]] <- list(
+            time = ev$time,
+            x_src = x_pos[s], ne_src = cur_ne[s],
+            x_tgt = x_pos[g], ne_tgt = cur_ne[g],
+            x_new = x_pos[g], ne_new = cur_ne[g])
+          alive[s] <- FALSE
+        } else if (alive[s] && alive[g]) {
           segs[[length(segs) + 1]] <- list(
             pop = s, x = x_pos[s], t0 = last_t[s], t1 = ev$time, ne = cur_ne[s],
             en_seq = cur_en_seq[s])
@@ -903,42 +951,35 @@ main.menu.gui <- function(input = NULL) {
         NULL
       }
 
-      # Compute time range for each migration event
+      # Active interval of each migration entry, with the engines' semantics
+      # (PM-PLOTDRAW-20260925). An entry set at time t (-m: 0, -em: t) holds
+      # until the next -em for the SAME directed pair, or until either population
+      # dies as the SOURCE of an -ej (both engines zero migration into a dead
+      # deme). A join where the population is the SURVIVOR does not end it.
       mig_col <- "#FFD700"
       anc_mig_col <- "#FF8C00"
+      pop_end <- vapply(as.character(1:npops), function(p) {
+        t1 <- vapply(Filter(function(sg) sg$pop == p, segs), function(sg) sg$t1, 0)
+        if (length(t1)) max(t1) else max_t }, 0)
       for (i in seq_along(mig_events)) {
         me <- mig_events[[i]]
-        from_p <- as.character(me$from)
-        to_p   <- as.character(me$to)
-        is_ancestral <- me$time > 0
-        if (is_ancestral) {
-          t_start <- me$time
-          t_end <- max_t
-          for (ev in events) {
-            if (ev$type != "join") next
-            if (ev$time <= t_start * 1.001) next
-            surv <- as.character(ev$tgt); src <- as.character(ev$src)
-            if (from_p %in% c(src, surv) || to_p %in% c(src, surv)) {
-              t_end <- ev$time; break
-            }
-          }
-        } else {
-          t_start <- 0
-          t_end <- min(pop_alive_until[from_p], pop_alive_until[to_p])
-          if (t_end <= t_start || is.infinite(t_end)) t_end <- max_t * 0.8
-          for (me2 in mig_events) {
-            if (me2$time > 0 && me2$from == me$from && me2$to == me$to) {
-              t_end <- min(t_end, me2$time); break
-            }
-          }
-        }
+        from_p <- as.character(me$from); to_p <- as.character(me$to)
+        t_start <- me$time
+        nxt <- vapply(mig_events, function(m2)
+          if (m2$from == me$from && m2$to == me$to && m2$time > t_start) m2$time else Inf, 0)
+        t_end <- min(c(nxt, pop_alive_until[from_p], pop_alive_until[to_p],
+                       pop_end[from_p], pop_end[to_p]))
         mig_events[[i]]$t_start <- t_start
         mig_events[[i]]$t_end   <- t_end
-        mig_events[[i]]$is_ancestral <- is_ancestral
+        mig_events[[i]]$is_ancestral <- t_start > 0
       }
+      mig_log <- lapply(mig_events, function(me) me[c("from", "to", "rate", "t_start", "t_end")])
+      # A zero entry marks the END of migration for that pair: nothing to draw
+      mig_events <- Filter(function(me) me$rate > 0 && me$t_end > me$t_start, mig_events)
 
       # Scale arrowhead size by migration rate
-      all_rates <- sapply(mig_events, `[[`, "rate")
+      all_rates <- vapply(mig_events, function(me) me$rate, 0)
+      if (length(all_rates) == 0) all_rates <- 1
       rate_min <- min(all_rates); rate_max <- max(all_rates)
       head_min <- 0.06 * arrow_size; head_max <- 0.18 * arrow_size
       rate2head <- function(rate) {
@@ -977,7 +1018,9 @@ main.menu.gui <- function(input = NULL) {
           abs(p$t_start - pair_list[[pi]]$t_start) < 1))
         n_same <- length(same_phase)
         rank <- which(same_phase == pi)
-        pair_list[[pi]]$y_offset <- (rank - (n_same + 1) / 2) * y_max * v_spacing * 0.15
+        # Stack arrows of one phase INSIDE their own active interval, so an arrow
+        # is never drawn at a time when that migration is off (PM-PLOTDRAW-20260925)
+        pair_list[[pi]]$y_frac <- rank / (n_same + 1)
       }
 
       # Second pass: draw pairs
@@ -994,7 +1037,7 @@ main.menu.gui <- function(input = NULL) {
         # Determine arrow endpoints and rates
         t_start <- me$t_start; t_end <- me$t_end
         cur_col <- if (me$is_ancestral) anc_mig_col else mig_col
-        t_mid <- (t_start + t_end) / 2 + pl$y_offset
+        t_mid <- t_start + (t_end - t_start) * pl$y_frac
 
         pop_left <- as.character(p_lo); pop_right <- as.character(p_hi)
         seg_left  <- find_seg_at(pop_left, t_mid)
@@ -1132,6 +1175,8 @@ main.menu.gui <- function(input = NULL) {
     # Note: widths not to scale
     mtext("Population widths not to scale", side = 1, adj = 1,
           cex = 0.75 * font_scale, col = th$axis, line = -1)
+    draw$mig_intervals <- mig_log
+    invisible(draw)
   }
 
   # ===========================================================================
@@ -1268,7 +1313,10 @@ main.menu.gui <- function(input = NULL) {
                   shiny::icon("info-circle"),
                   "Full plot controls in the Visualize & Export tab."
                 )),
-                shiny::column(3, shiny::downloadButton("btn_save_model_pdf", "Save as PDF",
+                shiny::column(3,
+                  shiny::actionButton("btn_resample_structure", "Resample",
+                    icon = shiny::icon("dice"), class = "btn-sm btn-default", style = "margin-top: 5px;"),
+                  shiny::downloadButton("btn_save_model_pdf", "Save as PDF",
                   class = "btn-sm btn-default", style = "margin-top: 5px;"))
               ),
               shiny::plotOutput("plot_model_structure", height = "450px")
@@ -1341,6 +1389,18 @@ main.menu.gui <- function(input = NULL) {
                 shiny::br(),
                 shiny::helpText("Click a cell to edit. When 'Sum daughter Ne' is checked, these values are computed automatically.")
               )
+            )
+          ),
+          shiny::fluidRow(
+            shinydashboard::box(
+              title = "Joins Without an Ancestral-Ne Step", width = 12,
+              status = "warning", solidHeader = TRUE, collapsible = TRUE,
+              shiny::uiOutput("ui_keep_survivor"),
+              shiny::helpText(
+                "Checked joins get NO ancestral-Ne step: the surviving population keeps its",
+                "current Ne AND its exponential growth rate through the join (an -en would reset",
+                "growth to zero). Use this for stepwise/founder models. With 'Sum daughter Ne' on,",
+                "the sum is still applied at every other join.")
             )
           ),
           shiny::conditionalPanel(
@@ -1767,7 +1827,7 @@ main.menu.gui <- function(input = NULL) {
               shiny::fluidRow(
                 shiny::column(2,
                   shiny::checkboxInput("check_avg_priors",
-                    "Average of priors", value = TRUE)
+                    "Average of priors (prior means, NOT a simulated draw)", value = FALSE)
                 ),
                 shiny::column(2,
                   shiny::checkboxInput("check_align_ancestors",
@@ -1788,7 +1848,7 @@ main.menu.gui <- function(input = NULL) {
                   )
                 ),
                 shiny::column(2,
-                  shiny::actionButton("btn_plot_model", "Generate Model Plot",
+                  shiny::actionButton("btn_plot_model", "Generate / Resample Model Plot",
                     icon = shiny::icon("chart-area"), class = "btn-info")
                 ),
                 shiny::column(2,
@@ -1904,6 +1964,7 @@ main.menu.gui <- function(input = NULL) {
       sum_anc_ne    = TRUE,
       mig_scale     = "Nm",
       en_joins      = NULL,
+      keep_survivor = character(0),   # pair keys of joins with no Ne.anc step
       size_conds    = NULL,
       time_conds    = NULL,
       mig_conds     = NULL,
@@ -1912,6 +1973,10 @@ main.menu.gui <- function(input = NULL) {
       use_alpha     = FALSE,
       template_loaded = FALSE
     )
+
+    # Draw currently shown in each plot (PM-PLOTDRAW-20260925): the ms window
+    # and the PDF exports read these instead of sampling again.
+    plot_state <- new.env()
 
     # --- Load template if provided ---
     shiny::observe({
@@ -1974,7 +2039,19 @@ main.menu.gui <- function(input = NULL) {
             rv$ne_changes <- sapply(1:rv$npops, function(p) {
               sum(all_size[!is_join, 3] == as.character(p))
             })
+          } else {
+            # every -en row is a join row: rv$en was filled with them above and
+            # must be cleared, or assemble_model() emits each twice (PM-KEEPSURV-20260925)
+            rv$en <- NULL
           }
+        }
+        # Joins with no Ne.anc_X_Y row keep the survivor's Ne (PM-KEEPSURV-20260925)
+        if (!is.null(rv$ej) && is.matrix(rv$ej) && nrow(rv$ej) > 0) {
+          jkeys <- gsub(" ", "_", rv$ej[, 3])
+          have  <- if (!is.null(rv$en_joins)) sub("^Ne\\.anc_", "", rv$en_joins$size[, 1]) else character(0)
+          rv$keep_survivor <- jkeys[!(jkeys %in% have)]
+        } else {
+          rv$keep_survivor <- character(0)
         }
 
         # Load condition lists (convert from legacy matrices if needed)
@@ -2068,8 +2145,11 @@ main.menu.gui <- function(input = NULL) {
         rv$en <- NULL
       }
 
-      # Create ancestral Ne at join nodes
-      rv$en_joins <- make_anc_ne_at_joins(parsed$ej, cur_dist)
+      # Create ancestral Ne at join nodes, keeping the per-join "survivor keeps
+      # its Ne" choice for joins that still exist (PM-KEEPSURV-20260925)
+      new_keys <- if (!is.null(parsed$ej) && is.matrix(parsed$ej)) gsub(" ", "_", parsed$ej[, 3]) else character(0)
+      rv$keep_survivor <- intersect(rv$keep_survivor, new_keys)
+      rv$en_joins <- make_anc_ne_at_joins(parsed$ej, cur_dist, skip = rv$keep_survivor)
 
       # Reset migration
       if (isTRUE(input$check_migration) && parsed$npops > 1) {
@@ -2178,6 +2258,9 @@ main.menu.gui <- function(input = NULL) {
     shiny::observeEvent(input$btn_validate_tree, {
       plot_structure_trigger(plot_structure_trigger() + 1)
     })
+    shiny::observeEvent(input$btn_resample_structure, {
+      plot_structure_trigger(plot_structure_trigger() + 1)
+    })
     output$plot_model_structure <- shiny::renderPlot({
       plot_structure_trigger()
       shiny::isolate({
@@ -2185,7 +2268,7 @@ main.menu.gui <- function(input = NULL) {
         bg_th <- if (!is.null(input$select_plot_bg)) input$select_plot_bg else "Light"
         bg_cols <- c("Dark" = "#222222", "Light" = "#FFFFFF", "Slate" = "#2F4F4F")
         tryCatch({
-          plot_model_tree(rv, use_avg = TRUE, font_scale = 1.0, palette = pal, bg_theme = bg_th,
+          plot_model_tree(rv, draw = (plot_state$struct <- sample_model_draw(rv, use_avg = FALSE, use_alpha = if (isTRUE(input$check_use_alpha) && !is.null(input$alpha_pops)) c(TRUE, as.integer(input$alpha_pops)) else NULL)), font_scale = 1.0, palette = pal, bg_theme = bg_th,
                               h_spacing = if (!is.null(input$plot_h_spacing)) input$plot_h_spacing else 1.5,
                               font_family = if (!is.null(input$select_plot_font)) input$select_plot_font else "Palatino",
                               plot_title = NULL,
@@ -2221,7 +2304,7 @@ main.menu.gui <- function(input = NULL) {
         bg_cols <- c("Dark" = "#222222", "Light" = "#FFFFFF", "Slate" = "#2F4F4F")
         pdf(file, width = 10, height = 7, bg = bg_cols[bg_th])
         tryCatch(
-          plot_model_tree(rv, use_avg = TRUE, font_scale = 1.0, palette = pal, bg_theme = bg_th,
+          plot_model_tree(rv, draw = if (!is.null(plot_state$struct)) plot_state$struct else sample_model_draw(rv, use_alpha = if (isTRUE(input$check_use_alpha) && !is.null(input$alpha_pops)) c(TRUE, as.integer(input$alpha_pops)) else NULL), font_scale = 1.0, palette = pal, bg_theme = bg_th,
                             h_spacing = if (!is.null(input$plot_h_spacing)) input$plot_h_spacing else 1.5,
                             font_family = if (!is.null(input$select_plot_font)) input$select_plot_font else "Palatino",
                             plot_title = NULL,
@@ -2293,6 +2376,7 @@ main.menu.gui <- function(input = NULL) {
       rv$tree_obj <- NULL
 
       # Update en_joins to match remaining ej
+      rv$keep_survivor <- if (!is.null(rv$ej)) intersect(rv$keep_survivor, gsub(" ", "_", rv$ej[, 3])) else character(0)
       if (!is.null(rv$en_joins) && !is.null(rv$ej)) {
         remaining_pairs <- rv$ej[, 3]
         keep <- sapply(1:nrow(rv$en_joins$size), function(i) {
@@ -2527,6 +2611,59 @@ main.menu.gui <- function(input = NULL) {
         selection = "none", rownames = FALSE,
         options = list(dom = "t", paging = FALSE, ordering = FALSE))
     })
+
+    # Per-join "survivor keeps its Ne" choice (PM-KEEPSURV-20260925).
+    # Source of truth = absence of the Ne.anc_X_Y row in rv$en_joins.
+    output$ui_keep_survivor <- shiny::renderUI({
+      ej <- rv$ej
+      if (is.null(ej) || !is.matrix(ej) || nrow(ej) == 0)
+        return(shiny::helpText("No join events. Set a multi-population tree first."))
+      keys <- gsub(" ", "_", ej[, 3])
+      surv <- vapply(strsplit(ej[, 3], " "), `[`, "", 2)
+      lab  <- sprintf("%s -- pop %s keeps its Ne and growth", ej[, 1], surv)
+      shiny::checkboxGroupInput("keep_survivor_joins",
+        "Survivor keeps its current Ne at this join (no ancestral-Ne step):",
+        choices = stats::setNames(keys, lab),
+        selected = shiny::isolate(rv$keep_survivor))
+    })
+
+    shiny::observeEvent(input$keep_survivor_joins, {
+      ej <- rv$ej
+      if (is.null(ej) || !is.matrix(ej) || nrow(ej) == 0) return()
+      keys <- gsub(" ", "_", ej[, 3])
+      new  <- intersect(as.character(input$keep_survivor_joins), keys)
+      if (identical(sort(new), sort(rv$keep_survivor))) return()
+      rv$keep_survivor <- new
+
+      # Rebuild join rows: drop the kept joins, keep existing rows (user-edited
+      # priors) for the others, and recreate defaults for newly unchecked ones.
+      old   <- rv$en_joins
+      nd    <- if (is.null(input$select_ne_dist)) "uniform" else input$select_ne_dist
+      fresh <- make_anc_ne_at_joins(ej, nd)
+      size_rows <- list(); time_rows <- list()
+      for (i in seq_along(keys)) {
+        if (keys[i] %in% new) next
+        nm <- paste0("Ne.anc_", keys[i])
+        if (!is.null(old) && nm %in% old$size[, 1]) {
+          size_rows[[length(size_rows) + 1]] <- old$size[old$size[, 1] == nm, ]
+          time_rows[[length(time_rows) + 1]] <- old$time[old$time[, 1] == paste0("t.", nm), ]
+        } else {
+          size_rows[[length(size_rows) + 1]] <- fresh$size[fresh$size[, 1] == nm, ]
+          time_rows[[length(time_rows) + 1]] <- fresh$time[fresh$time[, 1] == paste0("t.", nm), ]
+        }
+      }
+      rv$en_joins <- if (length(size_rows) > 0)
+        list(size = do.call(rbind, size_rows), time = do.call(rbind, time_rows)) else NULL
+
+      # Drop conditions that reference a removed ancestral-Ne parameter
+      gone <- c(paste0("Ne.anc_", new), paste0("t.Ne.anc_", new))
+      drop_c <- function(cl) {
+        if (is.null(cl)) return(NULL)
+        Filter(function(cc) !(cc$param1 %in% gone || cc$param2 %in% gone), cl)
+      }
+      rv$size_conds <- drop_c(rv$size_conds)
+      rv$time_conds <- drop_c(rv$time_conds)
+    }, ignoreNULL = FALSE, ignoreInit = TRUE)
 
     shiny::observeEvent(input$table_anc_ne_joins_cell_edit, {
       info <- input$table_anc_ne_joins_cell_edit
@@ -3144,46 +3281,15 @@ main.menu.gui <- function(input = NULL) {
         asz <- if (!is.null(input$plot_arrow_size)) input$plot_arrow_size else 1.0
         bg_cols <- c("Dark" = "#222222", "Light" = "#FFFFFF", "Slate" = "#2F4F4F")
         bg_col <- bg_cols[bg_th]
+        # ONE draw feeds the plot, the ms window and the PDF export
+        draw <- sample_model_draw(rv, use_avg = avg, use_alpha = ua)
+        plot_state$viz <- draw
         output$plot_model_diagram <- shiny::renderPlot({
           shiny::isolate(
-            plot_model_tree(rv, use_avg = avg, font_scale = fs, palette = pal, bg_theme = bg_th, h_spacing = sp, font_family = ff, plot_title = NULL, use_alpha = ua, align_ancestors = aa, v_spacing = vs, arrow_size = asz, show_values = sv, show_params = spar)
+            plot_model_tree(rv, draw = draw, font_scale = fs, palette = pal, bg_theme = bg_th, h_spacing = sp, font_family = ff, plot_title = NULL, use_alpha = ua, align_ancestors = aa, v_spacing = vs, arrow_size = asz, show_values = sv, show_params = spar)
           )
         }, bg = bg_col)
-
-        # Generate and display a single ms command for inspection
-        model <- tryCatch(assemble_model(rv), error = function(e) NULL)
-        if (!is.null(model)) {
-          if (is.null(model$loci) || !is.matrix(model$loci) || nrow(model$loci) == 0)
-            model$loci <- matrix(c("loc1", "100", "1", "1e-8", "1e-8", "runif"), nrow = 1)
-          if (is.null(model$I) || !is.matrix(model$I)) {
-            samp_per_pop <- rep("10", rv$npops)
-            model$I <- matrix(c("I", paste(rv$npops), as.character(rv$npops), samp_per_pop), nrow = 1)
-          }
-          cmd <- tryCatch(
-            PipeMaster:::msABC.commander(model, arg = "/tmp/plot/"),
-            error = function(e) NULL)
-          if (!is.null(cmd)) {
-            # Format: ms command + sampled parameters + conditions
-            p <- cmd[[2]]
-            param_str <- paste(sprintf("  %-18s = %s", p[1,], p[2,]), collapse = "\n")
-            # Collect active conditions
-            cond_lines <- character(0)
-            for (ctype in c("size", "time", "mig")) {
-              cl <- model$conds[[ctype]]
-              if (is.null(cl) || length(cl) == 0) next
-              for (cc in cl) {
-                cond_lines <- c(cond_lines,
-                  sprintf("  %s %s %s", cc$param1, cc$op, cc$param2))
-              }
-            }
-            cond_str <- if (length(cond_lines) > 0)
-              paste0("\n\nConditions:\n", paste(cond_lines, collapse = "\n"))
-            else ""
-            ms_str <- paste0("ms command:\n", cmd[[1]],
-                             "\n\nSampled parameters:\n", param_str, cond_str)
-            output$txt_ms_command <- shiny::renderText(ms_str)
-          }
-        }
+        output$txt_ms_command <- shiny::renderText(format_model_draw(draw))
       }, error = function(e) {
         output$plot_model_diagram <- shiny::renderPlot({
           par(bg = "#222222")
@@ -3215,7 +3321,7 @@ main.menu.gui <- function(input = NULL) {
         bg_cols <- c("Dark" = "#222222", "Light" = "#FFFFFF", "Slate" = "#2F4F4F")
         pdf(file, width = 10, height = 7, bg = bg_cols[bg_th])
         tryCatch(
-          plot_model_tree(rv, use_avg = avg, font_scale = fs, palette = pal, bg_theme = bg_th, h_spacing = sp, font_family = ff, plot_title = NULL, use_alpha = ua, align_ancestors = aa, v_spacing = vs, arrow_size = asz, show_values = sv, show_params = spar),
+          plot_model_tree(rv, draw = if (!is.null(plot_state$viz)) plot_state$viz else sample_model_draw(rv, use_avg = avg, use_alpha = ua), font_scale = fs, palette = pal, bg_theme = bg_th, h_spacing = sp, font_family = ff, plot_title = NULL, use_alpha = ua, align_ancestors = aa, v_spacing = vs, arrow_size = asz, show_values = sv, show_params = spar),
           error = function(e) {
             plot.new(); text(0.5, 0.5, paste("Error:", e$message), col = "red")
           }

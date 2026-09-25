@@ -54,6 +54,13 @@ msABC.commander<-function(model,use.alpha=NULL,arg){
   # Ne.anc_X_Y parameters are created by the model builder for each -ej node.
   # The surviving pop (Y) gets an -en at join time with this ancestral Ne.
   # When sum_anc_ne is TRUE, Ne.anc = sum of daughter Ne at join time.
+  #
+  # A join may have NO Ne.anc_X_Y row (GUI: "survivor keeps its current Ne",
+  # PM-KEEPSURV-20260925). Then no -en is emitted at that join and survivor Y
+  # keeps its own size AND growth rate through it (-en would zero growth;
+  # -ej leaves both untouched in msABC and scrm). The sum rule still applies
+  # at the other joins; a later sum reads such a survivor through ne_at(),
+  # i.e. its latest Ne0/NeK STEP value, not its value on the growth curve.
 
   # Build a lookup: pop pair "X Y" -> ej row index (handles both joinX_Y and joinX naming)
   if (is.null(time.pars)) { ej_rows <- integer(0) } else
