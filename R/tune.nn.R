@@ -733,15 +733,20 @@ nn.predict <- function(tune.result, observed, reftable = NULL, param.cols = NULL
 }
 
 #' @export
-summary.posterior <- function(object, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), ...) {
+summary.posterior <- function(object, probs = c(0.025, 0.25, 0.5, 0.75, 0.975),
+                              labels = NULL, ...) {
   param_names <- object$param_names
+  # Display labels (param.labels()): rows read "Ne0.pop1 [Ne0 BO1]". Internal
+  # names are unchanged; `labels` = a Model, a named vector, or object$labels.
+  lab <- .resolve.param.labels(object, labels, param_names)
   n_params <- length(param_names)
   q_labels <- paste0(formatC(probs * 100, format = "fg"), "%")
 
   .summarize <- function(mat) {
     tbl <- matrix(NA, nrow = n_params, ncol = length(probs) + 3)
     colnames(tbl) <- c("Mean", "Median", "Mode", q_labels)
-    rownames(tbl) <- param_names
+    rownames(tbl) <- if (is.null(lab)) param_names else
+      ifelse(lab == param_names, param_names, sprintf("%s [%s]", param_names, lab))
     for (j in seq_len(n_params)) {
       vals <- mat[, j]
       vals <- vals[is.finite(vals)]
@@ -754,7 +759,10 @@ summary.posterior <- function(object, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), 
     tbl
   }
 
-  out <- list(point_estimate = object$point_estimate)
+  pe <- object$point_estimate
+  if (!is.null(lab) && !is.null(names(pe)))
+    names(pe) <- ifelse(lab[names(pe)] == names(pe), names(pe), sprintf("%s [%s]", names(pe), lab[names(pe)]))
+  out <- list(point_estimate = pe)
   if (!is.null(object$bootstrap))
     out$bootstrap <- .summarize(object$bootstrap)
   if (!is.null(object$abc))
@@ -779,7 +787,7 @@ print.summary.posterior <- function(x, digits = 2, ...) {
 }
 
 #' @export
-print.posterior <- function(x, ...) {
+print.posterior <- function(x, labels = NULL, ...) {
   methods <- c()
   if (!is.null(x$bootstrap))
     methods <- c(methods, sprintf("bootstrap (%d samples)", nrow(x$bootstrap)))
@@ -788,7 +796,10 @@ print.posterior <- function(x, ...) {
   if (length(methods) == 0) methods <- "point only"
   cat(sprintf("posterior object -- %s\n", paste(methods, collapse = " + ")))
   cat("Point estimate:\n")
-  print(round(x$point_estimate, 2))
+  pe <- x$point_estimate
+  lab <- .resolve.param.labels(x, labels, names(pe))
+  if (!is.null(lab)) names(pe) <- ifelse(lab == names(pe), names(pe), sprintf("%s [%s]", names(pe), lab))
+  print(round(pe, 2))
   cat("\nUse summary() for posterior quantiles, density() for density objects.\n")
   invisible(x)
 }
@@ -821,9 +832,11 @@ density.posterior <- function(x, method = NULL, ...) {
 #' @export
 plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
                              show_point_est = TRUE, show_prior = FALSE,
-                             true_values = NULL, bw.adjust = 1, ...) {
+                             true_values = NULL, bw.adjust = 1, labels = NULL, ...) {
   param_names <- x$param_names
   n_params <- length(param_names)
+  # Panel title = readable label (param.labels()), x-axis = internal name
+  lab <- .resolve.param.labels(x, labels, param_names)
 
   all_methods <- c("prior", "bootstrap", "abc")
 
@@ -891,7 +904,7 @@ plot.posterior <- function(x, method = NULL, col = "red", lwd = 2,
     for (m in names(densities)) {
       d <- densities[[m]]
       if (first) {
-        plot(d, main = pname, xlab = pname, ylab = "Density",
+        plot(d, main = if (is.null(lab)) pname else lab[[pname]], xlab = pname, ylab = "Density",
              col = method_cols[m], lwd = lwd, lty = density_lty[[m]],
              xlim = prior_range, ylim = combined_ylim, ...)
         first <- FALSE

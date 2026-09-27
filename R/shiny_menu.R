@@ -240,7 +240,7 @@ main.menu.gui <- function(input = NULL) {
 
 
   # Convert a 6-column parameter matrix to a display data.frame
-  mat_to_df <- function(mat, dist) {
+  mat_to_df <- function(mat, dist, labels = NULL) {
     if (is.null(mat)) return(NULL)
     df <- data.frame(
       Parameter = mat[, 1],
@@ -253,7 +253,20 @@ main.menu.gui <- function(input = NULL) {
     } else {
       colnames(df) <- c("Parameter", "Mean", "SD")
     }
+    # Read-only display label LAST, so edit column indices 1/2 are unchanged
+    # (PM-PARAMLABELS-20260927). Internal names stay numeric.
+    if (!is.null(labels)) {
+      l <- labels[mat[, 1]]; l[is.na(l)] <- mat[is.na(l), 1]
+      df$Label <- unname(l)
+    }
     df
+  }
+
+  # Display labels for the current GUI model (never used as names)
+  gui_param_labels <- function(rv) {
+    m <- tryCatch(assemble_model(rv), error = function(e) NULL)
+    if (is.null(m)) return(NULL)
+    tryCatch(PipeMaster::param.labels(m), error = function(e) NULL)
   }
 
   # Assemble the Model object (equivalent to get.model)
@@ -328,6 +341,7 @@ main.menu.gui <- function(input = NULL) {
                rv$model_name else "Model",
       pops = pop_names
     )
+    if (!is.null(rv$plot_order)) model$labels$plot_order <- as.integer(rv$plot_order)
 
     class(model) <- "Model"
     return(model)
@@ -481,7 +495,10 @@ main.menu.gui <- function(input = NULL) {
     if (is.null(draw)) return("")
     if (!is.null(draw$error)) return(paste("No draw:", draw$error))
     p <- draw$cmd[[2]]
-    param_str <- paste(sprintf("  %-18s = %s", p[1, ], p[2, ]), collapse = "\n")
+    lab <- tryCatch(PipeMaster::param.labels(draw$model, p[1, ]), error = function(e) p[1, ])
+    param_str <- paste(sprintf("  %-18s %-24s = %s", p[1, ],
+                               ifelse(lab == p[1, ], "", paste0("[", lab, "]")), p[2, ]),
+                       collapse = "\n")
     cond_lines <- character(0)
     for (ctype in c("size", "time", "mig")) {
       cl <- draw$model$conds[[ctype]]
@@ -640,6 +657,9 @@ main.menu.gui <- function(input = NULL) {
         if (!any(is.na(lo)) && length(lo) == npops) leaf_order <- lo
       }
     }
+    # User-chosen left-to-right order (display only, PM-PLOTORDER-20260927)
+    po <- suppressWarnings(as.integer(rv$plot_order))
+    if (length(po) == npops && !anyNA(po) && setequal(po, seq_len(npops))) leaf_order <- po
     leaf_spacing <- h_spacing
     x_pos  <- setNames(1 + (seq_along(leaf_order) - 1) * leaf_spacing, as.character(leaf_order))
     x_pos_orig <- x_pos
@@ -1319,6 +1339,15 @@ main.menu.gui <- function(input = NULL) {
                   shiny::downloadButton("btn_save_model_pdf", "Save as PDF",
                   class = "btn-sm btn-default", style = "margin-top: 5px;"))
               ),
+              shiny::fluidRow(
+                shiny::column(4, shiny::textInput("txt_plot_order_struct", "Population order, left to right (display only):",
+                  value = "", placeholder = "e.g. 1,2,3,4,6,7,5  (blank = tree order)")),
+                shiny::column(2, shiny::actionButton("btn_order_struct", "Apply order",
+                  class = "btn-sm btn-default", style = "margin-top: 25px;"),
+                  shiny::actionButton("btn_order_reset_struct", "Tree order",
+                  class = "btn-sm btn-default", style = "margin-top: 25px;")),
+                shiny::column(6, shiny::uiOutput("ui_plot_order_help_struct"))
+              ),
               shiny::plotOutput("plot_model_structure", height = "450px")
             )
           ),
@@ -1856,6 +1885,15 @@ main.menu.gui <- function(input = NULL) {
                     class = "btn-sm btn-default")
                 )
               ),
+              shiny::fluidRow(
+                shiny::column(4, shiny::textInput("txt_plot_order_viz", "Population order, left to right (display only):",
+                  value = "", placeholder = "e.g. 1,2,3,4,6,7,5  (blank = tree order)")),
+                shiny::column(2, shiny::actionButton("btn_order_viz", "Apply order",
+                  class = "btn-sm btn-default", style = "margin-top: 25px;"),
+                  shiny::actionButton("btn_order_reset_viz", "Tree order",
+                  class = "btn-sm btn-default", style = "margin-top: 25px;")),
+                shiny::column(6, shiny::uiOutput("ui_plot_order_help_viz"))
+              ),
               shiny::hr(),
               shiny::uiOutput("ui_plot_model_diagram")
             )
@@ -1965,6 +2003,7 @@ main.menu.gui <- function(input = NULL) {
       mig_scale     = "Nm",
       en_joins      = NULL,
       keep_survivor = character(0),   # pair keys of joins with no Ne.anc step
+      plot_order    = NULL,           # display-only left-to-right pop order (PM-PLOTORDER-20260927)
       size_conds    = NULL,
       time_conds    = NULL,
       mig_conds     = NULL,
@@ -2003,6 +2042,7 @@ main.menu.gui <- function(input = NULL) {
         if (!is.null(tmpl$labels)) {
           rv$model_name <- if (!is.null(tmpl$labels$name)) tmpl$labels$name else ""
           rv$pop_names  <- tmpl$labels$pops
+          rv$plot_order <- tmpl$labels$plot_order   # display only; validated when drawn
         }
         rv$npops <- nrow(rv$n)
 
@@ -2149,6 +2189,7 @@ main.menu.gui <- function(input = NULL) {
       # its Ne" choice for joins that still exist (PM-KEEPSURV-20260925)
       new_keys <- if (!is.null(parsed$ej) && is.matrix(parsed$ej)) gsub(" ", "_", parsed$ej[, 3]) else character(0)
       rv$keep_survivor <- intersect(rv$keep_survivor, new_keys)
+      if (!is.null(rv$plot_order) && length(rv$plot_order) != parsed$npops) rv$plot_order <- NULL
       rv$en_joins <- make_anc_ne_at_joins(parsed$ej, cur_dist, skip = rv$keep_survivor)
 
       # Reset migration
@@ -2258,17 +2299,65 @@ main.menu.gui <- function(input = NULL) {
     shiny::observeEvent(input$btn_validate_tree, {
       plot_structure_trigger(plot_structure_trigger() + 1)
     })
+    # ---- Left-to-right population order for the plots (PM-PLOTORDER-20260927) ----
+    apply_plot_order <- function(txt) {
+      n <- rv$npops
+      txt <- gsub("\\s", "", if (is.null(txt)) "" else txt)
+      if (!nzchar(txt)) { rv$plot_order <- NULL; return(invisible(TRUE)) }
+      v <- suppressWarnings(as.integer(strsplit(txt, ",")[[1]]))
+      if (anyNA(v) || length(v) != n || !setequal(v, seq_len(n))) {
+        shiny::showNotification(sprintf(
+          "Order must list every population 1..%d exactly once, comma-separated.", n),
+          type = "error", duration = 6)
+        return(invisible(FALSE))
+      }
+      rv$plot_order <- v
+      invisible(TRUE)
+    }
+    shiny::observeEvent(input$btn_order_struct, apply_plot_order(input$txt_plot_order_struct))
+    shiny::observeEvent(input$btn_order_viz,    apply_plot_order(input$txt_plot_order_viz))
+    shiny::observeEvent(input$btn_order_reset_struct, { rv$plot_order <- NULL })
+    shiny::observeEvent(input$btn_order_reset_viz,    { rv$plot_order <- NULL })
+    # keep both text fields showing the order in force
+    shiny::observeEvent(rv$plot_order, {
+      val <- if (is.null(rv$plot_order)) "" else paste(rv$plot_order, collapse = ",")
+      shiny::updateTextInput(session, "txt_plot_order_struct", value = val)
+      shiny::updateTextInput(session, "txt_plot_order_viz", value = val)
+    }, ignoreNULL = FALSE)
+    plot_order_help <- function() {
+      n <- rv$npops
+      if (is.null(n) || n < 2) return(shiny::helpText("Single population."))
+      nm <- vapply(seq_len(n), function(i) {
+        i <- as.character(i)
+        v <- if (!is.null(rv$pop_names) && i %in% names(rv$pop_names)) as.character(rv$pop_names[[i]]) else ""
+        if (is.na(v) || !nzchar(v)) paste0("pop", i) else v }, "")
+      tree_o <- tryCatch(suppressWarnings(as.integer(parse_tree(gsub(";", "", rv$tree_string))$pop_labels)),
+                         error = function(e) seq_len(n))
+      if (length(tree_o) != n || anyNA(tree_o)) tree_o <- seq_len(n)
+      cur <- if (!is.null(rv$plot_order)) rv$plot_order else tree_o
+      shiny::helpText(
+        shiny::strong("Populations: "), paste(sprintf("%d = %s", seq_len(n), nm), collapse = ", "),
+        shiny::br(), shiny::strong(if (is.null(rv$plot_order)) "Current (tree order): " else "Current (custom): "),
+        paste(cur, collapse = ","))
+    }
+    output$ui_plot_order_help_struct <- shiny::renderUI(plot_order_help())
+    output$ui_plot_order_help_viz    <- shiny::renderUI(plot_order_help())
+
     shiny::observeEvent(input$btn_resample_structure, {
       plot_structure_trigger(plot_structure_trigger() + 1)
     })
     output$plot_model_structure <- shiny::renderPlot({
-      plot_structure_trigger()
+      trig <- plot_structure_trigger()
+      rv$plot_order                      # re-draw on an order change, same draw
       shiny::isolate({
         pal <- if (!is.null(input$select_plot_palette)) input$select_plot_palette else "Colorblind"
         bg_th <- if (!is.null(input$select_plot_bg)) input$select_plot_bg else "Light"
         bg_cols <- c("Dark" = "#222222", "Light" = "#FFFFFF", "Slate" = "#2F4F4F")
         tryCatch({
-          plot_model_tree(rv, draw = (plot_state$struct <- sample_model_draw(rv, use_avg = FALSE, use_alpha = if (isTRUE(input$check_use_alpha) && !is.null(input$alpha_pops)) c(TRUE, as.integer(input$alpha_pops)) else NULL)), font_scale = 1.0, palette = pal, bg_theme = bg_th,
+          plot_model_tree(rv, draw = (if (is.null(plot_state$struct) || !identical(plot_state$struct_trig, trig)) {
+                              plot_state$struct_trig <- trig
+                              plot_state$struct <- sample_model_draw(rv, use_avg = FALSE, use_alpha = if (isTRUE(input$check_use_alpha) && !is.null(input$alpha_pops)) c(TRUE, as.integer(input$alpha_pops)) else NULL)
+                            } else plot_state$struct), font_scale = 1.0, palette = pal, bg_theme = bg_th,
                               h_spacing = if (!is.null(input$plot_h_spacing)) input$plot_h_spacing else 1.5,
                               font_family = if (!is.null(input$select_plot_font)) input$select_plot_font else "Palatino",
                               plot_title = NULL,
@@ -2462,8 +2551,8 @@ main.menu.gui <- function(input = NULL) {
     output$table_current_ne <- DT::renderDT({
       mat <- rv$n
       if (is.null(mat)) return(NULL)
-      df <- mat_to_df(mat, input$select_ne_dist)
-      DT::datatable(df, editable = list(target = "cell", disable = list(columns = 0)),
+      df <- mat_to_df(mat, input$select_ne_dist, labels = gui_param_labels(rv))
+      DT::datatable(df, editable = list(target = "cell", disable = list(columns = c(0, 3))),
         selection = "none", rownames = FALSE,
         options = list(dom = "t", paging = FALSE, ordering = FALSE))
     })
@@ -2503,8 +2592,8 @@ main.menu.gui <- function(input = NULL) {
     # Ancestral Ne table
     output$table_ancestral_ne <- DT::renderDT({
       if (is.null(rv$en)) return(NULL)
-      df <- mat_to_df(rv$en$size, input$select_ne_dist)
-      DT::datatable(df, editable = list(target = "cell", disable = list(columns = 0)),
+      df <- mat_to_df(rv$en$size, input$select_ne_dist, labels = gui_param_labels(rv))
+      DT::datatable(df, editable = list(target = "cell", disable = list(columns = c(0, 3))),
         selection = "none", rownames = FALSE,
         options = list(dom = "t", paging = FALSE, ordering = FALSE))
     })
@@ -2606,8 +2695,8 @@ main.menu.gui <- function(input = NULL) {
       ej_ne <- rv$en_joins
       if (is.null(ej_ne)) return(DT::datatable(data.frame(
         Message = "No join events. Set a multi-population tree first.")))
-      df <- mat_to_df(ej_ne$size, input$select_ne_dist)
-      DT::datatable(df, editable = list(target = "cell", disable = list(columns = 0)),
+      df <- mat_to_df(ej_ne$size, input$select_ne_dist, labels = gui_param_labels(rv))
+      DT::datatable(df, editable = list(target = "cell", disable = list(columns = c(0, 3))),
         selection = "none", rownames = FALSE,
         options = list(dom = "t", paging = FALSE, ordering = FALSE))
     })
@@ -2693,8 +2782,8 @@ main.menu.gui <- function(input = NULL) {
     output$table_migration <- DT::renderDT({
       if (is.null(rv$m)) return(NULL)
       dist <- if (!is.null(input$select_mig_dist)) input$select_mig_dist else "uniform"
-      df <- mat_to_df(rv$m, dist)
-      DT::datatable(df, editable = list(target = "cell", disable = list(columns = 0)),
+      df <- mat_to_df(rv$m, dist, labels = gui_param_labels(rv))
+      DT::datatable(df, editable = list(target = "cell", disable = list(columns = c(0, 3))),
         selection = "none", rownames = FALSE,
         options = list(dom = "t", paging = FALSE, ordering = FALSE))
     })
@@ -2756,8 +2845,8 @@ main.menu.gui <- function(input = NULL) {
     # Divergence times table
     output$table_div_times <- DT::renderDT({
       if (is.null(rv$ej)) return(NULL)
-      df <- mat_to_df(rv$ej, input$select_time_dist)
-      DT::datatable(df, editable = list(target = "cell", disable = list(columns = 0)),
+      df <- mat_to_df(rv$ej, input$select_time_dist, labels = gui_param_labels(rv))
+      DT::datatable(df, editable = list(target = "cell", disable = list(columns = c(0, 3))),
         selection = "none", rownames = FALSE,
         options = list(dom = "t", paging = FALSE, ordering = FALSE))
     })
@@ -2771,8 +2860,8 @@ main.menu.gui <- function(input = NULL) {
     # Ne change times table
     output$table_ne_change_times <- DT::renderDT({
       if (is.null(rv$en)) return(NULL)
-      df <- mat_to_df(rv$en$time, input$select_time_dist)
-      DT::datatable(df, editable = list(target = "cell", disable = list(columns = 0)),
+      df <- mat_to_df(rv$en$time, input$select_time_dist, labels = gui_param_labels(rv))
+      DT::datatable(df, editable = list(target = "cell", disable = list(columns = c(0, 3))),
         selection = "none", rownames = FALSE,
         options = list(dom = "t", paging = FALSE, ordering = FALSE))
     })
@@ -2827,8 +2916,8 @@ main.menu.gui <- function(input = NULL) {
 
     output$table_anc_mig_times <- DT::renderDT({
       if (is.null(rv$em)) return(NULL)
-      df <- mat_to_df(rv$em$time, input$select_time_dist)
-      DT::datatable(df, editable = list(target = "cell", disable = list(columns = 0)),
+      df <- mat_to_df(rv$em$time, input$select_time_dist, labels = gui_param_labels(rv))
+      DT::datatable(df, editable = list(target = "cell", disable = list(columns = c(0, 3))),
         selection = "none", rownames = FALSE,
         options = list(dom = "t", paging = FALSE, ordering = FALSE),
         caption = "Migration Change Times")
@@ -2843,8 +2932,8 @@ main.menu.gui <- function(input = NULL) {
     output$table_anc_mig_rates <- DT::renderDT({
       if (is.null(rv$em)) return(NULL)
       dist <- if (!is.null(input$select_mig_dist)) input$select_mig_dist else "uniform"
-      df <- mat_to_df(rv$em$size, dist)
-      DT::datatable(df, editable = list(target = "cell", disable = list(columns = 0)),
+      df <- mat_to_df(rv$em$size, dist, labels = gui_param_labels(rv))
+      DT::datatable(df, editable = list(target = "cell", disable = list(columns = c(0, 3))),
         selection = "none", rownames = FALSE,
         options = list(dom = "t", paging = FALSE, ordering = FALSE),
         caption = "Ancestral Migration Rates (4Nm)")
@@ -3173,7 +3262,7 @@ main.menu.gui <- function(input = NULL) {
         stringsAsFactors = FALSE
       )
       if (mut_dist == "normal") colnames(df)[4:5] <- c("Mut_Mean", "Mut_SD")
-      DT::datatable(df, editable = list(target = "cell", disable = list(columns = 0)),
+      DT::datatable(df, editable = list(target = "cell", disable = list(columns = c(0, 3))),
         selection = "none", rownames = FALSE,
         options = list(dom = "t", paging = FALSE, ordering = FALSE))
     })
@@ -3197,7 +3286,7 @@ main.menu.gui <- function(input = NULL) {
       for (i in 1:np) {
         df[[paste0("Pop", i)]] <- as.numeric(I_mat[, i + 3])
       }
-      DT::datatable(df, editable = list(target = "cell", disable = list(columns = 0)),
+      DT::datatable(df, editable = list(target = "cell", disable = list(columns = c(0, 3))),
         selection = "none", rownames = FALSE,
         options = list(dom = "t", paging = FALSE, ordering = FALSE))
     })
@@ -3285,6 +3374,7 @@ main.menu.gui <- function(input = NULL) {
         draw <- sample_model_draw(rv, use_avg = avg, use_alpha = ua)
         plot_state$viz <- draw
         output$plot_model_diagram <- shiny::renderPlot({
+          rv$plot_order                  # re-draw on an order change, same draw
           shiny::isolate(
             plot_model_tree(rv, draw = draw, font_scale = fs, palette = pal, bg_theme = bg_th, h_spacing = sp, font_family = ff, plot_title = NULL, use_alpha = ua, align_ancestors = aa, v_spacing = vs, arrow_size = asz, show_values = sv, show_params = spar)
           )
